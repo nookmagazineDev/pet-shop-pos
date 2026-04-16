@@ -32,14 +32,17 @@ export default function POS() {
 
   const addToCart = (product) => {
     setCart(prev => {
-      const existing = prev.find(item => item.id === product.ID);
+      // Use Barcode as unique key (new unified schema has no ID)
+      const key = product.Barcode || product.Name;
+      const existing = prev.find(item => item.id === key);
       if (existing) {
-        return prev.map(item => item.id === product.ID ? { ...item, qty: item.qty + 1 } : item);
+        return prev.map(item => item.id === key ? { ...item, qty: item.qty + 1 } : item);
       }
       return [{ 
-        id: product.ID, 
-        barcode: product.Barcode,
-        name: product.Name, 
+        id: key,
+        Barcode: product.Barcode,
+        Name: product.Name,
+        name: product.Name,  // keep lowercase alias for display
         price: Number(product.Price) || 0,
         image: product.ImageURL || "https://placehold.co/300x300?text=No+Image",
         qty: 1 
@@ -119,7 +122,7 @@ export default function POS() {
         totalAmount: total,
         tax: tax,
         paymentMethod: paymentMethod,
-        cart: cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price }))
+        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price }))
       }
     };
     
@@ -189,9 +192,9 @@ export default function POS() {
           {/* Autocomplete Dropdown */}
           {barcodeInput.trim() && searchResults.length > 0 && !products.find(p => String(p.Barcode) === barcodeInput.trim()) && (
             <div className="absolute z-50 left-4 right-4 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto divide-y divide-gray-100">
-              {searchResults.map(p => (
+              {searchResults.map((p, idx) => (
                 <button 
-                  key={p.ID} 
+                  key={p.Barcode || idx} 
                   type="button"
                   onClick={() => addToCart(p)}
                   className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between group transition-colors"

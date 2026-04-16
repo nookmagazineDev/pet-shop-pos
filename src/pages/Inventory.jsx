@@ -5,7 +5,13 @@ import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
 
 export default function Inventory() {
-  const [activeTab, setActiveTab] = useState("stock"); // 'stock' or 'receive'
+  const [activeTab, setActiveTab] = useState("stock");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [productNameInput, setProductNameInput] = useState("");
   const [products, setProducts] = useState([]);
 
   const fetchProducts = () => {

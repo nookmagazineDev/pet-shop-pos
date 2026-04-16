@@ -1,20 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useId } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function BarcodeScanner({ onScanSuccess, onScanFailure }) {
-  const scannerRef = useRef(null);
+  const uniqueId = useId().replace(/:/g, ''); // Generate stable unique ID per instance
 
   useEffect(() => {
-    // Only initialize if we haven't already
-    if (!document.getElementById('reader')) return;
-
     const scanner = new Html5QrcodeScanner(
-      "reader",
+      uniqueId,
       { 
-        fps: 10, 
-        // Removed qrbox to scan using the full frame
-        // Removed aspectRatio to let it use native phone camera ratio
-        supportedScanTypes: [0] // 0 = Only camera, Hide file upload since we want mobile scanning
+        fps: 10,
+        supportedScanTypes: [0] // Camera only
       },
       false
     );
@@ -33,15 +28,16 @@ export default function BarcodeScanner({ onScanSuccess, onScanFailure }) {
 
     return () => {
       isScanning = false;
-      scanner.clear().catch(error => {
-        console.error("Failed to clear html5QrcodeScanner. ", error);
+      scanner.clear().catch(err => {
+        console.error("Failed to clear scanner:", err);
       });
     };
-  }, [onScanSuccess, onScanFailure]);
+  }, []); // Run once on mount
 
   return (
-    <div className="w-full mx-auto overflow-hidden rounded-xl bg-[#000000]">
-      <div id="reader" ref={scannerRef} className="w-full border-none"></div>
+    <div className="w-full mx-auto overflow-hidden rounded-xl bg-black">
+      <div id={uniqueId} className="w-full"></div>
     </div>
   );
 }
+
