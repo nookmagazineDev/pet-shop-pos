@@ -342,6 +342,16 @@ function readSheetData(sheetName) {
   const sheet = getSpreadsheet().getSheetByName(sheetName);
   if (!sheet) return [];
   
+  // Auto-fix headers for Products to ensure valid JSON keys
+  if (sheetName === "Products") {
+    const requiredHeaders = ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL"];
+    const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
+    if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[3] !== "Quantity") {
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
+    }
+  }
+
   const data = sheet.getDataRange().getValues();
   if (data.length <= 1) return []; // Empty or only headers
   
@@ -351,7 +361,10 @@ function readSheetData(sheetName) {
   for (let i = 1; i < data.length; i++) {
     const obj = {};
     for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]] = data[i][j];
+      // Skip empty header columns
+      if (headers[j] && String(headers[j]).trim() !== "") {
+        obj[headers[j]] = data[i][j];
+      }
     }
     rows.push(obj);
   }
