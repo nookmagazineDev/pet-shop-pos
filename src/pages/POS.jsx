@@ -176,17 +176,10 @@ export default function POS() {
 
           {/* Camera Scanner View */}
           {isScannerOpen && (
-            <div className="mt-4 p-4 bg-gray-900 rounded-xl relative z-20 shadow-xl overflow-hidden">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-white font-semibold flex items-center gap-2">
-                  <Camera size={18} /> กล้องสแกนบาร์โค้ด
-                </h3>
-              </div>
-              <BarcodeScanner onScanSuccess={handleScanSuccess} />
-              <div className="mt-3 text-center text-xs text-gray-400">
-                หันกล้องไปที่บาร์โค้ดหรือ QR Code ของสินค้า ถ่ายให้ชัดเพื่อให้อ่านค่าได้เร็วขึ้น
-              </div>
-            </div>
+            <BarcodeScanner 
+              onScanSuccess={handleScanSuccess} 
+              onClose={() => setIsScannerOpen(false)} 
+            />
           )}
 
           {/* Autocomplete Dropdown */}

@@ -219,17 +219,13 @@ export default function Inventory() {
                       </button>
                     </div>
                     {isScannerOpen && (
-                      <div className="mt-3 p-4 bg-gray-900 rounded-xl shadow-lg overflow-hidden relative z-10 w-full">
-                        <div className="flex justify-between items-center mb-3">
-                          <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-                            <Camera size={14} /> กล้องสแกน
-                          </h3>
-                        </div>
-                        <BarcodeScanner onScanSuccess={(text) => {
+                      <BarcodeScanner 
+                        onScanSuccess={(text) => {
                           setBarcodeInput(text);
                           setIsScannerOpen(false);
-                        }} />
-                      </div>
+                        }} 
+                        onClose={() => setIsScannerOpen(false)}
+                      />
                     )}
                   </div>
                   <div>
