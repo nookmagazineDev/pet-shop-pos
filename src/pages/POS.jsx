@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2 } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
+import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
 
 export default function POS() {
@@ -11,6 +12,7 @@ export default function POS() {
   const [paymentMethod, setPaymentMethod] = useState("เงินสด");
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const barcodeRef = useRef(null);
 
   // Fetch products on load
@@ -44,6 +46,17 @@ export default function POS() {
       }, ...prev];
     });
     setBarcodeInput("");
+  };
+
+  const handleScanSuccess = (decodedText) => {
+    setBarcodeInput(decodedText);
+    setIsScannerOpen(false); // Close scanner on success
+    
+    // Auto add if exists
+    const exactMatch = products.find(p => String(p.Barcode) === String(decodedText).trim());
+    if (exactMatch) {
+      addToCart(exactMatch);
+    }
   };
 
   const handleScan = (e) => {
@@ -132,20 +145,46 @@ export default function POS() {
       <div className="flex-1 flex flex-col min-h-[400px] lg:min-h-0 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden order-1 lg:order-none">
         {/* Search Bar */}
         <div className="p-4 border-b border-gray-100 bg-gray-50/50 relative">
-          <form onSubmit={handleScan} className="relative z-10">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
-              <ScanLine size={20} />
+          <form onSubmit={handleScan} className="relative z-10 flex items-center gap-2">
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+                <ScanLine size={20} />
+              </div>
+              <input 
+                ref={barcodeRef}
+                type="text" 
+                className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-lg shadow-sm bg-white"
+                placeholder="สแกนบาร์โค้ด หรือ พิมพ์ชื่อสินค้าที่นี่..."
+                value={barcodeInput}
+                onChange={(e) => setBarcodeInput(e.target.value)}
+              />
             </div>
-            <input 
-              ref={barcodeRef}
-              type="text" 
-              className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-lg shadow-sm bg-white"
-              placeholder="สแกนบาร์โค้ด หรือ พิมพ์ชื่อสินค้าที่นี่..."
-              value={barcodeInput}
-              onChange={(e) => setBarcodeInput(e.target.value)}
-            />
+            
+            <button 
+              type="button"
+              onClick={() => setIsScannerOpen(!isScannerOpen)}
+              className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
+              title="เปิดกล้องสแกน"
+            >
+              {isScannerOpen ? <X size={24} /> : <Camera size={24} />}
+            </button>
             <button type="submit" className="hidden">ตกลง</button>
           </form>
+
+          {/* Camera Scanner View */}
+          {isScannerOpen && (
+            <div className="mt-4 p-4 bg-gray-900 rounded-xl relative z-20 shadow-xl overflow-hidden">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-white font-semibold flex items-center gap-2">
+                  <Camera size={18} /> กล้องสแกนบาร์โค้ด
+                </h3>
+              </div>
+              <BarcodeScanner onScanSuccess={handleScanSuccess} />
+              <div className="mt-3 text-center text-xs text-gray-400">
+                หันกล้องไปที่บาร์โค้ดหรือ QR Code ของสินค้า ถ่ายให้ชัดเพื่อให้อ่านค่าได้เร็วขึ้น
+              </div>
+            </div>
+          )}
 
           {/* Autocomplete Dropdown */}
           {barcodeInput.trim() && searchResults.length > 0 && !products.find(p => String(p.Barcode) === barcodeInput.trim()) && (
