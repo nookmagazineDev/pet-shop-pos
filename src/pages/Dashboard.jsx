@@ -147,10 +147,10 @@ export default function Dashboard() {
           <div className="p-0 overflow-x-auto">
             <table className="w-full text-left text-sm border-collapse min-w-[600px]">
               
-              {/* === TABLE FOR SALES/ORDERS === */}
-              {(selectedCard === "sales" || selectedCard === "orders") && (
+              {/* === TABLE FOR SALES === */}
+              {selectedCard === "sales" && (
                 <>
-                  <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-medium sticky top-0">
+                  <thead className="bg-blue-50 border-b border-blue-100 text-blue-700 font-medium sticky top-0">
                     <tr>
                       <th className="py-4 px-6">รหัสออเดอร์</th>
                       <th className="py-4 px-6">เวลา</th>
@@ -162,13 +162,61 @@ export default function Dashboard() {
                     {todayTransactions.length === 0 ? (
                       <tr><td colSpan="4" className="py-10 text-center text-gray-400">ไม่มีรายการขายวันนี้</td></tr>
                     ) : todayTransactions.map((tx, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
+                      <tr key={idx} className="hover:bg-blue-50/30">
                         <td className="py-3 px-6 font-semibold text-gray-900">{tx.OrderID}</td>
                         <td className="py-3 px-6 text-gray-600">{new Date(tx.Date).toLocaleTimeString()}</td>
                         <td className="py-3 px-6 text-gray-600">{tx.PaymentMethod}</td>
                         <td className="py-3 px-6 text-right font-bold text-primary">฿{parseFloat(tx.TotalAmount).toLocaleString()}</td>
                       </tr>
                     ))}
+                  </tbody>
+                </>
+              )}
+
+              {/* === TABLE FOR ORDERS === */}
+              {selectedCard === "orders" && (
+                <>
+                  <thead className="bg-green-50 border-b border-green-100 text-green-700 font-medium sticky top-0">
+                    <tr>
+                      <th className="py-4 px-6 w-1/4">รหัสออเดอร์ & เวลา</th>
+                      <th className="py-4 px-6">รายละเอียดสินค้าที่ขายออกไป</th>
+                      <th className="py-4 px-6 text-right w-1/4">ยอดซื้อรวม</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {todayTransactions.length === 0 ? (
+                      <tr><td colSpan="3" className="py-10 text-center text-gray-400">ยังไม่มีออเดอร์ของวันนี้</td></tr>
+                    ) : todayTransactions.map((tx, idx) => {
+                      let cartItems = [];
+                      try {
+                        cartItems = JSON.parse(tx.CartDetails || "[]");
+                      } catch(e) {}
+                      
+                      return (
+                        <tr key={idx} className="hover:bg-green-50/30">
+                          <td className="py-4 px-6 align-top">
+                            <div className="font-semibold text-gray-900">{tx.OrderID}</div>
+                            <div className="text-xs text-gray-500 mt-1">{new Date(tx.Date).toLocaleTimeString()}</div>
+                          </td>
+                          <td className="py-4 px-6">
+                            <ul className="space-y-2">
+                              {cartItems.map((item, i) => (
+                                <li key={i} className="flex justify-between items-start text-sm border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                                  <div>
+                                    <div className="font-semibold text-gray-800">{item.Name || item.name}</div>
+                                    <div className="text-xs text-gray-400 mt-0.5">{item.Barcode || "-"}</div>
+                                  </div>
+                                  <div className="bg-green-100 text-green-800 px-2 py-1 rounded-md font-bold text-xs shrink-0 shadow-sm border border-green-200">
+                                    ออก {item.qty} ชิ้น
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </td>
+                          <td className="py-4 px-6 text-right font-bold text-gray-900 align-top">฿{parseFloat(tx.TotalAmount).toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </>
               )}
