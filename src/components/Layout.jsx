@@ -3,20 +3,20 @@ import { LayoutDashboard, ShoppingCart, Package, Clock, LogOut } from "lucide-re
 
 export default function Layout() {
   const menuItems = [
-    { name: "แดชบอร์ด (Dashboard)", path: "/", icon: <LayoutDashboard size={20} /> },
-    { name: "ระบบขายหน้าร้าน (POS)", path: "/pos", icon: <ShoppingCart size={20} /> },
-    { name: "คลังสินค้า (Inventory)", path: "/inventory", icon: <Package size={20} /> },
-    { name: "จัดการกะ (Shift)", path: "/shift", icon: <Clock size={20} /> },
+    { name: "แดชบอร์ด", fullName: "แดชบอร์ด (Dashboard)", path: "/", icon: <LayoutDashboard size={20} /> },
+    { name: "POS", fullName: "ระบบขายหน้าร้าน (POS)", path: "/pos", icon: <ShoppingCart size={20} /> },
+    { name: "คลังสินค้า", fullName: "คลังสินค้า (Inventory)", path: "/inventory", icon: <Package size={20} /> },
+    { name: "จัดการกะ", fullName: "จัดการกะ (Shift)", path: "/shift", icon: <Clock size={20} /> },
   ];
 
   return (
-    <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm">
-        <div className="h-16 flex items-center px-6 border-b border-gray-200">
+    <div className="flex flex-col md:flex-row h-screen bg-gray-50 text-gray-900 font-sans">
+      {/* Sidebar (Desktop) */}
+      <aside className="w-64 bg-white border-r border-gray-200 flex-col shadow-sm hidden md:flex shrink-0">
+        <div className="h-16 flex items-center px-6 border-b border-gray-200 shrink-0">
           <h1 className="text-xl font-bold text-primary">PetShop Next</h1>
         </div>
-        <nav className="flex-1 px-4 py-4 space-y-2">
+        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => (
             <NavLink
               key={item.path}
@@ -30,11 +30,11 @@ export default function Layout() {
               }
             >
               {item.icon}
-              {item.name}
+              {item.fullName}
             </NavLink>
           ))}
         </nav>
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 shrink-0">
           <button className="flex items-center gap-3 px-3 py-2.5 w-full text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium">
             <LogOut size={20} />
             ออกจากระบบ
@@ -43,22 +43,45 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
-          <div className="text-sm text-gray-500">
-            สถานะกะ: <span className="font-semibold text-green-600">เปิดอยู่</span>
+      <main className="flex-1 flex flex-col h-full overflow-hidden pb-16 md:pb-0">
+        <header className="h-14 md:h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-8 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="md:hidden w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold mr-2 text-xs">PS</div>
+            <div className="text-xs md:text-sm text-gray-500">
+              สถานะกะ: <span className="font-semibold text-green-600">เปิดอยู่</span>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-sm font-medium">พนักงานหน้าร้าน</div>
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="text-xs md:text-sm font-medium hidden sm:block">พนักงานหน้าร้าน</div>
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary-foreground font-bold">
               พ
             </div>
           </div>
         </header>
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto p-2 sm:p-4 md:p-8">
           <Outlet />
         </div>
       </main>
+
+      {/* Bottom Navigation (Mobile) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around px-2 py-1.5 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {menuItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) =>
+              `flex flex-col items-center p-1.5 rounded-lg transition-colors min-w-[64px] ${
+                isActive
+                  ? "text-primary font-bold"
+                  : "text-gray-500 hover:text-gray-900"
+              }`
+            }
+          >
+            {item.icon}
+            <span className="text-[10px] mt-1">{item.name}</span>
+          </NavLink>
+        ))}
+      </nav>
     </div>
   );
 }

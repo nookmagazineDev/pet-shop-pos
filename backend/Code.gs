@@ -66,10 +66,11 @@ function doPost(e) {
 }
 
 function processCheckout(payload) {
-  const sheet = getSpreadsheet().getSheetByName("Transactions");
+  const ss = getSpreadsheet();
+  const txSheet = ss.getSheetByName("Transactions");
   const orderId = "ORD-" + new Date().getTime();
   
-  sheet.appendRow([
+  txSheet.appendRow([
     orderId,
     new Date(),
     payload.totalAmount,
@@ -78,7 +79,38 @@ function processCheckout(payload) {
     JSON.stringify(payload.cart)
   ]);
   
-  // Notice: For a complete system, we would deduct inventory here.
+  // Deduct Inventory
+  const invSheet = ss.getSheetByName("Inventory");
+  if (invSheet) {
+    const invData = invSheet.getDataRange().getValues();
+    const cart = payload.cart; // [{id, name, qty, price}]
+    
+    cart.forEach(item => {
+      let qtyToDeduct = item.qty;
+      
+      // Look for the product in inventory (Start from row 1, skipping header at 0)
+      for (let i = 1; i < invData.length; i++) {
+        if (qtyToDeduct <= 0) break;
+        
+        // Col 0 is ProductID (which usually matched item.name or string ID in our mock)
+        if (invData[i][0] == item.name || invData[i][0] == item.id) {
+          let currentStock = parseFloat(invData[i][3]);
+          if (!isNaN(currentStock) && currentStock > 0) {
+            if (currentStock >= qtyToDeduct) {
+              invSheet.getRange(i + 1, 4).setValue(currentStock - qtyToDeduct);
+              invData[i][3] = currentStock - qtyToDeduct; // update local cache for next iteration
+              qtyToDeduct = 0;
+            } else {
+              invSheet.getRange(i + 1, 4).setValue(0);
+              invData[i][3] = 0;
+              qtyToDeduct -= currentStock;
+            }
+          }
+        }
+      }
+    });
+  }
+  
   return jsonResponse({ success: true, orderId: orderId });
 }
 

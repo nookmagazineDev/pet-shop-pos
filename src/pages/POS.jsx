@@ -126,10 +126,10 @@ export default function POS() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 h-full p-2">
+    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full">
       
       {/* Left side: Search & Cart Items */}
-      <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-[400px] lg:min-h-0 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden order-1 lg:order-none">
         {/* Search Bar */}
         <div className="p-4 border-b border-gray-100 bg-gray-50/50 relative">
           <form onSubmit={handleScan} className="relative z-10">
