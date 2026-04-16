@@ -6,19 +6,18 @@ import { fetchApi, postApi } from "../api";
 
 export default function Inventory() {
   const [activeTab, setActiveTab] = useState("stock"); // 'stock' or 'receive'
-  const [searchQuery, setSearchQuery] = useState("");
-  const [inventoryStock, setInventoryStock] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [barcodeInput, setBarcodeInput] = useState("");
-  const [productNameInput, setProductNameInput] = useState("");
   const [products, setProducts] = useState([]);
 
-  useEffect(() => {
+  const fetchProducts = () => {
+    setIsLoading(true);
     fetchApi("getProducts").then(data => {
       setProducts(Array.isArray(data) ? data : []);
+      setIsLoading(false);
     });
+  };
+
+  useEffect(() => {
+    fetchProducts();
   }, []);
 
   // Auto-fill Product Name when a barcode matches an existing product
@@ -31,22 +30,15 @@ export default function Inventory() {
     }
   }, [barcodeInput, products]);
 
-  const fetchInventory = () => {
-    setIsLoading(true);
-    fetchApi("getInventory").then(data => {
-      setInventoryStock(Array.isArray(data) ? data : []);
-      setIsLoading(false);
-    });
-  };
-
   useEffect(() => {
     if (activeTab === "stock") {
-      fetchInventory();
+      fetchProducts();
     }
   }, [activeTab]);
 
-  const filteredStock = inventoryStock.filter(item => 
-    item.ProductID?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredStock = products.filter(item => 
+    item.Name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    item.Barcode?.toString().includes(searchQuery) ||
     item.Location?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -76,6 +68,7 @@ export default function Inventory() {
       e.target.reset();
       setBarcodeInput("");
       setProductNameInput("");
+      fetchProducts(); // Refresh stock immediately
       setActiveTab("stock");
     } else {
       alert("เกิดข้อผิดพลาดในการบันทึก: " + (res.error || "Unknown"));
@@ -133,30 +126,34 @@ export default function Inventory() {
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr className="border-b border-gray-200 text-sm font-medium text-gray-500">
                   <th className="py-3 px-6">ข้อมูลสินค้า</th>
+                  <th className="py-3 px-6 text-right">ราคา</th>
                   <th className="py-3 px-6">เลข Lot Number</th>
                   <th className="py-3 px-6">ตำแหน่งจัดเก็บ (Location)</th>
                   <th className="py-3 px-6">วันหมดอายุ</th>
-                  <th className="py-3 px-6 text-right">จำนวนหน้าร้าน</th>
+                  <th className="py-3 px-6 text-right">จำนวนคลัง</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {isLoading ? (
-                  <tr><td colSpan="5" className="py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>
+                  <tr><td colSpan="6" className="py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>
                 ) : filteredStock.length === 0 ? (
-                  <tr><td colSpan="5" className="py-8 text-center text-gray-500">ไม่พบรายการสินค้า</td></tr>
+                  <tr><td colSpan="6" className="py-8 text-center text-gray-500">ไม่พบรายการสินค้า</td></tr>
                 ) : filteredStock.map((item, idx) => (
                   <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
                     <td className="py-4 px-6 text-sm">
-                      <div className="font-semibold text-gray-900">{item.ProductID}</div>
+                      <div className="font-semibold text-gray-900">{item.Name}</div>
                       {item.Barcode && <div className="text-xs text-gray-500 mt-1">Barcode: {item.Barcode}</div>}
                     </td>
+                    <td className="py-4 px-6 text-sm text-right font-medium text-amber-600">
+                      ฿{parseFloat(item.Price || 0).toLocaleString()}
+                    </td>
                     <td className="py-4 px-6 text-sm text-gray-600">
-                      <span className="bg-gray-100 px-2 py-1 rounded text-xs font-mono">{item.LotNumber}</span>
+                      <span className="bg-gray-100 px-2 py-1 rounded text-xs font-mono">{item.LotNumber || "-"}</span>
                     </td>
                     <td className="py-4 px-6 text-sm text-gray-600">
                       <div className="flex items-center gap-1.5 align-middle">
                         <MapPin size={14} className="text-primary" />
-                        <span className="font-medium">{item.Location}</span>
+                        <span className="font-medium">{item.Location || "-"}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 text-sm text-gray-600">
@@ -164,11 +161,11 @@ export default function Inventory() {
                         <Calendar size={14} className="text-amber-500" />
                         <span className={clsx(
                           item.ExpiryDate && new Date(item.ExpiryDate) < new Date() ? "text-red-600 font-bold" : ""
-                        )}>{item.ExpiryDate || "N/A"}</span>
+                        )}>{item.ExpiryDate || "-"}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 text-right font-bold text-lg text-primary">
-                      {item.Quantity}
+                      {item.Quantity || 0}
                     </td>
                   </tr>
                 ))}

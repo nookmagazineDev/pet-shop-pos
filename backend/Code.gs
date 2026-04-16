@@ -12,8 +12,7 @@ function getSpreadsheet() {
 function setup() {
   const ss = getSpreadsheet();
   const sheets = {
-    "Products": ["ID", "Barcode", "Name", "Price", "ImageURL"],
-    "Inventory": ["ProductID", "LotNumber", "Location", "Quantity", "ExpiryDate", "ReceivingDate", "Barcode"],
+    "Products": ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"]
   };
@@ -35,7 +34,8 @@ function doGet(e) {
   if (action === "getProducts") {
     return jsonResponse(readSheetData("Products"));
   } else if (action === "getInventory") {
-    return jsonResponse(readSheetData("Inventory"));
+    // Both now share the same Products data source
+    return jsonResponse(readSheetData("Products"));
   } else if (action === "getShifts") {
     return jsonResponse(readSheetData("Shifts"));
   }
@@ -80,29 +80,34 @@ function processCheckout(payload) {
   ]);
   
   // Deduct Inventory
-  const invSheet = ss.getSheetByName("Inventory");
-  if (invSheet) {
-    const invData = invSheet.getDataRange().getValues();
-    const cart = payload.cart; // [{id, name, qty, price}]
+  const prodSheet = ss.getSheetByName("Products");
+  if (prodSheet) {
+    const prodData = prodSheet.getDataRange().getValues();
+    const cart = payload.cart; // [{Barcode, Name, qty, ...}]
     
     cart.forEach(item => {
       let qtyToDeduct = item.qty;
+      const itemBarcode = String(item.Barcode || "").trim();
+      const itemName = String(item.Name || item.name || "").trim();
       
-      // Look for the product in inventory (Start from row 1, skipping header at 0)
-      for (let i = 1; i < invData.length; i++) {
+      // Look for the product in Products (Start from row 1)
+      for (let i = 1; i < prodData.length; i++) {
         if (qtyToDeduct <= 0) break;
         
-        // Col 0 is ProductID (which usually matched item.name or string ID in our mock)
-        if (invData[i][0] == item.name || invData[i][0] == item.id) {
-          let currentStock = parseFloat(invData[i][3]);
+        const rowBarcode = String(prodData[i][0]).trim();
+        const rowName = String(prodData[i][1]).trim();
+        
+        // Match by Name or Barcode
+        if ((itemBarcode && rowBarcode === itemBarcode) || rowName === itemName) {
+          let currentStock = parseFloat(prodData[i][3]); // Quantity is in Col 3
           if (!isNaN(currentStock) && currentStock > 0) {
             if (currentStock >= qtyToDeduct) {
-              invSheet.getRange(i + 1, 4).setValue(currentStock - qtyToDeduct);
-              invData[i][3] = currentStock - qtyToDeduct; // update local cache for next iteration
+              prodSheet.getRange(i + 1, 4).setValue(currentStock - qtyToDeduct);
+              prodData[i][3] = currentStock - qtyToDeduct; // update local cache
               qtyToDeduct = 0;
             } else {
-              invSheet.getRange(i + 1, 4).setValue(0);
-              invData[i][3] = 0;
+              prodSheet.getRange(i + 1, 4).setValue(0);
+              prodData[i][3] = 0;
               qtyToDeduct -= currentStock;
             }
           }
@@ -115,17 +120,44 @@ function processCheckout(payload) {
 }
 
 function receiveGoods(payload) {
-  const sheet = getSpreadsheet().getSheetByName("Inventory");
+  const sheet = getSpreadsheet().getSheetByName("Products");
+  const data = sheet.getDataRange().getValues();
+  const searchBarcode = String(payload.barcode || "").trim();
+  const searchName = String(payload.productName || "").trim();
+  
+  // Attempt to update existing first
+  for (let i = 1; i < data.length; i++) {
+    const rowBarcode = String(data[i][0]).trim();
+    const rowName = String(data[i][1]).trim();
+    
+    // Match by Barcode (if provided) else by Name
+    if ((searchBarcode && rowBarcode === searchBarcode) || (!searchBarcode && rowName === searchName)) {
+      let currentQty = parseFloat(data[i][3]) || 0;
+      let addedQty = parseFloat(payload.quantity) || 0;
+      
+      sheet.getRange(i + 1, 4).setValue(currentQty + addedQty); // Quantity +=
+      sheet.getRange(i + 1, 5).setValue(payload.location || ""); // Location
+      sheet.getRange(i + 1, 6).setValue(payload.lotNumber || ""); // LotNumber
+      sheet.getRange(i + 1, 7).setValue(payload.expiryDate || ""); // ExpiryDate
+      sheet.getRange(i + 1, 8).setValue(payload.receivingDate || ""); // ReceivingDate
+      return jsonResponse({ success: true, message: "Updated existing stock" });
+    }
+  }
+  
+  // Not found: Append new row
   sheet.appendRow([
-    payload.productName, // or ProductID
-    payload.lotNumber,
-    payload.location,
-    payload.quantity,
-    payload.expiryDate,
-    payload.receivingDate,
-    payload.barcode || ""
+    payload.barcode || "",
+    payload.productName || "",
+    0, // Default Price
+    parseFloat(payload.quantity) || 0, // Quantity
+    payload.location || "",
+    payload.lotNumber || "",
+    payload.expiryDate || "",
+    payload.receivingDate || "",
+    "" // ImageURL
   ]);
-  return jsonResponse({ success: true });
+  
+  return jsonResponse({ success: true, message: "Added new product stock" });
 }
 
 function openShift(payload) {
