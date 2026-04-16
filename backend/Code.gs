@@ -183,6 +183,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Products"));
   } else if (action === "getShifts") {
     return jsonResponse(readSheetData("Shifts"));
+  } else if (action === "getTransactions") {
+    return jsonResponse(readSheetData("Transactions"));
   }
   
   return jsonResponse({ error: "Invalid action" });
