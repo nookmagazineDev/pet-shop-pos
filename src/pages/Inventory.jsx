@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, MapPin, PackagePlus, Calendar, Box, Loader2 } from "lucide-react";
+import { Search, Plus, MapPin, PackagePlus, Calendar, Box, Loader2, Camera, X } from "lucide-react";
 import clsx from "clsx";
+import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
 
 export default function Inventory() {
@@ -9,6 +10,8 @@ export default function Inventory() {
   const [inventoryStock, setInventoryStock] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [productNameInput, setProductNameInput] = useState("");
 
   const fetchInventory = () => {
     setIsLoading(true);
@@ -37,7 +40,7 @@ export default function Inventory() {
     const payload = {
       action: "receiveGoods",
       payload: {
-        productName: formData.get("productName"),
+        productName: productNameInput || formData.get("productName"),
         quantity: formData.get("quantity"),
         location: formData.get("location"),
         lotNumber: formData.get("lotNumber"),
@@ -52,6 +55,7 @@ export default function Inventory() {
     if (res.success) {
       alert("บันทึกสินค้านำเข้าลงคลังเรียบร้อยแล้ว!");
       e.target.reset();
+      setProductNameInput("");
       setActiveTab("stock");
     } else {
       alert("เกิดข้อผิดพลาดในการบันทึก: " + (res.error || "Unknown"));
@@ -171,7 +175,38 @@ export default function Inventory() {
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า / สแกนบาร์โค้ด</label>
-                  <input type="text" name="productName" required className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" placeholder="พิมพ์ชื่อสินค้า หรือ สแกนบาร์โค้ด..." />
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      name="productName" 
+                      required 
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" 
+                      placeholder="พิมพ์ชื่อสินค้า หรือ สแกนบาร์โค้ด..." 
+                      value={productNameInput}
+                      onChange={(e) => setProductNameInput(e.target.value)}
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setIsScannerOpen(!isScannerOpen)}
+                      className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
+                      title="เปิดกล้องสแกน"
+                    >
+                      {isScannerOpen ? <X size={20} /> : <Camera size={20} />}
+                    </button>
+                  </div>
+                  {isScannerOpen && (
+                    <div className="mt-3 p-4 bg-gray-900 rounded-xl shadow-lg overflow-hidden">
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+                          <Camera size={14} /> กล้องสแกนใบรับของ
+                        </h3>
+                      </div>
+                      <BarcodeScanner onScanSuccess={(text) => {
+                        setProductNameInput(text);
+                        setIsScannerOpen(false);
+                      }} />
+                    </div>
+                  )}
                 </div>
 
                 <div>
