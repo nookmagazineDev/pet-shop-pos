@@ -12,8 +12,8 @@ export default function BarcodeScanner({ onScanSuccess, onScanFailure }) {
       "reader",
       { 
         fps: 10, 
-        qrbox: { width: 250, height: 250 }, 
-        aspectRatio: 1.0,
+        // Removed qrbox to scan using the full frame
+        // Removed aspectRatio to let it use native phone camera ratio
         supportedScanTypes: [0] // 0 = Only camera, Hide file upload since we want mobile scanning
       },
       false
@@ -24,8 +24,6 @@ export default function BarcodeScanner({ onScanSuccess, onScanFailure }) {
     scanner.render((decodedText) => {
       if (isScanning) {
         onScanSuccess(decodedText);
-        // After success, optionally pause or stop to prevent multiple scans of same item instantly
-        // but we'll let parent handle it by hiding the component.
       }
     }, (error) => {
       if (onScanFailure) {
@@ -41,9 +39,8 @@ export default function BarcodeScanner({ onScanSuccess, onScanFailure }) {
     };
   }, [onScanSuccess, onScanFailure]);
 
-  // Use a minimal footprint
   return (
-    <div className="w-full max-w-sm mx-auto overflow-hidden rounded-xl bg-white p-2">
+    <div className="w-full mx-auto overflow-hidden rounded-xl bg-[#000000]">
       <div id="reader" ref={scannerRef} className="w-full border-none"></div>
     </div>
   );
