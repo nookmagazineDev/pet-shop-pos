@@ -11,7 +11,25 @@ export default function Inventory() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [barcodeInput, setBarcodeInput] = useState("");
   const [productNameInput, setProductNameInput] = useState("");
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    fetchApi("getProducts").then(data => {
+      setProducts(Array.isArray(data) ? data : []);
+    });
+  }, []);
+
+  // Auto-fill Product Name when a barcode matches an existing product
+  useEffect(() => {
+    if (barcodeInput && products.length > 0) {
+      const match = products.find(p => String(p.Barcode) === String(barcodeInput).trim());
+      if (match) {
+        setProductNameInput(match.Name);
+      }
+    }
+  }, [barcodeInput, products]);
 
   const fetchInventory = () => {
     setIsLoading(true);
@@ -40,6 +58,7 @@ export default function Inventory() {
     const payload = {
       action: "receiveGoods",
       payload: {
+        barcode: barcodeInput || formData.get("barcode") || "",
         productName: productNameInput || formData.get("productName"),
         quantity: formData.get("quantity"),
         location: formData.get("location"),
@@ -55,6 +74,7 @@ export default function Inventory() {
     if (res.success) {
       alert("บันทึกสินค้านำเข้าลงคลังเรียบร้อยแล้ว!");
       e.target.reset();
+      setBarcodeInput("");
       setProductNameInput("");
       setActiveTab("stock");
     } else {
@@ -128,6 +148,7 @@ export default function Inventory() {
                   <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
                     <td className="py-4 px-6 text-sm">
                       <div className="font-semibold text-gray-900">{item.ProductID}</div>
+                      {item.Barcode && <div className="text-xs text-gray-500 mt-1">Barcode: {item.Barcode}</div>}
                     </td>
                     <td className="py-4 px-6 text-sm text-gray-600">
                       <span className="bg-gray-100 px-2 py-1 rounded text-xs font-mono">{item.LotNumber}</span>
@@ -173,40 +194,53 @@ export default function Inventory() {
             <form className="space-y-6" onSubmit={handleReceiveGoods}>
               
               <div className="grid md:grid-cols-2 gap-6">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า / สแกนบาร์โค้ด</label>
-                  <div className="flex gap-2">
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">สแกนบาร์โค้ด</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        name="barcode" 
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" 
+                        placeholder="สแกน หรือพิมพ์บาร์โค้ด..." 
+                        value={barcodeInput}
+                        onChange={(e) => setBarcodeInput(e.target.value)}
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setIsScannerOpen(!isScannerOpen)}
+                        className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
+                        title="เปิดกล้องสแกน"
+                      >
+                        {isScannerOpen ? <X size={20} /> : <Camera size={20} />}
+                      </button>
+                    </div>
+                    {isScannerOpen && (
+                      <div className="mt-3 p-4 bg-gray-900 rounded-xl shadow-lg overflow-hidden relative z-10 w-full">
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+                            <Camera size={14} /> กล้องสแกน
+                          </h3>
+                        </div>
+                        <BarcodeScanner onScanSuccess={(text) => {
+                          setBarcodeInput(text);
+                          setIsScannerOpen(false);
+                        }} />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า *</label>
                     <input 
                       type="text" 
                       name="productName" 
                       required 
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" 
-                      placeholder="พิมพ์ชื่อสินค้า หรือ สแกนบาร์โค้ด..." 
+                      placeholder="พิมพ์ชื่อสินค้าอ้างอิง..." 
                       value={productNameInput}
                       onChange={(e) => setProductNameInput(e.target.value)}
                     />
-                    <button 
-                      type="button"
-                      onClick={() => setIsScannerOpen(!isScannerOpen)}
-                      className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
-                      title="เปิดกล้องสแกน"
-                    >
-                      {isScannerOpen ? <X size={20} /> : <Camera size={20} />}
-                    </button>
                   </div>
-                  {isScannerOpen && (
-                    <div className="mt-3 p-4 bg-gray-900 rounded-xl shadow-lg overflow-hidden">
-                      <div className="flex justify-between items-center mb-3">
-                        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-                          <Camera size={14} /> กล้องสแกนใบรับของ
-                        </h3>
-                      </div>
-                      <BarcodeScanner onScanSuccess={(text) => {
-                        setProductNameInput(text);
-                        setIsScannerOpen(false);
-                      }} />
-                    </div>
-                  )}
                 </div>
 
                 <div>

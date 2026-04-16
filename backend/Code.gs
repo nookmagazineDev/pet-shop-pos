@@ -13,7 +13,7 @@ function setup() {
   const ss = getSpreadsheet();
   const sheets = {
     "Products": ["ID", "Barcode", "Name", "Price", "ImageURL"],
-    "Inventory": ["ProductID", "LotNumber", "Location", "Quantity", "ExpiryDate", "ReceivingDate"],
+    "Inventory": ["ProductID", "LotNumber", "Location", "Quantity", "ExpiryDate", "ReceivingDate", "Barcode"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"]
   };
@@ -122,7 +122,8 @@ function receiveGoods(payload) {
     payload.location,
     payload.quantity,
     payload.expiryDate,
-    payload.receivingDate
+    payload.receivingDate,
+    payload.barcode || ""
   ]);
   return jsonResponse({ success: true });
 }
