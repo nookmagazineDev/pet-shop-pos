@@ -91,11 +91,15 @@ export default function Inventory() {
   };
 
   const handleScanSuccess = (text) => {
-    setBarcodeInput(text);
     setIsScannerOpen(false);
-    // Auto-fill product name if barcode matches
-    const match = products.find(p => String(p.Barcode) === String(text).trim());
-    if (match) setProductNameInput(match.Name);
+    if (activeTab === "stock") {
+      setSearchQuery(text);
+    } else {
+      setBarcodeInput(text);
+      // Auto-fill product name if barcode matches
+      const match = products.find(p => String(p.Barcode) === String(text).trim());
+      if (match) setProductNameInput(match.Name);
+    }
   };
 
   const handleUpdateProduct = async (e) => {
@@ -217,17 +221,27 @@ export default function Inventory() {
       {activeTab === "stock" && (
         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-0 overflow-hidden">
           <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-            <div className="relative max-w-sm">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                <Search size={18} />
+            <div className="flex gap-2 max-w-md">
+              <div className="relative flex-1">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                  <Search size={18} />
+                </div>
+                <input 
+                  type="text" 
+                  className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                  placeholder="ค้นหาสินค้า, โลเคชั่น หรือสแกนบาร์โค้ด..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
-              <input 
-                type="text" 
-                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
-                placeholder="ค้นหาสินค้าหรือตำแหน่งจัดเก็บ..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+              <button 
+                type="button"
+                onClick={() => setIsScannerOpen(!isScannerOpen)}
+                className="p-2.5 bg-white hover:bg-gray-100 text-gray-700 rounded-xl transition-colors shadow-sm border border-gray-200 shrink-0"
+                title="เปิดกล้องสแกนเพื่อค้นหา"
+              >
+                {isScannerOpen ? <X size={20} /> : <Camera size={20} />}
+              </button>
             </div>
           </div>
           
