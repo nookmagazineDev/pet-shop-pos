@@ -81,8 +81,24 @@ export default function Inventory() {
     }
   };
 
+  const handleScanSuccess = (text) => {
+    setBarcodeInput(text);
+    setIsScannerOpen(false);
+    // Auto-fill product name if barcode matches
+    const match = products.find(p => String(p.Barcode) === String(text).trim());
+    if (match) setProductNameInput(match.Name);
+  };
+
   return (
     <div className="flex flex-col h-full space-y-6">
+
+      {/* Full-screen Camera Scanner (same as POS) */}
+      {isScannerOpen && (
+        <BarcodeScanner
+          onScanSuccess={handleScanSuccess}
+          onClose={() => setIsScannerOpen(false)}
+        />
+      )}
       
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold tracking-tight text-gray-900">การจัดการคลังสินค้า</h2>
@@ -218,15 +234,7 @@ export default function Inventory() {
                         {isScannerOpen ? <X size={20} /> : <Camera size={20} />}
                       </button>
                     </div>
-                    {isScannerOpen && (
-                      <BarcodeScanner 
-                        onScanSuccess={(text) => {
-                          setBarcodeInput(text);
-                          setIsScannerOpen(false);
-                        }} 
-                        onClose={() => setIsScannerOpen(false)}
-                      />
-                    )}
+
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า *</label>
