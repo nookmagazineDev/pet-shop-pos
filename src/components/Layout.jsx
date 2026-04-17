@@ -1,26 +1,10 @@
-import { useState, useEffect } from "react";
+
 import { Outlet, NavLink } from "react-router-dom";
 import { LayoutDashboard, ShoppingCart, Package, Clock, LogOut } from "lucide-react";
-import { fetchApi } from "../api";
+import { useShift } from "../context/ShiftContext";
 
 export default function Layout() {
-  const [shiftState, setShiftState] = useState("กำลังตรวจสอบ...");
-  const [isShiftOpen, setIsShiftOpen] = useState(false);
-
-  useEffect(() => {
-    fetchApi("getShifts").then(data => {
-      if (Array.isArray(data)) {
-        const lastShift = data.length > 0 ? data[data.length - 1] : null;
-        if (lastShift && lastShift.Status === "OPEN") {
-          setShiftState("เปิดอยู่");
-          setIsShiftOpen(true);
-        } else {
-          setShiftState("ปิดอยู่");
-          setIsShiftOpen(false);
-        }
-      }
-    });
-  }, []);
+  const { isShiftOpen, shiftState } = useShift();
 
   const menuItems = [
     { name: "แดชบอร์ด", fullName: "แดชบอร์ด (Dashboard)", path: "/", icon: <LayoutDashboard size={20} /> },

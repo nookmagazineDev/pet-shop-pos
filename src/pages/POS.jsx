@@ -1,11 +1,15 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
+import { useShift } from "../context/ShiftContext";
+import { useNavigate } from "react-router-dom";
 
 export default function POS() {
+  const { isShiftOpen, isChecking } = useShift();
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [barcodeInput, setBarcodeInput] = useState("");
@@ -140,6 +144,35 @@ export default function POS() {
     setIsInvoiceModalOpen(false);
     setCart([]);
   };
+
+  // === SHIFT GUARD ===
+  if (isChecking) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 size={32} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isShiftOpen) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-6 text-center">
+        <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
+          <Lock size={36} className="text-red-500" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">ยังไม่ได้เปิดกะ</h2>
+          <p className="text-gray-500 mt-2">กรุณาเปิดกะก่อนเข้าใช้งานระบบ POS</p>
+        </div>
+        <button
+          onClick={() => navigate("/shift")}
+          className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-bold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30"
+        >
+          ไปเปิดกะ
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full">
