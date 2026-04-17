@@ -13,6 +13,7 @@ function setup() {
   const ss = getSpreadsheet();
   const sheets = {
     "Products": ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL"],
+    "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"]
   };
@@ -179,8 +180,9 @@ function doGet(e) {
   if (action === "getProducts") {
     return jsonResponse(readSheetData("Products"));
   } else if (action === "getInventory") {
-    // Both now share the same Products data source
     return jsonResponse(readSheetData("Products"));
+  } else if (action === "getStoreStock") {
+    return jsonResponse(readSheetData("StoreStock"));
   } else if (action === "getShifts") {
     return jsonResponse(readSheetData("Shifts"));
   } else if (action === "getTransactions") {
@@ -202,6 +204,8 @@ function doPost(e) {
       return receiveGoods(data.payload);
     } else if (action === "updateProduct") {
       return updateProduct(data.payload);
+    } else if (action === "moveToStore") {
+      return moveToStore(data.payload);
     } else if (action === "openShift") {
       return openShift(data.payload);
     } else if (action === "closeShift") {
@@ -228,44 +232,105 @@ function processCheckout(payload) {
     JSON.stringify(payload.cart)
   ]);
   
-  // Deduct Inventory
+  // Deduct Inventory — StoreStock first, fallback to Products
+  const storeSheet = ss.getSheetByName("StoreStock");
   const prodSheet = ss.getSheetByName("Products");
-  if (prodSheet) {
-    const prodData = prodSheet.getDataRange().getValues();
-    const cart = payload.cart; // [{Barcode, Name, qty, ...}]
-    
-    cart.forEach(item => {
-      let qtyToDeduct = item.qty;
-      const itemBarcode = String(item.Barcode || "").trim();
-      const itemName = String(item.Name || item.name || "").trim();
-      
-      // Look for the product in Products (Start from row 1)
-      for (let i = 1; i < prodData.length; i++) {
+  const cart = payload.cart;
+
+  cart.forEach(item => {
+    let qtyToDeduct = item.qty;
+    const itemBarcode = String(item.Barcode || "").trim();
+    const itemName = String(item.Name || item.name || "").trim();
+
+    // 1) Try deducting from StoreStock first
+    if (storeSheet && qtyToDeduct > 0) {
+      const storeData = storeSheet.getDataRange().getValues();
+      for (let i = 1; i < storeData.length; i++) {
         if (qtyToDeduct <= 0) break;
-        
-        const rowBarcode = String(prodData[i][0]).trim();
-        const rowName = String(prodData[i][1]).trim();
-        
-        // Match by Name or Barcode
+        const rowBarcode = String(storeData[i][0]).trim();
+        const rowName   = String(storeData[i][1]).trim();
         if ((itemBarcode && rowBarcode === itemBarcode) || rowName === itemName) {
-          let currentStock = parseFloat(prodData[i][3]); // Quantity is in Col 3
-          if (!isNaN(currentStock) && currentStock > 0) {
-            if (currentStock >= qtyToDeduct) {
-              prodSheet.getRange(i + 1, 4).setValue(currentStock - qtyToDeduct);
-              prodData[i][3] = currentStock - qtyToDeduct; // update local cache
-              qtyToDeduct = 0;
-            } else {
-              prodSheet.getRange(i + 1, 4).setValue(0);
-              prodData[i][3] = 0;
-              qtyToDeduct -= currentStock;
-            }
+          let storeQty = parseFloat(storeData[i][2]) || 0;
+          if (storeQty > 0) {
+            const deduct = Math.min(storeQty, qtyToDeduct);
+            storeSheet.getRange(i + 1, 3).setValue(storeQty - deduct);
+            storeSheet.getRange(i + 1, 5).setValue(new Date());
+            qtyToDeduct -= deduct;
           }
         }
       }
-    });
-  }
+    }
+
+    // 2) Fallback: deduct remaining from Products (warehouse)
+    if (prodSheet && qtyToDeduct > 0) {
+      const prodData = prodSheet.getDataRange().getValues();
+      for (let i = 1; i < prodData.length; i++) {
+        if (qtyToDeduct <= 0) break;
+        const rowBarcode = String(prodData[i][0]).trim();
+        const rowName   = String(prodData[i][1]).trim();
+        if ((itemBarcode && rowBarcode === itemBarcode) || rowName === itemName) {
+          let currentStock = parseFloat(prodData[i][3]) || 0;
+          if (currentStock > 0) {
+            const deduct = Math.min(currentStock, qtyToDeduct);
+            prodSheet.getRange(i + 1, 4).setValue(currentStock - deduct);
+            qtyToDeduct -= deduct;
+          }
+        }
+      }
+    }
+  });
   
   return jsonResponse({ success: true, orderId: orderId });
+}
+
+function moveToStore(payload) {
+  const ss = getSpreadsheet();
+  const prodSheet = ss.getSheetByName("Products");
+  const storeSheet = ss.getSheetByName("StoreStock");
+  if (!prodSheet || !storeSheet) return jsonResponse({ error: "Required sheets not found. Please run setup() first." });
+
+  const searchBarcode = String(payload.barcode || "").trim();
+  const moveQty = parseFloat(payload.quantity) || 0;
+  if (moveQty <= 0) return jsonResponse({ error: "Invalid quantity" });
+
+  // 1) Deduct from Products warehouse
+  const prodData = prodSheet.getDataRange().getValues();
+  let deducted = false;
+  for (let i = 1; i < prodData.length; i++) {
+    const rowBarcode = String(prodData[i][0]).trim();
+    if (rowBarcode === searchBarcode) {
+      const currentQty = parseFloat(prodData[i][3]) || 0;
+      if (currentQty < moveQty) {
+        return jsonResponse({ error: "สต็อกคลังไม่พอ (มี " + currentQty + " ชิ้น แต่ต้องการย้าย " + moveQty + " ชิ้น)" });
+      }
+      prodSheet.getRange(i + 1, 4).setValue(currentQty - moveQty);
+      deducted = true;
+      break;
+    }
+  }
+  if (!deducted) return jsonResponse({ error: "ไม่พบสินค้าในคลัง (Barcode: " + searchBarcode + ")" });
+
+  // 2) Add to StoreStock (find existing row or append)
+  const storeData = storeSheet.getDataRange().getValues();
+  const now = new Date();
+  for (let i = 1; i < storeData.length; i++) {
+    if (String(storeData[i][0]).trim() === searchBarcode) {
+      const existing = parseFloat(storeData[i][2]) || 0;
+      storeSheet.getRange(i + 1, 3).setValue(existing + moveQty);
+      if (payload.storeLocation) storeSheet.getRange(i + 1, 4).setValue(payload.storeLocation);
+      storeSheet.getRange(i + 1, 5).setValue(now);
+      return jsonResponse({ success: true, message: "ย้ายสินค้าเข้าหน้าร้านเรียบร้อย" });
+    }
+  }
+  // Not found in store — append new row
+  storeSheet.appendRow([
+    searchBarcode,
+    payload.name || "",
+    moveQty,
+    payload.storeLocation || "",
+    now
+  ]);
+  return jsonResponse({ success: true, message: "ย้ายสินค้าเข้าหน้าร้าน (รายการใหม่) เรียบร้อย" });
 }
 
 function receiveGoods(payload) {
@@ -358,6 +423,8 @@ function closeShift(payload) {
   }
   return jsonResponse({ error: "No open shift found" });
 }
+
+
 
 // Utility: Read Sheet Data into Array of Objects
 function readSheetData(sheetName) {

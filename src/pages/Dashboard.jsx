@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, Package, Users, DollarSign, Activity, Loader2, RefreshCcw, AlertTriangle, Search } from "lucide-react";
+import { TrendingUp, Package, Users, DollarSign, Activity, Loader2, RefreshCcw, AlertTriangle, Store } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi } from "../api";
 
@@ -19,17 +19,20 @@ export default function Dashboard() {
   const [attentionProducts, setAttentionProducts] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   const [todaySalesBreakdown, setTodaySalesBreakdown] = useState({ cash: 0, transfer: 0, credit: 0 });
+  const [lowStoreStock, setLowStoreStock] = useState([]);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [txsData, prodsData] = await Promise.all([
+      const [txsData, prodsData, storeData] = await Promise.all([
         fetchApi("getTransactions"),
-        fetchApi("getProducts")
+        fetchApi("getProducts"),
+        fetchApi("getStoreStock")
       ]);
 
       const transactions = Array.isArray(txsData) ? txsData : [];
       const products = Array.isArray(prodsData) ? prodsData : [];
+      const storeStock = Array.isArray(storeData) ? storeData : [];
       setAllProducts(products);
 
       const todayStr = new Date().toDateString();
@@ -82,12 +85,16 @@ export default function Dashboard() {
       });
       setAttentionProducts(attentionList);
 
+      const lowStore = storeStock.filter(s => parseFloat(s.Quantity) <= 3);
+      setLowStoreStock(lowStore);
+
       setRecentOrders(sortedTxs.slice(0, 5));
       setStats([
         { id: "sales", name: "ยอดขายวันนี้", value: `฿${todaySales.toLocaleString()}`, change: "ยอดรวมวันนี้", icon: <DollarSign size={24} />, color: "bg-blue-50 text-blue-600 border-blue-200" },
         { id: "orders", name: "จำนวนออเดอร์", value: todayOrders.toString(), change: "ออเดอร์ของวันนี้", icon: <Activity size={24} />, color: "bg-green-50 text-green-600 border-green-200" },
         { id: "attention", name: "สินค้าใกล้หมดอายุ/หมดสต๊อก", value: attentionList.length.toString(), change: "รายการที่ต้องตรวจสอบ", icon: <Package size={24} />, color: "bg-red-50 text-red-600 border-red-200" },
-        { id: "products", name: "จำนวนสินค้าในระบบ", value: products.length.toString(), change: "พร้อมขาย", icon: <Users size={24} />, color: "bg-purple-50 text-purple-600 border-purple-200" }
+        { id: "products", name: "จำนวนสินค้าในระบบ", value: products.length.toString(), change: "พร้อมขาย", icon: <Users size={24} />, color: "bg-purple-50 text-purple-600 border-purple-200" },
+        { id: "storestock", name: "สินค้าหน้าร้านใกล้หมด", value: lowStore.length.toString(), change: "คงเหลือ ≤ 3 ชิ้น", icon: <Store size={24} />, color: "bg-emerald-50 text-emerald-600 border-emerald-200" },
       ]);
     } catch (err) {
       console.error(err);
@@ -114,7 +121,7 @@ export default function Dashboard() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
         {stats.map((stat, i) => (
           <button 
             key={i} 
@@ -293,6 +300,38 @@ export default function Dashboard() {
                         <td className="py-3 px-6 text-gray-600">{p.Location || "-"}</td>
                         <td className="py-3 px-6 text-right font-bold text-gray-900">{p.Quantity || 0}</td>
                         <td className="py-3 px-6 text-right text-primary font-medium">฿{parseFloat(p.Price || 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </>
+              )}
+
+              {/* === TABLE FOR STORE STOCK LOW === */}
+              {selectedCard === "storestock" && (
+                <>
+                  <thead className="bg-emerald-50 border-b border-emerald-100 text-emerald-700 font-medium sticky top-0">
+                    <tr>
+                      <th className="py-4 px-6">ชื่อสินค้า</th>
+                      <th className="py-4 px-6">ตำแหน่งหน้าร้าน</th>
+                      <th className="py-4 px-6">อัปเดตล่าสุด</th>
+                      <th className="py-4 px-6 text-right">คงเหลือหน้าร้าน</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {lowStoreStock.length === 0 ? (
+                      <tr><td colSpan="4" className="py-10 text-center text-gray-400">สินค้าหน้าร้านยังมีเพียงพอ 🎉</td></tr>
+                    ) : lowStoreStock.map((s, idx) => (
+                      <tr key={idx} className="hover:bg-emerald-50/30">
+                        <td className="py-3 px-6">
+                          <div className="font-semibold text-gray-900">{s.Name}</div>
+                          <div className="text-xs text-gray-500 font-mono">{s.Barcode}</div>
+                        </td>
+                        <td className="py-3 px-6 text-gray-600">{s.StoreLocation || "-"}</td>
+                        <td className="py-3 px-6 text-gray-500 text-sm">{s.UpdatedAt ? new Date(s.UpdatedAt).toLocaleString("th-TH") : "-"}</td>
+                        <td className="py-3 px-6 text-right">
+                          <span className="font-bold text-lg text-red-600">{s.Quantity}</span>
+                          <div className="text-xs text-red-500 font-medium">ต้องเติมด่วน!</div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

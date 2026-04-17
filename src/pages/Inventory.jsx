@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save } from "lucide-react";
+import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft } from "lucide-react";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
@@ -13,8 +13,15 @@ export default function Inventory() {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [productNameInput, setProductNameInput] = useState("");
   const [products, setProducts] = useState([]);
-  const [editItem, setEditItem] = useState(null);       // item being edited
+  const [editItem, setEditItem] = useState(null);
   const [isEditSaving, setIsEditSaving] = useState(false);
+  const [storeStock, setStoreStock] = useState([]);
+  const [isStoreLoading, setIsStoreLoading] = useState(false);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [moveSource, setMoveSource] = useState(null); // product to move
+  const [moveQty, setMoveQty] = useState("");
+  const [moveLocation, setMoveLocation] = useState("");
+  const [isMoving, setIsMoving] = useState(false);
 
   const fetchProducts = () => {
     setIsLoading(true);
@@ -24,24 +31,22 @@ export default function Inventory() {
     });
   };
 
+  const fetchStoreStock = () => {
+    setIsStoreLoading(true);
+    fetchApi("getStoreStock").then(data => {
+      setStoreStock(Array.isArray(data) ? data : []);
+      setIsStoreLoading(false);
+    });
+  };
+
   useEffect(() => {
     fetchProducts();
   }, []);
 
-  // Auto-fill Product Name when a barcode matches an existing product
   useEffect(() => {
-    if (barcodeInput && products.length > 0) {
-      const match = products.find(p => String(p.Barcode) === String(barcodeInput).trim());
-      if (match) {
-        setProductNameInput(match.Name);
-      }
-    }
-  }, [barcodeInput, products]);
-
-  useEffect(() => {
-    if (activeTab === "stock") {
-      fetchProducts();
-    }
+    if (activeTab === "stock") fetchProducts();
+    if (activeTab === "store") fetchStoreStock();
+    if (activeTab === "receive") fetchProducts();
   }, [activeTab]);
 
   const filteredStock = products.filter(item => 
@@ -114,6 +119,31 @@ export default function Inventory() {
     }
   };
 
+  const handleMoveToStore = async (e) => {
+    e.preventDefault();
+    if (!moveSource) return;
+    setIsMoving(true);
+    const res = await postApi({
+      action: "moveToStore",
+      payload: {
+        barcode: moveSource.Barcode,
+        name: moveSource.Name,
+        quantity: moveQty,
+        storeLocation: moveLocation
+      }
+    });
+    setIsMoving(false);
+    if (res.success) {
+      alert("ย้ายสินค้าเข้าหน้าร้านเรียบร้อยแล้ว!");
+      setIsMoveModalOpen(false);
+      setMoveSource(null); setMoveQty(""); setMoveLocation("");
+      fetchProducts();
+      if (activeTab === "store") fetchStoreStock();
+    } else {
+      alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
+    }
+  };
+
   return (
     <div className="flex flex-col h-full space-y-6">
 
@@ -147,6 +177,15 @@ export default function Inventory() {
             )}
           >
             ใบรับของเข้าคลัง (Receive Goods)
+          </button>
+          <button 
+            onClick={() => setActiveTab("store")}
+            className={clsx(
+              "px-6 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-1.5",
+              activeTab === "store" ? "bg-white text-primary shadow-sm" : "text-gray-500 hover:text-gray-900"
+            )}
+          >
+            <Store size={14} /> สต็อคหน้าร้าน
           </button>
         </div>
       </div>
@@ -216,13 +255,87 @@ export default function Inventory() {
                       {item.Quantity || 0}
                     </td>
                     <td className="py-4 px-6 text-center">
-                      <button
-                        onClick={() => setEditItem({ ...item })}
-                        className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                        title="แก้ไขสินค้า"
-                      >
-                        <Pencil size={16} />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => setEditItem({ ...item })}
+                          className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          title="แก้ไขสินค้า"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => { setMoveSource(item); setMoveQty("1"); setMoveLocation(""); setIsMoveModalOpen(true); }}
+                          className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="ย้ายสินค้าเข้าหน้าร้าน"
+                        >
+                          <ArrowRightLeft size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ===== STORE STOCK TAB ===== */}
+      {activeTab === "store" && (
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-0 overflow-hidden">
+          <div className="p-4 border-b border-gray-100 bg-emerald-50/50 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-emerald-700">
+              <Store size={18} />
+              <span className="font-semibold">สินค้าหน้าร้าน (StoreStock)</span>
+              <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">{storeStock.length} รายการ</span>
+            </div>
+            <button
+              onClick={() => { setMoveSource(null); setMoveQty("1"); setMoveLocation(""); setIsMoveModalOpen(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <ArrowRightLeft size={16} /> ย้ายสินค้าเข้าหน้าร้าน
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto">
+            <table className="w-full text-left border-collapse min-w-[700px]">
+              <thead className="bg-emerald-50 sticky top-0 z-10">
+                <tr className="border-b border-emerald-100 text-sm font-medium text-emerald-700">
+                  <th className="py-3 px-6">ข้อมูลสินค้า</th>
+                  <th className="py-3 px-6">ตำแหน่งหน้าร้าน</th>
+                  <th className="py-3 px-6">อัปเดตล่าสุด</th>
+                  <th className="py-3 px-6 text-right">จำนวนหน้าร้าน</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {isStoreLoading ? (
+                  <tr><td colSpan="4" className="py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>
+                ) : storeStock.length === 0 ? (
+                  <tr><td colSpan="4" className="py-8 text-center text-gray-500">ยังไม่มีสินค้าในหน้าร้าน ลองย้ายสินค้าจากคลังก่อน</td></tr>
+                ) : storeStock.map((item, idx) => (
+                  <tr key={idx} className="hover:bg-emerald-50/30 transition-colors">
+                    <td className="py-4 px-6 text-sm">
+                      <div className="font-semibold text-gray-900">{item.Name}</div>
+                      {item.Barcode && <div className="text-xs text-gray-500 mt-1">Barcode: {item.Barcode}</div>}
+                    </td>
+                    <td className="py-4 px-6 text-sm text-gray-600">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={14} className="text-emerald-500" />
+                        <span className="font-medium">{item.StoreLocation || "-"}</span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 text-sm text-gray-500">
+                      {item.UpdatedAt ? new Date(item.UpdatedAt).toLocaleString("th-TH") : "-"}
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <span className={clsx(
+                        "font-bold text-lg",
+                        parseFloat(item.Quantity) <= 3 ? "text-red-600" : "text-emerald-600"
+                      )}>
+                        {item.Quantity || 0}
+                      </span>
+                      {parseFloat(item.Quantity) <= 3 && (
+                        <div className="text-xs text-red-500 font-medium">ใกล้หมด!</div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -329,6 +442,82 @@ export default function Inventory() {
         </div>
       )}
 
+
+      {/* Move to Store Modal */}
+      {isMoveModalOpen && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600">
+                  <ArrowRightLeft size={18} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">ย้ายสินค้าเข้าหน้าร้าน</h3>
+                  <p className="text-xs text-gray-400">ย้ายจากคลังสินค้า → หน้าร้าน</p>
+                </div>
+              </div>
+              <button onClick={() => setIsMoveModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleMoveToStore} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">เลือกสินค้า *</label>
+                <select
+                  required
+                  value={moveSource?.Barcode || ""}
+                  onChange={e => {
+                    const found = products.find(p => String(p.Barcode) === e.target.value);
+                    setMoveSource(found || null);
+                  }}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-500 transition-all text-sm bg-gray-50 focus:bg-white"
+                >
+                  <option value="">-- เลือกสินค้าจากคลัง --</option>
+                  {products.map((p, i) => (
+                    <option key={i} value={p.Barcode}>
+                      {p.Name} (คลัง: {p.Quantity || 0} ชิ้น)
+                    </option>
+                  ))}
+                </select>
+                {moveSource && (
+                  <p className="text-xs text-emerald-600 mt-1 font-mono">Barcode: {moveSource.Barcode} | สต็อกคลัง: {moveSource.Quantity}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">จำนวนที่ต้องการย้าย *</label>
+                <input
+                  type="number" required min="1"
+                  max={moveSource?.Quantity || 9999}
+                  value={moveQty}
+                  onChange={e => setMoveQty(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-500 transition-all text-sm bg-gray-50 focus:bg-white"
+                  placeholder="ระบุจำนวน..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><MapPin size={13} /> ตำแหน่งหน้าร้าน</label>
+                <input
+                  type="text"
+                  value={moveLocation}
+                  onChange={e => setMoveLocation(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-500 transition-all text-sm bg-gray-50 focus:bg-white"
+                  placeholder="เช่น ชั้นวางหน้า A, ตู้แช่ 1..."
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setIsMoveModalOpen(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
+                  ยกเลิก
+                </button>
+                <button type="submit" disabled={isMoving || !moveSource} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors disabled:opacity-50">
+                  {isMoving ? <Loader2 size={16} className="animate-spin" /> : <MoveRight size={16} />}
+                  {isMoving ? "กำลังย้าย..." : "ยืนยันย้ายสินค้า"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Edit Product Modal */}
       {editItem && (
