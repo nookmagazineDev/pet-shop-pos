@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, MapPin, PackagePlus, Calendar, Box, Loader2, Camera, X } from "lucide-react";
+import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save } from "lucide-react";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
@@ -13,6 +13,8 @@ export default function Inventory() {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [productNameInput, setProductNameInput] = useState("");
   const [products, setProducts] = useState([]);
+  const [editItem, setEditItem] = useState(null);       // item being edited
+  const [isEditSaving, setIsEditSaving] = useState(false);
 
   const fetchProducts = () => {
     setIsLoading(true);
@@ -89,6 +91,29 @@ export default function Inventory() {
     if (match) setProductNameInput(match.Name);
   };
 
+  const handleUpdateProduct = async (e) => {
+    e.preventDefault();
+    setIsEditSaving(true);
+    const res = await postApi({
+      action: "updateProduct",
+      payload: {
+        barcode: editItem.Barcode,
+        name: editItem.Name,
+        price: editItem.Price,
+        location: editItem.Location,
+        expiryDate: editItem.ExpiryDate || ""
+      }
+    });
+    setIsEditSaving(false);
+    if (res.success) {
+      alert("อัปเดตข้อมูลสินค้าเรียบร้อยแล้ว!");
+      setEditItem(null);
+      fetchProducts();
+    } else {
+      alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
+    }
+  };
+
   return (
     <div className="flex flex-col h-full space-y-6">
 
@@ -153,13 +178,14 @@ export default function Inventory() {
                   <th className="py-3 px-6">ตำแหน่งจัดเก็บ (Location)</th>
                   <th className="py-3 px-6">วันหมดอายุ</th>
                   <th className="py-3 px-6 text-right">จำนวนคลัง</th>
+                  <th className="py-3 px-6 text-center">แก้ไข</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {isLoading ? (
-                  <tr><td colSpan="6" className="py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>
+                  <tr><td colSpan="7" className="py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>
                 ) : filteredStock.length === 0 ? (
-                  <tr><td colSpan="6" className="py-8 text-center text-gray-500">ไม่พบรายการสินค้า</td></tr>
+                  <tr><td colSpan="7" className="py-8 text-center text-gray-500">ไม่พบรายการสินค้า</td></tr>
                 ) : filteredStock.map((item, idx) => (
                   <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
                     <td className="py-4 px-6 text-sm">
@@ -188,6 +214,15 @@ export default function Inventory() {
                     </td>
                     <td className="py-4 px-6 text-right font-bold text-lg text-primary">
                       {item.Quantity || 0}
+                    </td>
+                    <td className="py-4 px-6 text-center">
+                      <button
+                        onClick={() => setEditItem({ ...item })}
+                        className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                        title="แก้ไขสินค้า"
+                      >
+                        <Pencil size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -294,6 +329,70 @@ export default function Inventory() {
         </div>
       )}
 
+
+      {/* Edit Product Modal */}
+      {editItem && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">แก้ไขข้อมูลสินค้า</h3>
+                <p className="text-xs text-gray-400 mt-0.5 font-mono">Barcode: {editItem.Barcode}</p>
+              </div>
+              <button onClick={() => setEditItem(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateProduct} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า *</label>
+                <input
+                  type="text" required
+                  value={editItem.Name}
+                  onChange={e => setEditItem(prev => ({ ...prev, Name: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ราคา (บาท) *</label>
+                <input
+                  type="number" required min="0" step="0.01"
+                  value={editItem.Price}
+                  onChange={e => setEditItem(prev => ({ ...prev, Price: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><MapPin size={13} /> โลเคชั่นจัดเก็บ</label>
+                <input
+                  type="text"
+                  value={editItem.Location || ""}
+                  onChange={e => setEditItem(prev => ({ ...prev, Location: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Calendar size={13} /> วันหมดอายุ</label>
+                <input
+                  type="date"
+                  value={editItem.ExpiryDate || ""}
+                  onChange={e => setEditItem(prev => ({ ...prev, ExpiryDate: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditItem(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
+                  ยกเลิก
+                </button>
+                <button type="submit" disabled={isEditSaving} className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50">
+                  {isEditSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {isEditSaving ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

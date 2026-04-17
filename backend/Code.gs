@@ -200,6 +200,8 @@ function doPost(e) {
       return processCheckout(data.payload);
     } else if (action === "receiveGoods") {
       return receiveGoods(data.payload);
+    } else if (action === "updateProduct") {
+      return updateProduct(data.payload);
     } else if (action === "openShift") {
       return openShift(data.payload);
     } else if (action === "closeShift") {
@@ -305,6 +307,24 @@ function receiveGoods(payload) {
   ]);
   
   return jsonResponse({ success: true, message: "Added new product stock" });
+}
+
+function updateProduct(payload) {
+  const sheet = getSpreadsheet().getSheetByName("Products");
+  const data = sheet.getDataRange().getValues();
+  const searchBarcode = String(payload.barcode || "").trim();
+  
+  for (let i = 1; i < data.length; i++) {
+    const rowBarcode = String(data[i][0]).trim();
+    if (rowBarcode === searchBarcode) {
+      if (payload.name      !== undefined) sheet.getRange(i + 1, 2).setValue(payload.name);
+      if (payload.price     !== undefined) sheet.getRange(i + 1, 3).setValue(parseFloat(payload.price) || 0);
+      if (payload.location  !== undefined) sheet.getRange(i + 1, 5).setValue(payload.location);
+      if (payload.expiryDate !== undefined) sheet.getRange(i + 1, 7).setValue(payload.expiryDate);
+      return jsonResponse({ success: true, message: "Product updated" });
+    }
+  }
+  return jsonResponse({ error: "Product not found" });
 }
 
 function openShift(payload) {
