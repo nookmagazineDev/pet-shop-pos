@@ -1,7 +1,27 @@
+import { useState, useEffect } from "react";
 import { Outlet, NavLink } from "react-router-dom";
 import { LayoutDashboard, ShoppingCart, Package, Clock, LogOut } from "lucide-react";
+import { fetchApi } from "../api";
 
 export default function Layout() {
+  const [shiftState, setShiftState] = useState("กำลังตรวจสอบ...");
+  const [isShiftOpen, setIsShiftOpen] = useState(false);
+
+  useEffect(() => {
+    fetchApi("getShifts").then(data => {
+      if (Array.isArray(data)) {
+        const lastShift = data.length > 0 ? data[data.length - 1] : null;
+        if (lastShift && lastShift.Status === "OPEN") {
+          setShiftState("เปิดอยู่");
+          setIsShiftOpen(true);
+        } else {
+          setShiftState("ปิดอยู่");
+          setIsShiftOpen(false);
+        }
+      }
+    });
+  }, []);
+
   const menuItems = [
     { name: "แดชบอร์ด", fullName: "แดชบอร์ด (Dashboard)", path: "/", icon: <LayoutDashboard size={20} /> },
     { name: "POS", fullName: "ระบบขายหน้าร้าน (POS)", path: "/pos", icon: <ShoppingCart size={20} /> },
@@ -48,7 +68,7 @@ export default function Layout() {
           <div className="flex items-center gap-2">
             <div className="md:hidden w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold mr-2 text-xs">PS</div>
             <div className="text-xs md:text-sm text-gray-500">
-              สถานะกะ: <span className="font-semibold text-green-600">เปิดอยู่</span>
+              สถานะกะ: <span className={isShiftOpen ? "font-semibold text-green-600" : "font-semibold text-red-600"}>{shiftState}</span>
             </div>
           </div>
           <div className="flex items-center gap-3 md:gap-4">

@@ -4,23 +4,58 @@ import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
 
 export default function Shift() {
+  // Shift state tracking
   const [shiftState, setShiftState] = useState("closed"); // 'closed' or 'open'
-  const [initialCash, setInitialCash] = useState("");
+  const [initialCash, setInitialCash] = useState("");     // Used for opening shift input
   const [actualCash, setActualCash] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Mock expected cash since we're not aggregating from transactions natively here,
-  // ideally backend should return this value.
+  // Real aggregated data
+  const [currentInitialCash, setCurrentInitialCash] = useState(0);
+  const [cashSales, setCashSales] = useState(0);
+  const [transferSales, setTransferSales] = useState(0);
+  const [creditSales, setCreditSales] = useState(0);
   const [expectedCash, setExpectedCash] = useState(0); 
 
   useEffect(() => {
-    // Determine shift state from Google Sheets
-    fetchApi("getShifts").then(data => {
-      if (Array.isArray(data)) {
-        const lastShift = data.length > 0 ? data[data.length - 1] : null;
+    // Determine shift state and calculate metrics from Google Sheets
+    Promise.all([
+      fetchApi("getShifts"),
+      fetchApi("getTransactions")
+    ]).then(([shiftsData, txData]) => {
+      if (Array.isArray(shiftsData)) {
+        const lastShift = shiftsData.length > 0 ? shiftsData[shiftsData.length - 1] : null;
         if (lastShift && lastShift.Status === "OPEN") {
           setShiftState("open");
-          setExpectedCash(parseFloat(lastShift.ExpectedCash || lastShift.InitialCash) || 0); // Simplified for demo
+          
+          const initial = parseFloat(lastShift.ExpectedCash || lastShift.InitialCash) || 0;
+          setCurrentInitialCash(initial);
+          
+          let cSales = 0;
+          let tSales = 0;
+          let crSales = 0;
+          
+          const openTime = new Date(lastShift.OpenTime);
+          
+          // Aggregate transactions since shift opened
+          if (Array.isArray(txData)) {
+            txData.forEach(tx => {
+              const txTime = new Date(tx.Date);
+              // Only sum transactions that occurred during this open shift
+              if (txTime >= openTime) {
+                const amt = parseFloat(tx.TotalAmount) || 0;
+                if (tx.PaymentMethod === "เงินสด") cSales += amt;
+                else if (tx.PaymentMethod === "เงินโอน") tSales += amt;
+                else if (tx.PaymentMethod === "บัตรเครดิต") crSales += amt;
+              }
+            });
+          }
+          
+          setCashSales(cSales);
+          setTransferSales(tSales);
+          setCreditSales(crSales);
+          setExpectedCash(initial + cSales);
+
         } else {
           setShiftState("closed");
         }
@@ -43,7 +78,12 @@ export default function Shift() {
 
     if (res.success) {
       setShiftState("open");
-      setExpectedCash(parseFloat(initialCash));
+      const initial = parseFloat(initialCash);
+      setCurrentInitialCash(initial);
+      setCashSales(0);
+      setTransferSales(0);
+      setCreditSales(0);
+      setExpectedCash(initial);
       setInitialCash(""); 
     } else {
       alert("Error: " + (res.error || "Unknown"));
@@ -157,15 +197,28 @@ export default function Shift() {
           <div className="bg-gray-50 p-4 rounded-xl mb-6 space-y-2 border border-gray-100">
             <div className="flex justify-between text-sm text-gray-600">
               <span>เงินสำรองทอนเริ่มต้น</span>
-              <span>฿1,000.00</span>
+              <span>฿{currentInitialCash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
-            <div className="flex justify-between text-sm text-gray-600">
-              <span>ยอดขายเงินสดรวม</span>
-              <span>฿4,500.00</span>
+            
+            <div className="border-t border-gray-200 border-dashed my-2 pt-2 pb-1">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">สรุปยอดขายตลอดกะ</span>
             </div>
-            <div className="border-t border-gray-200 my-2 pt-2 flex justify-between font-bold text-gray-900">
-              <span>ยอดเงินที่ควรมีในลิ้นชัก</span>
-              <span className="text-blue-600">฿{expectedCash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <div className="flex justify-between text-sm text-gray-600 pl-2">
+              <span className="flex items-center gap-1.5"><DollarSign size={14} className="text-green-500"/>ยอดขายเงินสด (Cash)</span>
+              <span className="font-medium text-green-700">฿{cashSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75">
+              <span>ยอดขายเงินโอน (Transfer)</span>
+              <span>฿{transferSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75">
+              <span>ยอดขายบัตรเครดิต (Credit)</span>
+              <span>฿{creditSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+
+            <div className="border-t border-gray-200 my-3 pt-3 flex justify-between items-center font-bold text-gray-900">
+              <span className="text-base">ยอดเงินที่ควรมีในลิ้นชัก<br/><span className="text-xs text-gray-500 font-normal text-sm font-medium mt-1 inline-block">(เงินทอน + ยอดขายเงินสด)</span></span>
+              <span className="text-xl text-blue-600">฿{expectedCash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
           </div>
 

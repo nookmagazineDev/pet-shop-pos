@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [todayTransactions, setTodayTransactions] = useState([]);
   const [attentionProducts, setAttentionProducts] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
+  const [todaySalesBreakdown, setTodaySalesBreakdown] = useState({ cash: 0, transfer: 0, credit: 0 });
 
   const loadData = async () => {
     setIsLoading(true);
@@ -35,16 +36,25 @@ export default function Dashboard() {
       let todaySales = 0;
       let todayOrders = 0;
       const todayTxs = [];
+      let cashTotal = 0;
+      let transferTotal = 0;
+      let creditTotal = 0;
       
       const sortedTxs = transactions.sort((a, b) => new Date(b.Date) - new Date(a.Date));
       sortedTxs.forEach(tx => {
         if (new Date(tx.Date).toDateString() === todayStr) {
-          todaySales += parseFloat(tx.TotalAmount) || 0;
+          const amt = parseFloat(tx.TotalAmount) || 0;
+          todaySales += amt;
           todayOrders++;
           todayTxs.push(tx);
+          
+          if (tx.PaymentMethod === "เงินสด") cashTotal += amt;
+          else if (tx.PaymentMethod === "เงินโอน") transferTotal += amt;
+          else if (tx.PaymentMethod === "บัตรเครดิต") creditTotal += amt;
         }
       });
       setTodayTransactions(todayTxs);
+      setTodaySalesBreakdown({ cash: cashTotal, transfer: transferTotal, credit: creditTotal });
 
       const attentionList = [];
       const now = new Date();
@@ -151,6 +161,15 @@ export default function Dashboard() {
               {selectedCard === "sales" && (
                 <>
                   <thead className="bg-blue-50 border-b border-blue-100 text-blue-700 font-medium sticky top-0">
+                    <tr>
+                      <th colSpan="4" className="py-3 px-6 bg-blue-100/50 border-b border-blue-100">
+                        <div className="flex gap-8 text-sm">
+                          <div><span className="text-gray-500">เงินสด:</span> <span className="font-bold text-gray-900">฿{todaySalesBreakdown.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                          <div><span className="text-gray-500">เงินโอน:</span> <span className="font-bold text-gray-900">฿{todaySalesBreakdown.transfer.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                          <div><span className="text-gray-500">บัตรเครดิต:</span> <span className="font-bold text-gray-900">฿{todaySalesBreakdown.credit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                        </div>
+                      </th>
+                    </tr>
                     <tr>
                       <th className="py-4 px-6">รหัสออเดอร์</th>
                       <th className="py-4 px-6">เวลา</th>
