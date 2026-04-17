@@ -22,6 +22,8 @@ export default function Inventory() {
   const [moveQty, setMoveQty] = useState("");
   const [moveLocation, setMoveLocation] = useState("");
   const [isMoving, setIsMoving] = useState(false);
+  const [editStoreItem, setEditStoreItem] = useState(null);
+  const [isEditStoreSaving, setIsEditStoreSaving] = useState(false);
 
   const fetchProducts = () => {
     setIsLoading(true);
@@ -106,7 +108,8 @@ export default function Inventory() {
         name: editItem.Name,
         price: editItem.Price,
         location: editItem.Location,
-        expiryDate: editItem.ExpiryDate || ""
+        expiryDate: editItem.ExpiryDate || "",
+        lowStockThreshold: editItem.LowStockThreshold || 5
       }
     });
     setIsEditSaving(false);
@@ -114,6 +117,27 @@ export default function Inventory() {
       alert("อัปเดตข้อมูลสินค้าเรียบร้อยแล้ว!");
       setEditItem(null);
       fetchProducts();
+    } else {
+      alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
+    }
+  };
+
+  const handleUpdateStoreStock = async (e) => {
+    e.preventDefault();
+    setIsEditStoreSaving(true);
+    const res = await postApi({
+      action: "updateStoreStockDetail",
+      payload: {
+        barcode: editStoreItem.Barcode,
+        storeLocation: editStoreItem.StoreLocation,
+        lowStockThreshold: editStoreItem.LowStockThreshold || 3
+      }
+    });
+    setIsEditStoreSaving(false);
+    if (res.success) {
+      alert("อัปเดตข้อมูลหน่วยหน้าร้านเรียบร้อยแล้ว!");
+      setEditStoreItem(null);
+      fetchStoreStock();
     } else {
       alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
     }
@@ -251,8 +275,16 @@ export default function Inventory() {
                         )}>{item.ExpiryDate || "-"}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-right font-bold text-lg text-primary">
-                      {item.Quantity || 0}
+                    <td className="py-4 px-6 text-right">
+                      <span className={clsx(
+                        "font-bold text-lg",
+                        parseFloat(item.Quantity) <= (parseFloat(item.LowStockThreshold) || 5) ? "text-red-600" : "text-primary"
+                      )}>
+                        {item.Quantity || 0}
+                      </span>
+                      {parseFloat(item.Quantity) <= (parseFloat(item.LowStockThreshold) || 5) && (
+                        <div className="text-xs text-red-500 font-medium">ใกล้หมด!</div>
+                      )}
                     </td>
                     <td className="py-4 px-6 text-center">
                       <div className="flex items-center justify-center gap-1">
@@ -304,6 +336,7 @@ export default function Inventory() {
                   <th className="py-3 px-6">ตำแหน่งหน้าร้าน</th>
                   <th className="py-3 px-6">อัปเดตล่าสุด</th>
                   <th className="py-3 px-6 text-right">จำนวนหน้าร้าน</th>
+                  <th className="py-3 px-6 text-center">แก้ไข</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -329,13 +362,22 @@ export default function Inventory() {
                     <td className="py-4 px-6 text-right">
                       <span className={clsx(
                         "font-bold text-lg",
-                        parseFloat(item.Quantity) <= 3 ? "text-red-600" : "text-emerald-600"
+                        parseFloat(item.Quantity) <= (parseFloat(item.LowStockThreshold) || 3) ? "text-red-600" : "text-emerald-600"
                       )}>
                         {item.Quantity || 0}
                       </span>
-                      {parseFloat(item.Quantity) <= 3 && (
+                      {parseFloat(item.Quantity) <= (parseFloat(item.LowStockThreshold) || 3) && (
                         <div className="text-xs text-red-500 font-medium">ใกล้หมด!</div>
                       )}
+                    </td>
+                    <td className="py-4 px-6 text-center">
+                      <button
+                        onClick={() => setEditStoreItem({ ...item })}
+                        className="p-2 text-emerald-400 hover:text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors"
+                        title="แก้ไขการตั้งค่าหน้าร้าน"
+                      >
+                        <Pencil size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -569,6 +611,15 @@ export default function Inventory() {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">จุดแจ้งเตือนของหมด (ชิ้น)</label>
+                <input
+                  type="number" min="0" required
+                  value={editItem.LowStockThreshold ?? ""}
+                  onChange={e => setEditItem(prev => ({ ...prev, LowStockThreshold: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                />
+              </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setEditItem(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
                   ยกเลิก
@@ -576,6 +627,52 @@ export default function Inventory() {
                 <button type="submit" disabled={isEditSaving} className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50">
                   {isEditSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                   {isEditSaving ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Store Stock Modal */}
+      {editStoreItem && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border-t-4 border-emerald-500">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">การตั้งค่าหน้าร้าน</h3>
+                <p className="text-sm font-medium text-emerald-600 mt-1">{editStoreItem.Name}</p>
+              </div>
+              <button onClick={() => setEditStoreItem(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateStoreStock} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><MapPin size={13} /> โลเคชั่นจัดเก็บ (หน้าร้าน)</label>
+                <input
+                  type="text"
+                  value={editStoreItem.StoreLocation || ""}
+                  onChange={e => setEditStoreItem(prev => ({ ...prev, StoreLocation: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-500 transition-all text-sm bg-gray-50 focus:bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">จุดแจ้งเตือนของใกล้หมด (ชิ้น)</label>
+                <input
+                  type="number" min="0" required
+                  value={editStoreItem.LowStockThreshold ?? ""}
+                  onChange={e => setEditStoreItem(prev => ({ ...prev, LowStockThreshold: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-500 transition-all text-sm bg-gray-50 focus:bg-white"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditStoreItem(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
+                  ยกเลิก
+                </button>
+                <button type="submit" disabled={isEditStoreSaving} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors disabled:opacity-50">
+                  {isEditStoreSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {isEditStoreSaving ? "กำลังบันทึก..." : "อัปเดตหน้าร้าน"}
                 </button>
               </div>
             </form>

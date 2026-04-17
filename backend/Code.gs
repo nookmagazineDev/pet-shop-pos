@@ -12,8 +12,8 @@ function getSpreadsheet() {
 function setup() {
   const ss = getSpreadsheet();
   const sheets = {
-    "Products": ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL"],
-    "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt"],
+    "Products": ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"],
+    "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"]
   };
@@ -164,7 +164,8 @@ function seedData() {
     "L-TEST-" + String(i + 1).padStart(3, "0"), // LotNumber
     expiryDate,
     receiveDate,
-    "" // ImageURL
+    "", // ImageURL
+    5 // LowStockThreshold
   ]);
 
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
@@ -204,6 +205,8 @@ function doPost(e) {
       return receiveGoods(data.payload);
     } else if (action === "updateProduct") {
       return updateProduct(data.payload);
+    } else if (action === "updateStoreStockDetail") {
+      return updateStoreStockDetail(data.payload);
     } else if (action === "moveToStore") {
       return moveToStore(data.payload);
     } else if (action === "openShift") {
@@ -328,7 +331,8 @@ function moveToStore(payload) {
     payload.name || "",
     moveQty,
     payload.storeLocation || "",
-    now
+    now,
+    3 // Default LowStockThreshold for StoreStock
   ]);
   return jsonResponse({ success: true, message: "ย้ายสินค้าเข้าหน้าร้าน (รายการใหม่) เรียบร้อย" });
 }
@@ -368,7 +372,8 @@ function receiveGoods(payload) {
     payload.lotNumber || "",
     payload.expiryDate || "",
     payload.receivingDate || "",
-    "" // ImageURL
+    "", // ImageURL
+    5 // LowStockThreshold
   ]);
   
   return jsonResponse({ success: true, message: "Added new product stock" });
@@ -386,10 +391,28 @@ function updateProduct(payload) {
       if (payload.price     !== undefined) sheet.getRange(i + 1, 3).setValue(parseFloat(payload.price) || 0);
       if (payload.location  !== undefined) sheet.getRange(i + 1, 5).setValue(payload.location);
       if (payload.expiryDate !== undefined) sheet.getRange(i + 1, 7).setValue(payload.expiryDate);
+      if (payload.lowStockThreshold !== undefined) sheet.getRange(i + 1, 10).setValue(parseFloat(payload.lowStockThreshold) || 0);
       return jsonResponse({ success: true, message: "Product updated" });
     }
   }
   return jsonResponse({ error: "Product not found" });
+}
+
+function updateStoreStockDetail(payload) {
+  const sheet = getSpreadsheet().getSheetByName("StoreStock");
+  const data = sheet.getDataRange().getValues();
+  const searchBarcode = String(payload.barcode || "").trim();
+  
+  for (let i = 1; i < data.length; i++) {
+    const rowBarcode = String(data[i][0]).trim();
+    if (rowBarcode === searchBarcode) {
+      if (payload.storeLocation !== undefined) sheet.getRange(i + 1, 4).setValue(payload.storeLocation);
+      if (payload.lowStockThreshold !== undefined) sheet.getRange(i + 1, 6).setValue(parseFloat(payload.lowStockThreshold) || 0);
+      sheet.getRange(i + 1, 5).setValue(new Date()); // update UpdatedAt
+      return jsonResponse({ success: true, message: "Store stock details updated" });
+    }
+  }
+  return jsonResponse({ error: "Store stock not found" });
 }
 
 function openShift(payload) {
@@ -431,11 +454,18 @@ function readSheetData(sheetName) {
   const sheet = getSpreadsheet().getSheetByName(sheetName);
   if (!sheet) return [];
   
-  // Auto-fix headers for Products to ensure valid JSON keys
+  // Auto-fix headers to ensure valid JSON keys
   if (sheetName === "Products") {
-    const requiredHeaders = ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL"];
+    const requiredHeaders = ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
-    if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[3] !== "Quantity") {
+    if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[3] !== "Quantity" || currentHeaderRow[9] !== "LowStockThreshold") {
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
+    }
+  } else if (sheetName === "StoreStock") {
+    const requiredHeaders = ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"];
+    const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
+    if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[5] !== "LowStockThreshold") {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
