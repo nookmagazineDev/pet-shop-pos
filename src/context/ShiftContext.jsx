@@ -20,17 +20,34 @@ export function ShiftProvider({ children }) {
           setIsShiftOpen(false);
           setShiftState("ปิดอยู่");
         }
+      } else {
+        setIsShiftOpen(false);
+        setShiftState("ปิดอยู่");
       }
+      setIsChecking(false);
+    }).catch(() => {
+      setIsShiftOpen(false);
+      setShiftState("ปิดอยู่");
       setIsChecking(false);
     });
   }, []);
+
+  // Instant setter so Shift.jsx can update without waiting for API
+  const markShiftOpen = () => {
+    setIsShiftOpen(true);
+    setShiftState("เปิดอยู่");
+  };
+  const markShiftClosed = () => {
+    setIsShiftOpen(false);
+    setShiftState("ปิดอยู่");
+  };
 
   useEffect(() => {
     refreshShiftStatus();
   }, [refreshShiftStatus]);
 
   return (
-    <ShiftContext.Provider value={{ isShiftOpen, shiftState, isChecking, refreshShiftStatus }}>
+    <ShiftContext.Provider value={{ isShiftOpen, shiftState, isChecking, refreshShiftStatus, markShiftOpen, markShiftClosed }}>
       {children}
     </ShiftContext.Provider>
   );

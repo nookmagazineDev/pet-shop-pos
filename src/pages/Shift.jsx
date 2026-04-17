@@ -5,7 +5,7 @@ import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
 
 export default function Shift() {
-  const { refreshShiftStatus } = useShift();
+  const { markShiftOpen, markShiftClosed } = useShift();
   // Shift state tracking
   const [shiftState, setShiftState] = useState("closed"); // 'closed' or 'open'
   const [initialCash, setInitialCash] = useState("");     // Used for opening shift input
@@ -87,7 +87,7 @@ export default function Shift() {
       setCreditSales(0);
       setExpectedCash(initial);
       setInitialCash(""); 
-      refreshShiftStatus(); // Update global header status immediately
+      markShiftOpen(); // Instantly update global header status
     } else {
       alert("Error: " + (res.error || "Unknown"));
     }
@@ -116,7 +116,7 @@ export default function Shift() {
       alert(`ปิดกะสำเร็จ! ยอดเงินต่าง: ฿${diff.toFixed(2)}`);
       setShiftState("closed");
       setActualCash("");
-      refreshShiftStatus(); // Update global header status immediately
+      markShiftClosed(); // Instantly update global header status
     } else {
       alert("Error: " + (res.error || "Unknown"));
     }
