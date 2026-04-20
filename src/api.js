@@ -1,5 +1,5 @@
 // API Endpoints for Google Sheets Backend
-export const API_URL = "https://script.google.com/macros/s/AKfycby5axPjMtEUB47-6NcrkG-031wmXMm88OJsM9oM09Z8gKov6dnilYHDXcszoR9IOZlx2A/exec";
+export const API_URL = "https://script.google.com/macros/s/AKfycbw55ZnPhKMRIV_y1OoqhJEuhovL4_w8fikg4ARvFx_O7X9zHhiP3clE2F6-hDnXechNCw/exec";
 
 export const fetchApi = async (action) => {
   try {
