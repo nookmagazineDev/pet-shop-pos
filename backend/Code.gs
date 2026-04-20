@@ -537,8 +537,8 @@ function addExpense(payload) {
   // If there's base64 file data, upload it to Drive
   if (payload.fileData && payload.fileName) {
     try {
-      const folderId = "1y8hXWN80EWXavyvrAwYV8bvu_yDKlUi0";
-      const folder = DriveApp.getFolderById(folderId);
+      // Changed to root folder to bypass subfolder permission issues
+      const folder = DriveApp.getRootFolder();
       
       const dataParts = payload.fileData.split(',');
       let base64Data = dataParts[1];
@@ -550,7 +550,7 @@ function addExpense(payload) {
       fileUrl = file.getUrl();
     } catch (e) {
       Logger.log("File Upload Error: " + e.toString());
-      fileUrl = "Upload Failed: " + e.toString();
+      fileUrl = "Upload Failed (V3-New): " + e.toString();
     }
   }
 
