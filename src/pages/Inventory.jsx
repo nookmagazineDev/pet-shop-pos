@@ -20,6 +20,7 @@ export default function Inventory() {
   const [receiveQtyStr, setReceiveQtyStr] = useState("");
   const [receiveLocationStr, setReceiveLocationStr] = useState("");
   const [receiveExpiryStr, setReceiveExpiryStr] = useState("");
+  const [receiveUnitCostStr, setReceiveUnitCostStr] = useState("");
   const [products, setProducts] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [isEditSaving, setIsEditSaving] = useState(false);
@@ -76,6 +77,7 @@ export default function Inventory() {
       barcode: barcodeInput,
       productName: productNameInput,
       quantity: receiveQtyStr,
+      unitCost: receiveUnitCostStr,
       location: receiveLocationStr,
       lotNumber: orderNumberStr, // Use Order Number as Lot Number
       expiryDate: receiveExpiryStr,
@@ -89,6 +91,7 @@ export default function Inventory() {
     setReceiveQtyStr("");
     setReceiveExpiryStr("");
     setReceiveLocationStr("");
+    setReceiveUnitCostStr("");
   };
 
   const handleRemoveReceiveItem = (id) => {
@@ -549,6 +552,18 @@ export default function Inventory() {
                     onChange={(e) => setReceiveExpiryStr(e.target.value)}
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ต้นทุน/ชิ้น (บาท)</label>
+                  <input
+                    type="number"
+                    min="0" step="0.01"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                    placeholder="0.00"
+                    value={receiveUnitCostStr}
+                    onChange={(e) => setReceiveUnitCostStr(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="pt-2">
@@ -593,6 +608,8 @@ export default function Inventory() {
                           <div><span className="text-gray-400">ตู้/คลัง:</span> {item.location}</div>
                           <div><span className="text-gray-400">Lot:</span> {item.lotNumber || "-"}</div>
                           <div><span className="text-gray-400">EXP:</span> {item.expiryDate}</div>
+                          <div><span className="text-gray-400">ต้นทุน/ชิ้น:</span> <span className="text-amber-600 font-semibold">฿{parseFloat(item.unitCost || 0).toLocaleString("th-TH", {minimumFractionDigits: 2})}</span></div>
+                          <div><span className="text-gray-400">รวม:</span> <span className="text-amber-700 font-bold">฿{(parseFloat(item.unitCost || 0) * parseFloat(item.quantity || 0)).toLocaleString("th-TH", {minimumFractionDigits: 2})}</span></div>
                         </div>
                       </div>
                       <button
@@ -607,7 +624,11 @@ export default function Inventory() {
               )}
             </div>
 
-            <div className="p-6 border-t border-gray-100 bg-gray-50/50 mt-auto rounded-b-2xl">
+            <div className="p-4 border-t border-amber-100 bg-amber-50/60">
+              <div className="flex justify-between text-sm font-semibold text-amber-800 mb-3">
+                <span>รวมต้นทุนทั้งสิ้น (Order Total)</span>
+                <span className="text-lg">฿{receiveCart.reduce((s, i) => s + (parseFloat(i.unitCost || 0) * parseFloat(i.quantity || 0)), 0).toLocaleString("th-TH", {minimumFractionDigits: 2})}</span>
+              </div>
               <button
                 onClick={handleReceiveGoods}
                 disabled={isSubmitting || receiveCart.length === 0}

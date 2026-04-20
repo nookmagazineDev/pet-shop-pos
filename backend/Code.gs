@@ -361,11 +361,24 @@ function receiveGoods(payload) {
   let receiptSheet = ss.getSheetByName("InventoryReceipts");
   if (!receiptSheet) {
     receiptSheet = ss.insertSheet("InventoryReceipts");
-    receiptSheet.appendRow(["Timestamp", "Receipt ID", "Company Name", "Order Number", "Barcode", "Product Name", "Quantity", "Location", "Lot Number", "Expiry Date", "Receiving Date"]);
+    receiptSheet.appendRow(["Timestamp", "Receipt ID", "Company Name", "Order Number", "Barcode", "Product Name", "Quantity", "Location", "Lot Number", "Expiry Date", "Receiving Date", "Unit Cost", "Total Cost", "Order Total Cost"]);
+  } else {
+    // Auto-ensure header has cost columns
+    const headers = receiptSheet.getRange(1, 1, 1, 14).getValues()[0];
+    if (headers[11] !== "Unit Cost") {
+      receiptSheet.getRange(1, 12).setValue("Unit Cost");
+      receiptSheet.getRange(1, 13).setValue("Total Cost");
+      receiptSheet.getRange(1, 14).setValue("Order Total Cost");
+    }
   }
 
   const receiptId = "RCV-" + new Date().getTime();
   const timestamp = new Date();
+
+  // Compute order total cost
+  const orderTotalCost = items.reduce((sum, item) => {
+    return sum + (parseFloat(item.unitCost || 0) * parseFloat(item.quantity || 0));
+  }, 0);
 
   let updatedCount = 0;
   let addedCount = 0;
@@ -386,7 +399,10 @@ function receiveGoods(payload) {
       item.location || "",
       item.lotNumber || "",
       item.expiryDate || "",
-      item.receivingDate || ""
+      item.receivingDate || "",
+      parseFloat(item.unitCost || 0),
+      parseFloat(item.unitCost || 0) * (parseFloat(item.quantity) || 0),
+      orderTotalCost
     ]);
 
     let found = false;
