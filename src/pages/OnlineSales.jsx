@@ -101,18 +101,14 @@ export default function OnlineSales() {
     }
   };
 
-  const handleConfirmPayment = async () => {
-    if (!payModal) return;
-    const platform = selectedPlatform === "อื่นๆ" ? customPlatform.trim() : selectedPlatform;
-    if (!platform) { alert("กรุณาระบุชื่อแพลตฟอร์ม"); return; }
-    setIsPaying(true);
+  const handleConfirmPayment = async (orderId, platform) => {
+    setIsPaying(orderId); // store orderId as loading indicator
     const res = await postApi({
       action: "updateTransactionPayment",
-      payload: { orderId: payModal.orderId, paymentMethod: platform }
+      payload: { orderId, paymentMethod: platform }
     });
-    setIsPaying(false);
+    setIsPaying(null);
     if (res.success) {
-      setPayModal(null);
       loadPendingOrders();
     } else {
       alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
@@ -299,10 +295,12 @@ export default function OnlineSales() {
                     </div>
                   </div>
                   <button
-                    onClick={() => { setPayModal({ orderId: order.OrderID }); setSelectedPlatform(orderPlatform); setCustomPlatform(""); }}
-                    className="mt-3 w-full py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors"
+                    onClick={() => handleConfirmPayment(order.OrderID, platform)}
+                    disabled={isPaying === order.OrderID}
+                    className="mt-3 w-full py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors disabled:opacity-60"
                   >
-                    <CreditCard size={15} /> ยืนยันชำระเงิน
+                    {isPaying === order.OrderID ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />}
+                    {isPaying === order.OrderID ? "กำลังบันทึก..." : "ยืนยันชำระเงิน"}
                   </button>
                 </div>
               );
@@ -311,53 +309,6 @@ export default function OnlineSales() {
         </div>
       </div>
 
-      {/* Payment Platform Modal */}
-      {payModal && (
-        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border-t-4 border-emerald-500">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <h3 className="text-lg font-bold text-gray-900">เลือกช่องทางชำระเงิน</h3>
-              <button onClick={() => setPayModal(null)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                {PLATFORMS.map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setSelectedPlatform(p)}
-                    className={clsx(
-                      "py-3 px-4 rounded-xl text-sm font-semibold border-2 transition-all",
-                      selectedPlatform === p ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-gray-200 text-gray-600 hover:border-emerald-300"
-                    )}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-              {selectedPlatform === "อื่นๆ" && (
-                <input
-                  type="text"
-                  placeholder="ระบุชื่อแพลตฟอร์ม..."
-                  value={customPlatform}
-                  onChange={e => setCustomPlatform(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-500 transition-all text-sm"
-                />
-              )}
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setPayModal(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium">ยกเลิก</button>
-                <button
-                  onClick={handleConfirmPayment}
-                  disabled={isPaying}
-                  className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                >
-                  {isPaying ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
-                  {isPaying ? "กำลังบันทึก..." : "ยืนยันชำระแล้ว"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
