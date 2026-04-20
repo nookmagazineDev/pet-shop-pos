@@ -34,7 +34,7 @@ export default function OnlineSales() {
     setIsLoadingOrders(true);
     fetchApi("getTransactions").then(data => {
       const pending = Array.isArray(data)
-        ? data.filter(tx => tx.PaymentMethod === "รอชำระ").reverse()
+        ? data.filter(tx => tx.PaymentMethod?.includes("รอชำระ")).reverse()
         : [];
       setPendingOrders(pending);
       setIsLoadingOrders(false);
@@ -87,7 +87,7 @@ export default function OnlineSales() {
       payload: {
         totalAmount: total,
         tax: tax,
-        paymentMethod: "รอชำระ",
+        paymentMethod: `${orderPlatform} รอชำระ`,
         cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name, qty: c.qty, price: c.price }))
       }
     });
@@ -285,7 +285,7 @@ export default function OnlineSales() {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="font-bold text-gray-900">฿{parseFloat(order.TotalAmount || 0).toLocaleString()}</div>
-                      <span className="inline-block mt-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">รอชำระ</span>
+                      <span className="inline-block mt-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">{order.PaymentMethod}</span>
                     </div>
                   </div>
                   <button
