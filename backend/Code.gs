@@ -628,6 +628,15 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
+  } else if (sheetName === "Transactions") {
+    const requiredHeaders = ["OrderID", "Date", "TotalAmount", "Status", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform"];
+    const currentHeaderRow = sheet.getRange(1, 1, 1, 1).getValues()[0][0];
+    // If the first row is actually a transaction (starts with ORD) or doesn't match our strict header, insert a true header row.
+    if (String(currentHeaderRow).indexOf("ORD-") === 0) {
+      sheet.insertRowBefore(1);
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
+    }
   }
 
   const data = sheet.getDataRange().getValues();

@@ -169,7 +169,7 @@ export default function Accounting() {
                   <tr><td colSpan="5" className="py-8 text-center text-gray-400">ยังไม่มีรายการ</td></tr>
                 ) : transactions.map((tx, idx) => (
                   <tr key={idx} className="hover:bg-emerald-50/30 transition-colors group">
-                    <td className="py-4 px-6 text-sm text-gray-600">{new Date(tx.Timestamp || tx[1]).toLocaleString("th-TH")}</td>
+                    <td className="py-4 px-6 text-sm text-gray-600">{new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH")}</td>
                     <td className="py-4 px-6 text-sm font-medium text-gray-900">{tx.OrderID || tx[0]}</td>
                     <td className="py-4 px-6 text-right font-bold text-emerald-600">
                       ฿{parseFloat(tx.TotalAmount || tx[2]).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
@@ -382,7 +382,7 @@ export default function Accounting() {
                   </div>
                   <div className="w-1/2 pl-4 text-right space-y-1">
                     <p><span className="font-semibold">เลขที่อ้างอิง:</span> {selectedTx.OrderID || selectedTx[0]}</p>
-                    <p><span className="font-semibold">วันที่:</span> {new Date(selectedTx.Timestamp || selectedTx[1]).toLocaleString("th-TH")}</p>
+                    <p><span className="font-semibold">วันที่:</span> {new Date(selectedTx.Date || selectedTx.Timestamp || selectedTx[1]).toLocaleString("th-TH")}</p>
                     <p><span className="font-semibold">ช่องทางชำระ:</span> {selectedTx.PaymentMethod || selectedTx[4]}</p>
                   </div>
                 </div>
