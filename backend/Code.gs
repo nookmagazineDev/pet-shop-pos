@@ -190,6 +190,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Transactions"));
   } else if (action === "getExpenses") {
     return jsonResponse(readSheetData("Expenses"));
+  } else if (action === "getCustomers") {
+    return jsonResponse(readSheetData("Customers"));
   }
   
   return jsonResponse({ error: "Invalid action" });
@@ -219,6 +221,8 @@ function doPost(e) {
       return updateTransactionPayment(data.payload);
     } else if (action === "addExpense") {
       return addExpense(data.payload);
+    } else if (action === "saveCustomer") {
+      return saveCustomer(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -559,6 +563,49 @@ function addExpense(payload) {
   ]);
 
   return jsonResponse({ success: true, message: "Expense added successfully", fileUrl: fileUrl });
+}
+
+function saveCustomer(payload) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("Customers");
+  if (!sheet) {
+    sheet = ss.insertSheet("Customers");
+    sheet.appendRow(["Name", "Phone", "Address", "TaxID", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"]);
+  }
+
+  const data = sheet.getDataRange().getValues();
+  let found = false;
+  
+  for (let i = 1; i < data.length; i++) {
+    const rowName = String(data[i][0]).trim();
+    if (rowName === String(payload.name).trim()) {
+      // Update
+      if (payload.name) sheet.getRange(i + 1, 1).setValue(payload.name);
+      if (payload.phone) sheet.getRange(i + 1, 2).setValue(payload.phone);
+      if (payload.address) sheet.getRange(i + 1, 3).setValue(payload.address);
+      if (payload.taxId) sheet.getRange(i + 1, 4).setValue(payload.taxId);
+      if (payload.lastInvoiceId) sheet.getRange(i + 1, 5).setValue(payload.lastInvoiceId);
+      if (payload.lastInvoiceDate) sheet.getRange(i + 1, 6).setValue(payload.lastInvoiceDate);
+      sheet.getRange(i + 1, 8).setValue(new Date()); // UpdatedAt
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    sheet.appendRow([
+      payload.name || "",
+      payload.phone || "",
+      payload.address || "",
+      payload.taxId || "",
+      payload.lastInvoiceId || "",
+      payload.lastInvoiceDate || "",
+      new Date(),
+      new Date()
+    ]);
+  }
+
+  return jsonResponse({ success: true, message: "Customer saved" });
 }
 
 // Utility: Read Sheet Data into Array of Objects

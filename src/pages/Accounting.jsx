@@ -7,6 +7,7 @@ export default function Accounting() {
   const [activeTab, setActiveTab] = useState("income");
   const [transactions, setTransactions] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Expense form state
@@ -29,6 +30,8 @@ export default function Accounting() {
     if (activeTab === "income") {
       const data = await fetchApi("getTransactions");
       setTransactions(Array.isArray(data) ? data.reverse() : []);
+      const custData = await fetchApi("getCustomers");
+      setCustomers(Array.isArray(custData) ? custData : []);
     } else {
       const data = await fetchApi("getExpenses");
       setExpenses(Array.isArray(data) ? data.reverse() : []);
@@ -89,8 +92,24 @@ export default function Accounting() {
     }
   };
 
-  const handlePrintTaxInvoice = () => {
-    window.print();
+  const handlePrintTaxInvoice = async () => {
+    if (customerInfo.name) {
+      postApi({
+        action: "saveCustomer",
+        payload: {
+          name: customerInfo.name,
+          phone: customerInfo.phone,
+          address: customerInfo.address,
+          taxId: customerInfo.taxId,
+          lastInvoiceId: selectedTx.OrderID || selectedTx[0] || "",
+          lastInvoiceDate: new Date().toISOString()
+        }
+      });
+    }
+    // Set timeout to allow React to render any UI state, though optional.
+    setTimeout(() => {
+      window.print();
+    }, 100);
   };
 
   return (
@@ -318,7 +337,20 @@ export default function Accounting() {
               <div className="mb-6 grid grid-cols-2 gap-4 border-b border-gray-200 pb-6 print:hidden">
                 <div className="col-span-2 text-sm text-gray-500 font-medium mb-2">กรอกข้อมูลลูกค้า (ถ้ามี)</div>
                 <div className="col-span-2 sm:col-span-1">
-                  <input type="text" placeholder="ชื่อลูกค้า / บริษัท" className="w-full px-3 py-2 border rounded-lg" value={customerInfo.name} onChange={e => setCustomerInfo({...customerInfo, name: e.target.value})} />
+                  <input type="text" list="customers-list" placeholder="ชื่อลูกค้า / บริษัท" className="w-full px-3 py-2 border rounded-lg" value={customerInfo.name} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      const match = customers.find(c => c.Name === val);
+                      if (match) {
+                        setCustomerInfo({ name: match.Name, phone: match.Phone || "", address: match.Address || "", taxId: match.TaxID || "" });
+                      } else {
+                        setCustomerInfo({...customerInfo, name: val});
+                      }
+                    }} 
+                  />
+                  <datalist id="customers-list">
+                    {customers.map((c, i) => <option key={i} value={c.Name} />)}
+                  </datalist>
                 </div>
                 <div className="col-span-2 sm:col-span-1">
                   <input type="text" placeholder="เบอร์โทรศัพท์" className="w-full px-3 py-2 border rounded-lg" value={customerInfo.phone} onChange={e => setCustomerInfo({...customerInfo, phone: e.target.value})} />
@@ -349,9 +381,9 @@ export default function Accounting() {
                     <p><span className="font-semibold">เลขประจำตัวผู้เสียภาษี:</span> {customerInfo.taxId || "-"}</p>
                   </div>
                   <div className="w-1/2 pl-4 text-right space-y-1">
-                    <p><span className="font-semibold">เลขที่อ้างอิง:</span> {selectedTx[0]}</p>
-                    <p><span className="font-semibold">วันที่:</span> {new Date(selectedTx[1]).toLocaleString("th-TH")}</p>
-                    <p><span className="font-semibold">ช่องทางชำระ:</span> {selectedTx[4]}</p>
+                    <p><span className="font-semibold">เลขที่อ้างอิง:</span> {selectedTx.OrderID || selectedTx[0]}</p>
+                    <p><span className="font-semibold">วันที่:</span> {new Date(selectedTx.Timestamp || selectedTx[1]).toLocaleString("th-TH")}</p>
+                    <p><span className="font-semibold">ช่องทางชำระ:</span> {selectedTx.PaymentMethod || selectedTx[4]}</p>
                   </div>
                 </div>
 
@@ -368,7 +400,7 @@ export default function Accounting() {
                   <tbody className="divide-y divide-dashed divide-gray-200">
                     {(() => {
                       try {
-                        const cart = JSON.parse(selectedTx[5]);
+                        const cart = JSON.parse(selectedTx.CartDetails || selectedTx[5]);
                         return cart.map((item, i) => (
                           <tr key={i}>
                             <td className="py-2 px-2">{i+1}</td>
@@ -393,15 +425,15 @@ export default function Accounting() {
                   <div className="flex justify-between mb-1">
                     <span>มูลค่าสินค้าที่ต้องเสียภาษี (บาท)</span>
                     {/* Reverse Calculate VAT for Demo */}
-                    <span>{(parseFloat(selectedTx[2]) * 100 / 107).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
+                    <span>{(parseFloat(selectedTx.TotalAmount || selectedTx[2]) * 100 / 107).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
                   </div>
                   <div className="flex justify-between mb-1">
                     <span>ภาษีมูลค่าเพิ่ม (7%)</span>
-                    <span>{(parseFloat(selectedTx[2]) * 7 / 107).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
+                    <span>{(parseFloat(selectedTx.TotalAmount || selectedTx[2]) * 7 / 107).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
                   </div>
                   <div className="flex justify-between font-bold text-base mt-2 pt-2 border-t border-gray-800">
                     <span>จำนวนเงินรวมทั้งสิ้น (บาท)</span>
-                    <span>{parseFloat(selectedTx[2]).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
+                    <span>{parseFloat(selectedTx.TotalAmount || selectedTx[2]).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
                   </div>
                 </div>
 
