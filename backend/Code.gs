@@ -188,6 +188,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Shifts"));
   } else if (action === "getTransactions") {
     return jsonResponse(readSheetData("Transactions"));
+  } else if (action === "getExpenses") {
+    return jsonResponse(readSheetData("Expenses"));
   }
   
   return jsonResponse({ error: "Invalid action" });
@@ -215,6 +217,8 @@ function doPost(e) {
       return closeShift(data.payload);
     } else if (action === "updateTransactionPayment") {
       return updateTransactionPayment(data.payload);
+    } else if (action === "addExpense") {
+      return addExpense(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -509,10 +513,52 @@ function updateTransactionPayment(payload) {
     const rowOrderId = String(data[i][0]).trim();
     if (rowOrderId === searchOrderId) {
       sheet.getRange(i + 1, 5).setValue(newPaymentMethod); // Col 5 = PaymentMethod
-      return jsonResponse({ success: true, message: "Payment method updated" });
+      return jsonResponse({ success: true, message: "Payment status updated" });
     }
   }
-  return jsonResponse({ error: "Order not found" });
+  
+  return jsonResponse({ error: "Transaction not found" });
+}
+
+function addExpense(payload) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("Expenses");
+  if (!sheet) {
+    sheet = ss.insertSheet("Expenses");
+    sheet.appendRow(["Timestamp", "Date", "Description", "Category", "Amount", "ReceiptFileURL"]);
+  }
+
+  let fileUrl = "";
+
+  // If there's base64 file data, upload it to Drive
+  if (payload.fileData && payload.fileName) {
+    try {
+      const folderId = "1y8hXWN80EWXavyvrAwYV8bvu_yDKlUi0";
+      const folder = DriveApp.getFolderById(folderId);
+      
+      const dataParts = payload.fileData.split(',');
+      let base64Data = dataParts[1];
+      let mimeType = dataParts[0].split(':')[1].split(';')[0];
+      
+      const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType, payload.fileName);
+      const file = folder.createFile(blob);
+      fileUrl = file.getUrl();
+    } catch (e) {
+      Logger.log("File Upload Error: " + e.toString());
+      fileUrl = "Upload Failed: " + e.toString();
+    }
+  }
+
+  sheet.appendRow([
+    new Date(),
+    payload.date || new Date(),
+    payload.description || "",
+    payload.category || "อื่นๆ",
+    parseFloat(payload.amount) || 0,
+    fileUrl
+  ]);
+
+  return jsonResponse({ success: true, message: "Expense added successfully", fileUrl: fileUrl });
 }
 
 // Utility: Read Sheet Data into Array of Objects
