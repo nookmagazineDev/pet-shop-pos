@@ -546,6 +546,7 @@ function addExpense(payload) {
       
       const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType, payload.fileName);
       const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       fileUrl = file.getUrl();
     } catch (e) {
       Logger.log("File Upload Error: " + e.toString());
