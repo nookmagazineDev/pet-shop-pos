@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { fetchApi, postApi } from "../api";
-import { Wallet, FileText, Printer, CheckCircle, Search, FileUp, Loader2, RefreshCw } from "lucide-react";
+import { Wallet, FileText, Printer, CheckCircle, Search, FileUp, Loader2, RefreshCw, X } from "lucide-react";
 import clsx from "clsx";
 
 export default function Accounting() {
@@ -22,7 +22,7 @@ export default function Accounting() {
   // Invoice modal
   const [invoiceModal, setInvoiceModal] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
-  const [customerInfo, setCustomerInfo] = useState({ name: "", address: "", taxId: "" });
+  const [customerInfo, setCustomerInfo] = useState({ name: "", address: "", taxId: "", phone: "" });
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -317,8 +317,11 @@ export default function Accounting() {
               {/* Form Input for Customer Details (Hidden while printing) */}
               <div className="mb-6 grid grid-cols-2 gap-4 border-b border-gray-200 pb-6 print:hidden">
                 <div className="col-span-2 text-sm text-gray-500 font-medium mb-2">กรอกข้อมูลลูกค้า (ถ้ามี)</div>
-                <div className="col-span-2">
+                <div className="col-span-2 sm:col-span-1">
                   <input type="text" placeholder="ชื่อลูกค้า / บริษัท" className="w-full px-3 py-2 border rounded-lg" value={customerInfo.name} onChange={e => setCustomerInfo({...customerInfo, name: e.target.value})} />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <input type="text" placeholder="เบอร์โทรศัพท์" className="w-full px-3 py-2 border rounded-lg" value={customerInfo.phone} onChange={e => setCustomerInfo({...customerInfo, phone: e.target.value})} />
                 </div>
                 <div className="col-span-2">
                   <textarea placeholder="ที่อยู่..." className="w-full px-3 py-2 border rounded-lg h-16" value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})}></textarea>
@@ -341,6 +344,7 @@ export default function Accounting() {
                 <div className="flex justify-between items-start mb-6 text-sm">
                   <div className="w-1/2 pr-4 space-y-1">
                     <p><span className="font-semibold">ชื่อลูกค้า:</span> {customerInfo.name || "-"}</p>
+                    <p><span className="font-semibold">เบอร์โทรศัพท์:</span> {customerInfo.phone || "-"}</p>
                     <p><span className="font-semibold">ที่อยู่:</span> {customerInfo.address || "-"}</p>
                     <p><span className="font-semibold">เลขประจำตัวผู้เสียภาษี:</span> {customerInfo.taxId || "-"}</p>
                   </div>
