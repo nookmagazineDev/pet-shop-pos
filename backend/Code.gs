@@ -664,3 +664,13 @@ function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+// Run this function manually from the Apps Script IDE to fix "Access Denied" Drive authorization issues.
+function authorizeDrive() {
+  try {
+    const folder = DriveApp.getFolderById("1y8hXWN80EWXavyvrAwYV8bvu_yDKlUi0");
+    Logger.log("✅ Authorization Successful! You have access to folder: " + folder.getName());
+  } catch (e) {
+    Logger.log("❌ Access Error: " + e.toString());
+  }
+}
