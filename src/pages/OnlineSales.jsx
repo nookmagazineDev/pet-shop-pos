@@ -18,6 +18,7 @@ export default function OnlineSales() {
   const [isPaying, setIsPaying] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState(PLATFORMS[0]);
   const [customPlatform, setCustomPlatform] = useState("");
+  const [orderPlatform, setOrderPlatform] = useState(PLATFORMS[0]);
   const barcodeRef = useRef(null);
 
   useEffect(() => {
@@ -136,6 +137,28 @@ export default function OnlineSales() {
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         {/* LEFT: Cart Builder */}
         <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Platform Selector */}
+          <div className="p-3 border-b border-gray-100 bg-violet-50/50">
+            <p className="text-xs font-medium text-gray-500 mb-2">แพลตฟอร์มออนไลน์:</p>
+            <div className="flex flex-wrap gap-2">
+              {PLATFORMS.map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setOrderPlatform(p)}
+                  className={clsx(
+                    "px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all",
+                    orderPlatform === p
+                      ? "border-violet-500 bg-violet-600 text-white shadow-sm"
+                      : "border-gray-200 bg-white text-gray-600 hover:border-violet-300"
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Search */}
           <div className="p-4 border-b border-gray-100 bg-gray-50/50 relative">
             <form onSubmit={handleScan} className="flex items-center gap-2 relative z-10">
@@ -221,7 +244,7 @@ export default function OnlineSales() {
               className="w-full py-3.5 bg-violet-600 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200 disabled:opacity-50 disabled:shadow-none"
             >
               {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-              {isSaving ? "กำลังบันทึก..." : "บันทึกรายการ (รอชำระ)"}
+              {isSaving ? "กำลังบันทึก..." : `บันทึก (${orderPlatform}) • รอชำระ`}
             </button>
           </div>
         </div>
@@ -266,7 +289,7 @@ export default function OnlineSales() {
                     </div>
                   </div>
                   <button
-                    onClick={() => { setPayModal({ orderId: order.OrderID }); setSelectedPlatform(PLATFORMS[0]); setCustomPlatform(""); }}
+                    onClick={() => { setPayModal({ orderId: order.OrderID }); setSelectedPlatform(orderPlatform); setCustomPlatform(""); }}
                     className="mt-3 w-full py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors"
                   >
                     <CreditCard size={15} /> ยืนยันชำระเงิน
