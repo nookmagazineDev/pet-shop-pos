@@ -19,7 +19,6 @@ export default function Inventory() {
   const [orderNumberStr, setOrderNumberStr] = useState("");
   const [receiveQtyStr, setReceiveQtyStr] = useState("");
   const [receiveLocationStr, setReceiveLocationStr] = useState("");
-  const [receiveLotStr, setReceiveLotStr] = useState("");
   const [receiveExpiryStr, setReceiveExpiryStr] = useState("");
   const [products, setProducts] = useState([]);
   const [editItem, setEditItem] = useState(null);
@@ -68,8 +67,8 @@ export default function Inventory() {
 
   const handleAddReceiveItem = (e) => {
     e.preventDefault();
-    if (!productNameInput || !receiveQtyStr || !receiveLocationStr || !receiveExpiryStr) {
-      alert("กรุณากรอกข้อมูลบังคับให้ครบ (ชื่อสินค้า, จำนวน, โลเคชั่น, วันหมดอายุ)");
+    if (!productNameInput || !receiveQtyStr || !receiveLocationStr || !receiveExpiryStr || !orderNumberStr) {
+      alert("กรุณากรอกข้อมูลบังคับให้ครบ (เลขที่ออเดอร์, ชื่อสินค้า, จำนวน, โลเคชั่น, วันหมดอายุ)");
       return;
     }
     const newItem = {
@@ -78,7 +77,7 @@ export default function Inventory() {
       productName: productNameInput,
       quantity: receiveQtyStr,
       location: receiveLocationStr,
-      lotNumber: receiveLotStr,
+      lotNumber: orderNumberStr, // Use Order Number as Lot Number
       expiryDate: receiveExpiryStr,
       receivingDate: new Date().toISOString().split('T')[0]
     };
@@ -88,7 +87,6 @@ export default function Inventory() {
     setBarcodeInput("");
     setProductNameInput("");
     setReceiveQtyStr("");
-    setReceiveLotStr("");
     setReceiveExpiryStr("");
     setReceiveLocationStr("");
   };
@@ -549,17 +547,6 @@ export default function Inventory() {
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
                     value={receiveExpiryStr}
                     onChange={(e) => setReceiveExpiryStr(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">เลข Lot (ใส่ถ้ามี)</label>
-                  <input
-                    type="text"
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
-                    placeholder="L-202310-01"
-                    value={receiveLotStr}
-                    onChange={(e) => setReceiveLotStr(e.target.value)}
                   />
                 </div>
               </div>
