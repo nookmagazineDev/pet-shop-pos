@@ -340,7 +340,8 @@ function moveToStore(payload) {
 }
 
 function receiveGoods(payload) {
-  const sheet = getSpreadsheet().getSheetByName("Products");
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName("Products");
   const data = sheet.getDataRange().getValues();
   const items = payload.items || [];
   
@@ -348,12 +349,38 @@ function receiveGoods(payload) {
     return jsonResponse({ error: "No items provided" });
   }
 
+  // Handle InventoryReceipts sheet tracking
+  let receiptSheet = ss.getSheetByName("InventoryReceipts");
+  if (!receiptSheet) {
+    receiptSheet = ss.insertSheet("InventoryReceipts");
+    receiptSheet.appendRow(["Timestamp", "Receipt ID", "Company Name", "Order Number", "Barcode", "Product Name", "Quantity", "Location", "Lot Number", "Expiry Date", "Receiving Date"]);
+  }
+
+  const receiptId = "RCV-" + new Date().getTime();
+  const timestamp = new Date();
+
   let updatedCount = 0;
   let addedCount = 0;
 
   items.forEach(item => {
     const searchBarcode = String(item.barcode || "").trim();
     const searchName = String(item.productName || "").trim();
+    
+    // Log to receipt history
+    receiptSheet.appendRow([
+      timestamp,
+      receiptId,
+      payload.companyName || "",
+      payload.orderNumber || "",
+      searchBarcode,
+      searchName,
+      parseFloat(item.quantity) || 0,
+      item.location || "",
+      item.lotNumber || "",
+      item.expiryDate || "",
+      item.receivingDate || ""
+    ]);
+
     let found = false;
 
     // Attempt to update existing first
@@ -371,8 +398,6 @@ function receiveGoods(payload) {
         if (item.lotNumber) sheet.getRange(i + 1, 6).setValue(item.lotNumber); // LotNumber
         if (item.expiryDate) sheet.getRange(i + 1, 7).setValue(item.expiryDate); // ExpiryDate
         if (item.receivingDate) sheet.getRange(i + 1, 8).setValue(item.receivingDate); // ReceivingDate
-        if (payload.companyName) sheet.getRange(i + 1, 11).setValue(payload.companyName); // CompanyName
-        if (payload.orderNumber) sheet.getRange(i + 1, 12).setValue(payload.orderNumber); // OrderNumber
         
         found = true;
         updatedCount++;
@@ -392,15 +417,13 @@ function receiveGoods(payload) {
         item.expiryDate || "",
         item.receivingDate || "",
         "", // ImageURL
-        5, // LowStockThreshold
-        payload.companyName || "", // CompanyName
-        payload.orderNumber || ""  // OrderNumber
+        5 // LowStockThreshold
       ]);
       addedCount++;
     }
   });
   
-  return jsonResponse({ success: true, message: `Stock updated: ${updatedCount} items, Added: ${addedCount} items` });
+  return jsonResponse({ success: true, message: `Stock updated: ${updatedCount} items, Added: ${addedCount} items. Logged under Receipt ${receiptId}` });
 }
 
 function updateProduct(payload) {
