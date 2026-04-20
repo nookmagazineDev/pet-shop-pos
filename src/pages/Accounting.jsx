@@ -293,18 +293,18 @@ export default function Accounting() {
                     <tr><td colSpan="5" className="py-8 text-center text-gray-400">ยังไม่มีประวัติรายจ่าย</td></tr>
                   ) : expenses.map((exp, idx) => (
                     <tr key={idx} className="hover:bg-rose-50/30 transition-colors">
-                      {/* Note: Array mapped directly from Sheet row */}
-                      <td className="py-4 px-6 text-sm text-gray-600">{new Date(exp[1] || exp[0]).toLocaleDateString("th-TH")}</td>
-                      <td className="py-4 px-6 text-sm font-medium text-gray-900">{exp[2]}</td>
+                      {/* Note: Auto-mapped from Sheet headers to Object properties */}
+                      <td className="py-4 px-6 text-sm text-gray-600">{new Date(exp.Date || exp.Timestamp || exp[1] || exp[0]).toLocaleDateString("th-TH")}</td>
+                      <td className="py-4 px-6 text-sm font-medium text-gray-900">{exp.Description || exp[2]}</td>
                       <td className="py-4 px-6 text-sm text-gray-500">
-                        <span className="bg-gray-100 px-2 py-1 rounded-md text-xs">{exp[3]}</span>
+                        <span className="bg-gray-100 px-2 py-1 rounded-md text-xs">{exp.Category || exp[3]}</span>
                       </td>
                       <td className="py-4 px-6 text-right font-bold text-rose-600">
-                        ฿{parseFloat(exp[4]).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                        ฿{parseFloat(exp.Amount || exp[4]).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
                       </td>
                       <td className="py-4 px-6 text-center">
-                        {exp[5] ? (
-                          <a href={exp[5]} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-800 underline text-xs font-medium">ดูเอกสาร</a>
+                        {exp.ReceiptFileURL || exp[5] ? (
+                          <a href={exp.ReceiptFileURL || exp[5]} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-800 underline text-xs font-medium">ดูเอกสาร</a>
                         ) : "-"}
                       </td>
                     </tr>
