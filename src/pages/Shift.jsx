@@ -15,7 +15,8 @@ export default function Shift() {
   // Real aggregated data
   const [currentInitialCash, setCurrentInitialCash] = useState(0);
   const [cashSales, setCashSales] = useState(0);
-  const [transferSales, setTransferSales] = useState(0);
+  const [transferDirect, setTransferDirect] = useState(0);
+  const [transferQR, setTransferQR] = useState(0);
   const [creditSales, setCreditSales] = useState(0);
   const [onlinePaid, setOnlinePaid] = useState({});
   const [onlinePending, setOnlinePending] = useState({});
@@ -36,7 +37,8 @@ export default function Shift() {
           setCurrentInitialCash(initial);
           
           let cSales = 0;
-          let tSales = 0;
+          let tDirect = 0;
+          let tQR = 0;
           let crSales = 0;
           let oPaid = {};
           let oPending = {};
@@ -53,7 +55,8 @@ export default function Shift() {
                 const method = tx.PaymentMethod || "";
                 
                 if (method === "เงินสด") cSales += amt;
-                else if (method === "เงินโอน" || method === "โอนเข้าบัญชี" || method === "สแกน QR") tSales += amt;
+                else if (method === "เงินโอน" || method === "โอนเข้าบัญชี") tDirect += amt;
+                else if (method === "สแกน QR") tQR += amt;
                 else if (method === "บัตรเครดิต") crSales += amt;
                 else {
                   // Assume other methods are online platforms
@@ -69,7 +72,8 @@ export default function Shift() {
           }
           
           setCashSales(cSales);
-          setTransferSales(tSales);
+          setTransferDirect(tDirect);
+          setTransferQR(tQR);
           setCreditSales(crSales);
           setOnlinePaid(oPaid);
           setOnlinePending(oPending);
@@ -100,7 +104,8 @@ export default function Shift() {
       const initial = parseFloat(initialCash);
       setCurrentInitialCash(initial);
       setCashSales(0);
-      setTransferSales(0);
+      setTransferDirect(0);
+      setTransferQR(0);
       setCreditSales(0);
       setExpectedCash(initial);
       setInitialCash(""); 
@@ -229,8 +234,12 @@ export default function Shift() {
               <span className="font-medium text-green-700">฿{cashSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75">
-              <span>ยอดขายเงินโอน (Transfer)</span>
-              <span>฿{transferSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span>ยอดขายโอนเข้าบัญชี (Transfer)</span>
+              <span>฿{transferDirect.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75">
+              <span>ยอดขายสแกน QR (QR Code)</span>
+              <span>฿{transferQR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75 pb-1">
               <span>ยอดขายบัตรเครดิต (Credit)</span>
