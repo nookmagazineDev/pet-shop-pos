@@ -368,9 +368,10 @@ export default function Accounting() {
                 <div className="text-center mb-6 border-b pb-4 border-gray-800">
                   <h1 className="text-2xl font-bold mb-1">ใบกำกับภาษี / ใบเสร็จรับเงิน</h1>
                   <p className="text-sm">TAX INVOICE / RECEIPT</p>
-                  <p className="text-sm mt-2 font-bold">บริษัท สัตว์เลี้ยงแสนรัก จำกัด</p>
-                  <p className="text-xs text-gray-600">123 ถ.สุขุมวิท พระโขนง กรุงเทพฯ 10110</p>
-                  <p className="text-xs text-gray-600">เลขประจำตัวผู้เสียภาษี: 0105555555555</p>
+                  <p className="text-sm mt-2 font-bold">บริษัทมะมามี (1989) จำกัด</p>
+                  <p className="text-xs text-gray-600">100/116 พุทธมณฑลสาย 2 ซอย 24 แขวงศาลาธรรมสพน์ เขตทวีวัฒนา กรุงเทพมหานคร 10170</p>
+                  <p className="text-xs text-gray-600">โทร : 0853638383</p>
+                  <p className="text-xs text-gray-600">เลขประจำตัวผู้เสียภาษี 0105565009021 สาขา 00001</p>
                 </div>
 
                 <div className="flex justify-between items-start mb-6 text-sm">

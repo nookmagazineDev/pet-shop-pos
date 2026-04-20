@@ -20,7 +20,7 @@ export default function Layout() {
       {/* Sidebar (Desktop) */}
       <aside className="w-64 bg-white border-r border-gray-200 flex-col shadow-sm hidden md:flex shrink-0">
         <div className="h-16 flex items-center px-6 border-b border-gray-200 shrink-0">
-          <h1 className="text-xl font-bold text-primary">PetShop Next</h1>
+          <h1 className="text-lg font-bold text-primary">บริษัทมะมามี (1989) จำกัด</h1>
         </div>
         <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => (
