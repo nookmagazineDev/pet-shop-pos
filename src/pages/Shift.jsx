@@ -17,6 +17,8 @@ export default function Shift() {
   const [cashSales, setCashSales] = useState(0);
   const [transferSales, setTransferSales] = useState(0);
   const [creditSales, setCreditSales] = useState(0);
+  const [onlinePaid, setOnlinePaid] = useState({});
+  const [onlinePending, setOnlinePending] = useState({});
   const [expectedCash, setExpectedCash] = useState(0); 
 
   useEffect(() => {
@@ -36,6 +38,8 @@ export default function Shift() {
           let cSales = 0;
           let tSales = 0;
           let crSales = 0;
+          let oPaid = {};
+          let oPending = {};
           
           const openTime = new Date(lastShift.OpenTime);
           
@@ -46,9 +50,20 @@ export default function Shift() {
               // Only sum transactions that occurred during this open shift
               if (txTime >= openTime) {
                 const amt = parseFloat(tx.TotalAmount) || 0;
-                if (tx.PaymentMethod === "เงินสด") cSales += amt;
-                else if (tx.PaymentMethod === "เงินโอน") tSales += amt;
-                else if (tx.PaymentMethod === "บัตรเครดิต") crSales += amt;
+                const method = tx.PaymentMethod || "";
+                
+                if (method === "เงินสด") cSales += amt;
+                else if (method === "เงินโอน" || method === "โอนเข้าบัญชี" || method === "สแกน QR") tSales += amt;
+                else if (method === "บัตรเครดิต") crSales += amt;
+                else {
+                  // Assume other methods are online platforms
+                  if (method.includes("รอชำระ")) {
+                    const platform = method.replace("รอชำระ", "").trim() || "ออนไลน์";
+                    oPending[platform] = (oPending[platform] || 0) + amt;
+                  } else if (method !== "") {
+                    oPaid[method] = (oPaid[method] || 0) + amt;
+                  }
+                }
               }
             });
           }
@@ -56,6 +71,8 @@ export default function Shift() {
           setCashSales(cSales);
           setTransferSales(tSales);
           setCreditSales(crSales);
+          setOnlinePaid(oPaid);
+          setOnlinePending(oPending);
           setExpectedCash(initial + cSales);
 
         } else {
@@ -215,10 +232,31 @@ export default function Shift() {
               <span>ยอดขายเงินโอน (Transfer)</span>
               <span>฿{transferSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
-            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75">
+            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75 pb-1">
               <span>ยอดขายบัตรเครดิต (Credit)</span>
               <span>฿{creditSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
+
+            {/* Online Breakdown */}
+            {(Object.keys(onlinePaid).length > 0 || Object.keys(onlinePending).length > 0) && (
+              <>
+                <div className="border-t border-gray-200 border-dashed my-2 pt-2 pb-1">
+                  <span className="text-xs font-semibold text-violet-500 uppercase tracking-wider">ยอดขายออนไลน์</span>
+                </div>
+                {Object.entries(onlinePaid).map(([platform, amt]) => (
+                  <div key={`paid-${platform}`} className="flex justify-between text-sm text-gray-600 pl-2 opacity-90 my-0.5">
+                    <span className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-emerald-500"/>{platform} (ชำระแล้ว)</span>
+                    <span className="font-medium text-gray-800">฿{amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+                {Object.entries(onlinePending).map(([platform, amt]) => (
+                  <div key={`pending-${platform}`} className="flex justify-between text-sm text-gray-600 pl-2 opacity-80 my-0.5">
+                    <span className="flex items-center gap-1.5"><Clock size={14} className="text-amber-500"/>{platform} (รอชำระ)</span>
+                    <span className="text-amber-600">฿{amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </>
+            )}
 
             <div className="border-t border-gray-200 my-3 pt-3 flex justify-between items-center font-bold text-gray-900">
               <span className="text-base">ยอดเงินที่ควรมีในลิ้นชัก<br/><span className="text-xs text-gray-500 font-normal text-sm font-medium mt-1 inline-block">(เงินทอน + ยอดขายเงินสด)</span></span>
