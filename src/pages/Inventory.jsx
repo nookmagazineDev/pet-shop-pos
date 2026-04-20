@@ -12,6 +12,15 @@ export default function Inventory() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [productNameInput, setProductNameInput] = useState("");
+  
+  // New Receive Goods multi-item states
+  const [receiveCart, setReceiveCart] = useState([]);
+  const [companyNameStr, setCompanyNameStr] = useState("");
+  const [orderNumberStr, setOrderNumberStr] = useState("");
+  const [receiveQtyStr, setReceiveQtyStr] = useState("");
+  const [receiveLocationStr, setReceiveLocationStr] = useState("");
+  const [receiveLotStr, setReceiveLotStr] = useState("");
+  const [receiveExpiryStr, setReceiveExpiryStr] = useState("");
   const [products, setProducts] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [isEditSaving, setIsEditSaving] = useState(false);
@@ -57,21 +66,51 @@ export default function Inventory() {
     item.Location?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const handleAddReceiveItem = (e) => {
+    e.preventDefault();
+    if (!productNameInput || !receiveQtyStr || !receiveLocationStr || !receiveExpiryStr) {
+      alert("กรุณากรอกข้อมูลบังคับให้ครบ (ชื่อสินค้า, จำนวน, โลเคชั่น, วันหมดอายุ)");
+      return;
+    }
+    const newItem = {
+      id: Date.now().toString(),
+      barcode: barcodeInput,
+      productName: productNameInput,
+      quantity: receiveQtyStr,
+      location: receiveLocationStr,
+      lotNumber: receiveLotStr,
+      expiryDate: receiveExpiryStr,
+      receivingDate: new Date().toISOString().split('T')[0]
+    };
+    setReceiveCart([...receiveCart, newItem]);
+    
+    // Reset specific fields for next item
+    setBarcodeInput("");
+    setProductNameInput("");
+    setReceiveQtyStr("");
+    setReceiveLotStr("");
+    setReceiveExpiryStr("");
+    setReceiveLocationStr("");
+  };
+
+  const handleRemoveReceiveItem = (id) => {
+    setReceiveCart(receiveCart.filter(item => item.id !== id));
+  };
+
   const handleReceiveGoods = async (e) => {
     e.preventDefault();
+    if (receiveCart.length === 0) {
+      alert("กรุณาเพิ่มสินค้าลงในรายการก่อน");
+      return;
+    }
     setIsSubmitting(true);
     
-    const formData = new FormData(e.target);
     const payload = {
       action: "receiveGoods",
       payload: {
-        barcode: barcodeInput || formData.get("barcode") || "",
-        productName: productNameInput || formData.get("productName"),
-        quantity: formData.get("quantity"),
-        location: formData.get("location"),
-        lotNumber: formData.get("lotNumber"),
-        expiryDate: formData.get("expiryDate") || "N/A",
-        receivingDate: formData.get("receivingDate")
+        companyName: companyNameStr,
+        orderNumber: orderNumberStr,
+        items: receiveCart
       }
     };
 
@@ -80,9 +119,9 @@ export default function Inventory() {
 
     if (res.success) {
       alert("บันทึกสินค้านำเข้าลงคลังเรียบร้อยแล้ว!");
-      e.target.reset();
-      setBarcodeInput("");
-      setProductNameInput("");
+      setReceiveCart([]);
+      setCompanyNameStr("");
+      setOrderNumberStr("");
       fetchProducts(); // Refresh stock immediately
       setActiveTab("stock");
     } else {
@@ -98,7 +137,9 @@ export default function Inventory() {
       setBarcodeInput(text);
       // Auto-fill product name if barcode matches
       const match = products.find(p => String(p.Barcode) === String(text).trim());
-      if (match) setProductNameInput(match.Name);
+      if (match) {
+        setProductNameInput(match.Name);
+      }
     }
   };
 
@@ -402,98 +443,193 @@ export default function Inventory() {
       )}
 
       {activeTab === "receive" && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex p-6 lg:p-8 shrink-0 max-w-3xl">
-          <div className="w-full">
-            <div className="flex items-center gap-3 mb-8 pb-4 border-b border-gray-100">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Left Side: Inputs */}
+          <div className="w-full lg:w-1/2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                 <PackagePlus size={24} />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900">บันทึกใบรับของ (นำเข้าสินค้า)</h3>
-                <p className="text-sm text-gray-500">กรอกรายละเอียดเพื่อบันทึกของเข้าสู่ระบบรายการสต็อกเรียลไทม์</p>
+                <h3 className="text-xl font-bold text-gray-900">รับสินค้าเข้าคลัง (หลายรายการ)</h3>
+                <p className="text-sm text-gray-500">บันทึกข้อมูลบริษัทและรายการสินค้า</p>
               </div>
             </div>
 
-            <form className="space-y-6" onSubmit={handleReceiveGoods}>
+            <div className="space-y-4 mb-8">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">บริษัทที่นำเข้า *</label>
+                  <input
+                    type="text"
+                    value={companyNameStr}
+                    onChange={(e) => setCompanyNameStr(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                    placeholder="เช่น CP, Betagro..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">เลขที่ออเดอร์ *</label>
+                  <input
+                    type="text"
+                    value={orderNumberStr}
+                    onChange={(e) => setOrderNumberStr(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                    placeholder="เช่น PO-2023001"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <form className="space-y-4 bg-gray-50 p-4 rounded-xl border border-gray-100" onSubmit={handleAddReceiveItem}>
+              <h4 className="font-semibold text-gray-800 border-b pb-2 mb-2">ฟอร์มเพิ่มรายการสินค้า</h4>
               
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">สแกนบาร์โค้ด</label>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        name="barcode" 
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" 
-                        placeholder="สแกน หรือพิมพ์บาร์โค้ด..." 
-                        value={barcodeInput}
-                        onChange={(e) => setBarcodeInput(e.target.value)}
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setIsScannerOpen(!isScannerOpen)}
-                        className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
-                        title="เปิดกล้องสแกน"
-                      >
-                        {isScannerOpen ? <X size={20} /> : <Camera size={20} />}
-                      </button>
-                    </div>
-
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า *</label>
-                    <input 
-                      type="text" 
-                      name="productName" 
-                      required 
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" 
-                      placeholder="พิมพ์ชื่อสินค้าอ้างอิง..." 
-                      value={productNameInput}
-                      onChange={(e) => setProductNameInput(e.target.value)}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">สแกนบาร์โค้ด</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                      placeholder="สแกน หรือพิมพ์บาร์โค้ด..."
+                      value={barcodeInput}
+                      onChange={(e) => setBarcodeInput(e.target.value)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setIsScannerOpen(!isScannerOpen)}
+                      className="p-3 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
+                    >
+                      {isScannerOpen ? <X size={20} /> : <Camera size={20} />}
+                    </button>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">จำนวนรับเข้า</label>
-                  <input type="number" name="quantity" required min="1" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" placeholder="0" />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                    placeholder="พิมพ์ชื่อสินค้าอ้างอิง..."
+                    value={productNameInput}
+                    onChange={(e) => setProductNameInput(e.target.value)}
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">โลเคชั่นจัดเก็บ</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                      <MapPin size={16} />
-                    </div>
-                    <input type="text" name="location" required className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" placeholder="เช่น ชั้นวาง A1" />
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">จำนวน *</label>
+                  <input
+                    type="number"
+                    required min="1"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                    placeholder="0"
+                    value={receiveQtyStr}
+                    onChange={(e) => setReceiveQtyStr(e.target.value)}
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">เลข Lot (Lot Number)</label>
-                  <input type="text" name="lotNumber" required className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" placeholder="เช่น L-202310-01" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">โลเคชั่นคลัง *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                    placeholder="เช่น คลังหลัง A1"
+                    value={receiveLocationStr}
+                    onChange={(e) => setReceiveLocationStr(e.target.value)}
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">วันหมดอายุของไอเทม</label>
-                  <input type="date" name="expiryDate" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">วันหมดอายุ *</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                    value={receiveExpiryStr}
+                    onChange={(e) => setReceiveExpiryStr(e.target.value)}
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">วันที่รับเข้า</label>
-                  <input type="date" name="receivingDate" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">เลข Lot (ใส่ถ้ามี)</label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
+                    placeholder="L-202310-01"
+                    value={receiveLotStr}
+                    onChange={(e) => setReceiveLotStr(e.target.value)}
+                  />
                 </div>
-
               </div>
 
-              <div className="pt-4 flex justify-end">
-                <button type="submit" disabled={isSubmitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-bold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 flex items-center gap-2 disabled:opacity-50 disabled:shadow-none">
-                  {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
-                  {isSubmitting ? "กำลังส่งข้อมูล..." : "ยืนยันนำเข้าระบบสต็อก"}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 border border-blue-200"
+                >
+                  <Plus size={18} /> เพิ่มลงรายการนำเข้า
                 </button>
               </div>
-
             </form>
+          </div>
+
+          {/* Right Side: Cart */}
+          <div className="w-full lg:w-1/2 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-lg text-gray-800">รายการรอรับเข้า</h3>
+              <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold">
+                {receiveCart.length} รายการ
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 max-h-[500px]">
+              {receiveCart.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 py-12">
+                  <PackagePlus size={48} className="opacity-20" />
+                  <p>ยังไม่มีสินค้าที่จะนำเข้า</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {receiveCart.map((item, idx) => (
+                    <div key={item.id} className="flex flex-col sm:flex-row items-center gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                          <h4 className="font-semibold text-gray-900 text-sm">{idx+1}. {item.productName}</h4>
+                          <span className="font-bold text-gray-900 bg-white px-2 py-0.5 rounded border shadow-sm">
+                            {item.quantity} ชิ้น
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                          <div><span className="text-gray-400">Barcode:</span> {item.barcode || "-"}</div>
+                          <div><span className="text-gray-400">ตู้/คลัง:</span> {item.location}</div>
+                          <div><span className="text-gray-400">Lot:</span> {item.lotNumber || "-"}</div>
+                          <div><span className="text-gray-400">EXP:</span> {item.expiryDate}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveReceiveItem(item.id)}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100 shrink-0"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-100 bg-gray-50/50 mt-auto rounded-b-2xl">
+              <button
+                onClick={handleReceiveGoods}
+                disabled={isSubmitting || receiveCart.length === 0}
+                className="w-full py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none"
+              >
+                {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+                {isSubmitting ? "กำลังบันทึก..." : "ยืนยันการนำเข้าระบบ"}
+              </button>
+            </div>
           </div>
         </div>
       )}

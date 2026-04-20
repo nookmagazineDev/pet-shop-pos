@@ -342,43 +342,65 @@ function moveToStore(payload) {
 function receiveGoods(payload) {
   const sheet = getSpreadsheet().getSheetByName("Products");
   const data = sheet.getDataRange().getValues();
-  const searchBarcode = String(payload.barcode || "").trim();
-  const searchName = String(payload.productName || "").trim();
+  const items = payload.items || [];
   
-  // Attempt to update existing first
-  for (let i = 1; i < data.length; i++) {
-    const rowBarcode = String(data[i][0]).trim();
-    const rowName = String(data[i][1]).trim();
-    
-    // Match by Barcode (if provided) else by Name
-    if ((searchBarcode && rowBarcode === searchBarcode) || (!searchBarcode && rowName === searchName)) {
-      let currentQty = parseFloat(data[i][3]) || 0;
-      let addedQty = parseFloat(payload.quantity) || 0;
-      
-      sheet.getRange(i + 1, 4).setValue(currentQty + addedQty); // Quantity +=
-      sheet.getRange(i + 1, 5).setValue(payload.location || ""); // Location
-      sheet.getRange(i + 1, 6).setValue(payload.lotNumber || ""); // LotNumber
-      sheet.getRange(i + 1, 7).setValue(payload.expiryDate || ""); // ExpiryDate
-      sheet.getRange(i + 1, 8).setValue(payload.receivingDate || ""); // ReceivingDate
-      return jsonResponse({ success: true, message: "Updated existing stock" });
-    }
+  if (items.length === 0) {
+    return jsonResponse({ error: "No items provided" });
   }
+
+  let updatedCount = 0;
+  let addedCount = 0;
+
+  items.forEach(item => {
+    const searchBarcode = String(item.barcode || "").trim();
+    const searchName = String(item.productName || "").trim();
+    let found = false;
+
+    // Attempt to update existing first
+    for (let i = 1; i < data.length; i++) {
+      const rowBarcode = String(data[i][0]).trim();
+      const rowName = String(data[i][1]).trim();
+      
+      // Match by Barcode (if provided) else by Name
+      if ((searchBarcode && rowBarcode === searchBarcode) || (!searchBarcode && rowName === searchName)) {
+        let currentQty = parseFloat(data[i][3]) || 0;
+        let addedQty = parseFloat(item.quantity) || 0;
+        
+        sheet.getRange(i + 1, 4).setValue(currentQty + addedQty); // Quantity +=
+        if (item.location) sheet.getRange(i + 1, 5).setValue(item.location); // Location
+        if (item.lotNumber) sheet.getRange(i + 1, 6).setValue(item.lotNumber); // LotNumber
+        if (item.expiryDate) sheet.getRange(i + 1, 7).setValue(item.expiryDate); // ExpiryDate
+        if (item.receivingDate) sheet.getRange(i + 1, 8).setValue(item.receivingDate); // ReceivingDate
+        if (payload.companyName) sheet.getRange(i + 1, 11).setValue(payload.companyName); // CompanyName
+        if (payload.orderNumber) sheet.getRange(i + 1, 12).setValue(payload.orderNumber); // OrderNumber
+        
+        found = true;
+        updatedCount++;
+        break;
+      }
+    }
+    
+    // Not found: Append new row
+    if (!found) {
+      sheet.appendRow([
+        item.barcode || "",
+        item.productName || "",
+        0, // Default Price
+        parseFloat(item.quantity) || 0, // Quantity
+        item.location || "",
+        item.lotNumber || "",
+        item.expiryDate || "",
+        item.receivingDate || "",
+        "", // ImageURL
+        5, // LowStockThreshold
+        payload.companyName || "", // CompanyName
+        payload.orderNumber || ""  // OrderNumber
+      ]);
+      addedCount++;
+    }
+  });
   
-  // Not found: Append new row
-  sheet.appendRow([
-    payload.barcode || "",
-    payload.productName || "",
-    0, // Default Price
-    parseFloat(payload.quantity) || 0, // Quantity
-    payload.location || "",
-    payload.lotNumber || "",
-    payload.expiryDate || "",
-    payload.receivingDate || "",
-    "", // ImageURL
-    5 // LowStockThreshold
-  ]);
-  
-  return jsonResponse({ success: true, message: "Added new product stock" });
+  return jsonResponse({ success: true, message: `Stock updated: ${updatedCount} items, Added: ${addedCount} items` });
 }
 
 function updateProduct(payload) {
