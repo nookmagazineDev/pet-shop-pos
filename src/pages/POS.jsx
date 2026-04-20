@@ -14,6 +14,7 @@ export default function POS() {
   const [cart, setCart] = useState([]);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("เงินสด");
+  const [cashReceived, setCashReceived] = useState("");
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -305,9 +306,10 @@ export default function POS() {
 
         <div className="p-6 flex-1 flex flex-col">
           <h4 className="font-medium text-sm text-gray-500 mb-3 tracking-wider">เลือกประเภทการจ่ายเงิน</h4>
-          <div className="grid grid-cols-3 gap-3 mb-8">
+          {/* Payment options */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
             <button 
-              onClick={() => setPaymentMethod("เงินสด")}
+              onClick={() => { setPaymentMethod("เงินสด"); setCashReceived(""); }}
               className={clsx(
                 "flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all gap-2",
                 paymentMethod === "เงินสด" 
@@ -319,30 +321,72 @@ export default function POS() {
               <span className="text-xs font-semibold">เงินสด</span>
             </button>
             <button 
-              onClick={() => setPaymentMethod("เงินโอน")}
+              onClick={() => setPaymentMethod("โอนเข้าบัญชี")}
               className={clsx(
                 "flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all gap-2",
-                paymentMethod === "เงินโอน" 
-                  ? "border-primary bg-primary/5 text-primary" 
-                  : "border-gray-100 hover:border-primary/30 text-gray-500 bg-gray-50"
+                paymentMethod === "โอนเข้าบัญชี" 
+                  ? "border-blue-500 bg-blue-50 text-blue-600" 
+                  : "border-gray-100 hover:border-blue-300 text-gray-500 bg-gray-50"
               )}
             >
               <QrCode size={24} />
-              <span className="text-xs font-semibold">โอนเงิน</span>
+              <span className="text-xs font-semibold">โอนบัญชี</span>
             </button>
+            <button 
+              onClick={() => setPaymentMethod("สแกน QR")}
+              className={clsx(
+                "flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all gap-2",
+                paymentMethod === "สแกน QR" 
+                  ? "border-blue-500 bg-blue-50 text-blue-600" 
+                  : "border-gray-100 hover:border-blue-300 text-gray-500 bg-gray-50"
+              )}
+            >
+              <QrCode size={24} />
+              <span className="text-xs font-semibold">สแกน QR</span>
+            </button>
+          </div>
+          {/* Second row: Credit Card */}
+          <div className="mb-6">
             <button 
               onClick={() => setPaymentMethod("บัตรเครดิต")}
               className={clsx(
-                "flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all gap-2",
+                "w-full flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all",
                 paymentMethod === "บัตรเครดิต" 
                   ? "border-primary bg-primary/5 text-primary" 
                   : "border-gray-100 hover:border-primary/30 text-gray-500 bg-gray-50"
               )}
             >
-              <CreditCard size={24} />
-              <span className="text-xs font-semibold">บัตรเครดิต</span>
+              <CreditCard size={20} />
+              <span className="text-sm font-semibold">บัตรเครดิต</span>
             </button>
           </div>
+
+          {/* Cash: received & change */}
+          {paymentMethod === "เงินสด" && (
+            <div className="mb-5 space-y-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">รับเงินมา (บาท)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="1"
+                  value={cashReceived}
+                  onChange={e => setCashReceived(e.target.value)}
+                  placeholder={`อย่างน้อย ฿${total.toFixed(2)}`}
+                  className="w-full px-4 py-2.5 rounded-xl border border-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all text-lg font-bold bg-white"
+                />
+              </div>
+              {cashReceived !== "" && (
+                <div className={clsx(
+                  "flex items-center justify-between rounded-xl px-4 py-3 font-bold text-lg",
+                  parseFloat(cashReceived) >= total ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
+                )}>
+                  <span>{parseFloat(cashReceived) >= total ? "เงินทอน" : "เงินไม่ครบ"}:</span>
+                  <span>฿{Math.abs(parseFloat(cashReceived || 0) - total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-auto space-y-3">
             <button 
