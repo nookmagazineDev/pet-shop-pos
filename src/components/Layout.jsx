@@ -1,6 +1,6 @@
 
 import { Outlet, NavLink } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Clock, LogOut } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Clock, Globe, LogOut } from "lucide-react";
 import { useShift } from "../context/ShiftContext";
 
 export default function Layout() {
@@ -9,6 +9,7 @@ export default function Layout() {
   const menuItems = [
     { name: "แดชบอร์ด", fullName: "แดชบอร์ด (Dashboard)", path: "/", icon: <LayoutDashboard size={20} /> },
     { name: "POS", fullName: "ระบบขายหน้าร้าน (POS)", path: "/pos", icon: <ShoppingCart size={20} /> },
+    { name: "ออนไลน์", fullName: "ขายออนไลน์ (Online)", path: "/online", icon: <Globe size={20} /> },
     { name: "คลังสินค้า", fullName: "คลังสินค้า (Inventory)", path: "/inventory", icon: <Package size={20} /> },
     { name: "จัดการกะ", fullName: "จัดการกะ (Shift)", path: "/shift", icon: <Clock size={20} /> },
   ];

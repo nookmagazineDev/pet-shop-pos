@@ -213,6 +213,8 @@ function doPost(e) {
       return openShift(data.payload);
     } else if (action === "closeShift") {
       return closeShift(data.payload);
+    } else if (action === "updateTransactionPayment") {
+      return updateTransactionPayment(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -448,6 +450,25 @@ function closeShift(payload) {
 }
 
 
+function updateTransactionPayment(payload) {
+  const sheet = getSpreadsheet().getSheetByName("Transactions");
+  const data = sheet.getDataRange().getValues();
+  const searchOrderId = String(payload.orderId || "").trim();
+  const newPaymentMethod = String(payload.paymentMethod || "").trim();
+  
+  if (!searchOrderId || !newPaymentMethod) {
+    return jsonResponse({ error: "Missing orderId or paymentMethod" });
+  }
+  
+  for (let i = 1; i < data.length; i++) {
+    const rowOrderId = String(data[i][0]).trim();
+    if (rowOrderId === searchOrderId) {
+      sheet.getRange(i + 1, 5).setValue(newPaymentMethod); // Col 5 = PaymentMethod
+      return jsonResponse({ success: true, message: "Payment method updated" });
+    }
+  }
+  return jsonResponse({ error: "Order not found" });
+}
 
 // Utility: Read Sheet Data into Array of Objects
 function readSheetData(sheetName) {

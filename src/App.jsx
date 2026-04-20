@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import POS from "./pages/POS";
 import Inventory from "./pages/Inventory";
 import Shift from "./pages/Shift";
+import OnlineSales from "./pages/OnlineSales";
 import { ShiftProvider } from "./context/ShiftContext";
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
             <Route path="pos" element={<POS />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path="shift" element={<Shift />} />
+            <Route path="online" element={<OnlineSales />} />
           </Route>
         </Routes>
       </BrowserRouter>
