@@ -366,6 +366,25 @@ export default function POS() {
             <div className="mb-5 space-y-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">รับเงินมา (บาท)</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {[20, 50, 100, 500, 1000].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setCashReceived(prev => String(parseFloat(prev || 0) + d))}
+                      className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm font-bold border border-amber-200 transition-colors"
+                    >
+                      +{d}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setCashReceived("")}
+                    className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm font-bold border border-gray-200 transition-colors"
+                  >
+                    ล้าง
+                  </button>
+                </div>
                 <input
                   type="number"
                   min={0}
