@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { fetchApi, postApi } from "../api";
-import { Wallet, FileText, Printer, CheckCircle, Search, FileUp, Loader2, RefreshCw, X } from "lucide-react";
+import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, TrendingUp, TrendingDown, DollarSign, Calendar } from "lucide-react";
 import clsx from "clsx";
 
 export default function Accounting() {
@@ -9,6 +9,31 @@ export default function Accounting() {
   const [expenses, setExpenses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Date filter
+  const today = new Date().toISOString().split('T')[0];
+  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const [dateFrom, setDateFrom] = useState(firstOfMonth);
+  const [dateTo, setDateTo] = useState(today);
+
+  // Computed filtered data
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(tx => {
+      const d = new Date(tx.Date || tx.Timestamp || tx[1]);
+      return d >= new Date(dateFrom) && d <= new Date(dateTo + 'T23:59:59');
+    });
+  }, [transactions, dateFrom, dateTo]);
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(exp => {
+      const d = new Date(exp.Date || exp.Timestamp || exp[1] || exp[0]);
+      return d >= new Date(dateFrom) && d <= new Date(dateTo + 'T23:59:59');
+    });
+  }, [expenses, dateFrom, dateTo]);
+
+  const totalIncome = useMemo(() => filteredTransactions.reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [filteredTransactions]);
+  const totalExpenses = useMemo(() => filteredExpenses.reduce((sum, exp) => sum + (parseFloat(exp.Amount || exp[4]) || 0), 0), [filteredExpenses]);
+  const netProfit = totalIncome - totalExpenses;
 
   // Expense form state
   const [expenseData, setExpenseData] = useState({
@@ -113,31 +138,66 @@ export default function Accounting() {
   };
 
   return (
-    <div className="flex flex-col h-full space-y-6">
+    <div className="flex flex-col h-full space-y-4">
+      {/* Header + Tabs */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold tracking-tight text-gray-900">บัญชี / รายรับ-รายจ่าย</h2>
-        
         <div className="flex bg-gray-100 p-1 rounded-xl">
-          <button 
-            onClick={() => setActiveTab("income")}
-            className={clsx(
-              "px-6 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2",
-              activeTab === "income" ? "bg-white text-emerald-600 shadow-sm" : "text-gray-500 hover:text-gray-900"
-            )}
-          >
-            <Wallet size={16} />
-            รายรับ (Income)
+          <button onClick={() => setActiveTab("income")} className={clsx("px-6 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2", activeTab === "income" ? "bg-white text-emerald-600 shadow-sm" : "text-gray-500 hover:text-gray-900")}>
+            <Wallet size={16} /> รายรับ (Income)
           </button>
-          <button 
-            onClick={() => setActiveTab("expense")}
-            className={clsx(
-              "px-6 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2",
-              activeTab === "expense" ? "bg-white text-rose-600 shadow-sm" : "text-gray-500 hover:text-gray-900"
-            )}
-          >
-            <FileText size={16} />
-            รายจ่าย (Expenses)
+          <button onClick={() => setActiveTab("expense")} className={clsx("px-6 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2", activeTab === "expense" ? "bg-white text-rose-600 shadow-sm" : "text-gray-500 hover:text-gray-900")}>
+            <FileText size={16} /> รายจ่าย (Expenses)
           </button>
+        </div>
+      </div>
+
+      {/* Date Filter */}
+      <div className="flex flex-wrap items-center gap-3 bg-white border border-gray-100 rounded-2xl px-5 py-3 shadow-sm">
+        <Calendar size={16} className="text-gray-400" />
+        <span className="text-sm font-medium text-gray-600">กรองตามวันที่:</span>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">เริ่มต้น</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">สิ้นสุด</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+        </div>
+        <button onClick={() => { setDateFrom(firstOfMonth); setDateTo(today); }} className="text-xs text-primary hover:underline ml-2">รีเซ็ต</button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center gap-4">
+          <div className="w-11 h-11 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
+            <TrendingUp size={22} className="text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-emerald-600 mb-0.5">รายรับรวม</p>
+            <p className="text-xl font-bold text-emerald-700">฿{totalIncome.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            <p className="text-xs text-emerald-500">{filteredTransactions.length} รายการ</p>
+          </div>
+        </div>
+        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5 flex items-center gap-4">
+          <div className="w-11 h-11 bg-rose-100 rounded-xl flex items-center justify-center shrink-0">
+            <TrendingDown size={22} className="text-rose-600" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-rose-600 mb-0.5">รายจ่ายรวม</p>
+            <p className="text-xl font-bold text-rose-700">฿{totalExpenses.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            <p className="text-xs text-rose-500">{filteredExpenses.length} รายการ</p>
+          </div>
+        </div>
+        <div className={clsx("border rounded-2xl p-5 flex items-center gap-4", netProfit >= 0 ? "bg-blue-50 border-blue-100" : "bg-orange-50 border-orange-100")}>
+          <div className={clsx("w-11 h-11 rounded-xl flex items-center justify-center shrink-0", netProfit >= 0 ? "bg-blue-100" : "bg-orange-100")}>
+            <DollarSign size={22} className={netProfit >= 0 ? "text-blue-600" : "text-orange-600"} />
+          </div>
+          <div>
+            <p className={clsx("text-xs font-medium mb-0.5", netProfit >= 0 ? "text-blue-600" : "text-orange-600")}>{netProfit >= 0 ? "กำไรสุทธิ" : "ขาดทุนสุทธิ"}</p>
+            <p className={clsx("text-xl font-bold", netProfit >= 0 ? "text-blue-700" : "text-orange-700")}>฿{Math.abs(netProfit).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            <p className="text-xs text-gray-400">รายรับ - รายจ่าย</p>
+          </div>
         </div>
       </div>
 
@@ -165,9 +225,9 @@ export default function Accounting() {
               <tbody className="divide-y divide-gray-100">
                 {isLoading ? (
                   <tr><td colSpan="5" className="py-8 text-center text-gray-500">กำลังโหลด...</td></tr>
-                ) : transactions.length === 0 ? (
-                  <tr><td colSpan="5" className="py-8 text-center text-gray-400">ยังไม่มีรายการ</td></tr>
-                ) : transactions.map((tx, idx) => (
+                ) : filteredTransactions.length === 0 ? (
+                  <tr><td colSpan="5" className="py-8 text-center text-gray-400">ไม่มีรายการในช่วงวันที่เลือก</td></tr>
+                ) : filteredTransactions.map((tx, idx) => (
                   <tr key={idx} className="hover:bg-emerald-50/30 transition-colors group">
                     <td className="py-4 px-6 text-sm text-gray-600">{new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH")}</td>
                     <td className="py-4 px-6 text-sm font-medium text-gray-900">{tx.OrderID || tx[0]}</td>
@@ -289,9 +349,9 @@ export default function Accounting() {
                 <tbody className="divide-y divide-gray-100">
                   {isLoading ? (
                     <tr><td colSpan="5" className="py-8 text-center text-gray-500">กำลังโหลด...</td></tr>
-                  ) : expenses.length === 0 ? (
-                    <tr><td colSpan="5" className="py-8 text-center text-gray-400">ยังไม่มีประวัติรายจ่าย</td></tr>
-                  ) : expenses.map((exp, idx) => (
+                  ) : filteredExpenses.length === 0 ? (
+                    <tr><td colSpan="5" className="py-8 text-center text-gray-400">ไม่มีรายการในช่วงวันที่เลือก</td></tr>
+                  ) : filteredExpenses.map((exp, idx) => (
                     <tr key={idx} className="hover:bg-rose-50/30 transition-colors">
                       {/* Note: Auto-mapped from Sheet headers to Object properties */}
                       <td className="py-4 px-6 text-sm text-gray-600">{new Date(exp.Date || exp.Timestamp || exp[1] || exp[0]).toLocaleDateString("th-TH")}</td>
