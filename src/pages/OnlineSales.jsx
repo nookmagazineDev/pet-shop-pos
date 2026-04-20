@@ -268,6 +268,15 @@ export default function OnlineSales() {
             ) : pendingOrders.map((order, i) => {
               let cartItems = [];
               try { cartItems = JSON.parse(order.CartDetails || "[]"); } catch {}
+              // "Shopee รอชำระ" → platform = "Shopee"
+              const platform = (order.PaymentMethod || "").replace("รอชำระ", "").trim() || "ออนไลน์";
+              const platformColors = {
+                Shopee: "bg-orange-100 text-orange-700 border-orange-200",
+                Lazada: "bg-blue-100 text-blue-700 border-blue-200",
+                Lineman: "bg-green-100 text-green-700 border-green-200",
+                GrabFood: "bg-green-100 text-green-700 border-green-200",
+              };
+              const colorClass = platformColors[platform] || "bg-violet-100 text-violet-700 border-violet-200";
               return (
                 <div key={i} className="p-4 hover:bg-gray-50/50 transition-colors">
                   <div className="flex items-start justify-between gap-2">
@@ -283,9 +292,10 @@ export default function OnlineSales() {
                         {cartItems.length > 3 && <div className="text-xs text-gray-400">+{cartItems.length - 3} รายการอื่น</div>}
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <div className="font-bold text-gray-900">฿{parseFloat(order.TotalAmount || 0).toLocaleString()}</div>
-                      <span className="inline-block mt-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">{order.PaymentMethod}</span>
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                      <span className={`text-sm font-bold px-2.5 py-1 rounded-lg border ${colorClass}`}>{platform}</span>
+                      <div className="font-bold text-gray-900 text-lg">฿{parseFloat(order.TotalAmount || 0).toLocaleString()}</div>
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">รอชำระ</span>
                     </div>
                   </div>
                   <button
