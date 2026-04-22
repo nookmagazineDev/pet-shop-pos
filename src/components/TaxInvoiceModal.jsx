@@ -1,6 +1,6 @@
 import { X, Printer } from "lucide-react";
 
-export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, tax, total }) {
+export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, tax, total, receiptType, customerInfo }) {
   if (!isOpen) return null;
 
   const handlePrint = () => {
@@ -26,19 +26,29 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
             <h1 className="text-2xl font-bold tracking-widest text-primary">PetShop Next</h1>
             <p className="text-gray-500 mt-1">123 ถนนเพ็ทช็อป เมทืองสัตว์เลี้ยง 10100</p>
             <p className="text-gray-500">เลขประจำตัวผู้เสียภาษี: 01055xxxxxxxx</p>
-            <h2 className="text-xl font-bold mt-4">ใบกำกับภาษีอย่างย่อ / Tax Invoice</h2>
+            <h2 className="text-xl font-bold mt-4">
+               {receiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษีเต็มรูป / Tax Invoice" : "ใบกำกับภาษีอย่างย่อ / ABB Tax Invoice"}
+            </h2>
           </div>
 
-          <div className="flex justify-between items-end mb-6 text-sm text-gray-600">
+          <div className="flex justify-between items-end mb-4 text-sm text-gray-600 border-b border-gray-100 pb-4">
             <div>
               <p>วันที่: {new Date().toLocaleDateString('th-TH')} {new Date().toLocaleTimeString('th-TH')}</p>
               <p>พนักงาน: พนักงานหน้าร้าน (Staff User)</p>
             </div>
             <div className="text-right">
-              <p>เลขที่ใบเสร็จ: #{(Math.random()*100000).toFixed(0).padStart(6, '0')}</p>
+              <p>เลขที่เอกสาร: #{(Math.random()*100000).toFixed(0).padStart(6, '0')}</p>
               <p>ชำระโดย: {paymentMethod}</p>
             </div>
           </div>
+
+          {receiptType === "ใบกำกับภาษี" && customerInfo && (
+            <div className="mb-6 text-sm text-gray-800 bg-gray-50 border border-gray-100 rounded-lg p-3">
+               <span className="font-bold">ลูกค้า: </span>{customerInfo.customerName || "สด"}<br/>
+               <span className="font-bold">ที่อยู่: </span>{customerInfo.customerAddress || "-"}<br/>
+               <span className="font-bold">เลขประจำตัวผู้เสียภาษี: </span>{customerInfo.customerTaxId || "-"}
+            </div>
+          )}
 
           <table className="w-full text-left border-collapse mb-6">
             <thead>

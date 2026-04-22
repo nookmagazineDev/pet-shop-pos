@@ -1,6 +1,6 @@
 
 import { Outlet, NavLink } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Clock, Globe, LogOut, Wallet } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Clock, Globe, LogOut, Wallet, FileText } from "lucide-react";
 import { useShift } from "../context/ShiftContext";
 
 export default function Layout() {
@@ -13,6 +13,7 @@ export default function Layout() {
     { name: "คลังสินค้า", fullName: "คลังสินค้า (Inventory)", path: "/inventory", icon: <Package size={20} /> },
     { name: "จัดการกะ", fullName: "จัดการกะ (Shift)", path: "/shift", icon: <Clock size={20} /> },
     { name: "บัญชี", fullName: "รายรับ-รายจ่าย (Ledger)", path: "/accounting", icon: <Wallet size={20} /> },
+    { name: "รายงาน", fullName: "รายงาน (Reports)", path: "/reports", icon: <FileText size={20} /> },
   ];
 
   return (

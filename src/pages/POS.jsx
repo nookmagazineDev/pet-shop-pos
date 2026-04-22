@@ -16,6 +16,10 @@ export default function POS() {
   const [paymentMethod, setPaymentMethod] = useState("เงินสด");
   const [cashReceived, setCashReceived] = useState("");
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [receiptType, setReceiptType] = useState("ใบเสร็จ");
+  const [customerName, setCustomerName] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
+  const [customerTaxId, setCustomerTaxId] = useState("");
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const barcodeRef = useRef(null);
@@ -127,7 +131,9 @@ export default function POS() {
         totalAmount: total,
         tax: tax,
         paymentMethod: paymentMethod,
-        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price }))
+        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
+        receiptType,
+        customerInfo: receiptType === "ใบกำกับภาษี" ? { name: customerName, address: customerAddress, taxId: customerTaxId } : null
       }
     };
     
@@ -305,6 +311,31 @@ export default function POS() {
         </div>
 
         <div className="p-6 flex-1 flex flex-col">
+          <div className="mb-6 space-y-3">
+             <h4 className="font-medium text-sm text-gray-500 tracking-wider">ประเภทเอกสาร</h4>
+             <div className="flex gap-4 mb-2 border-b pb-4">
+                <button 
+                  onClick={() => setReceiptType("ใบเสร็จ")}
+                  className={clsx("flex-1 py-2 rounded-xl text-sm font-semibold transition-colors border", receiptType === "ใบเสร็จ" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100")}
+                >
+                  ใบเสร็จอย่างย่อ
+                </button>
+                <button 
+                  onClick={() => setReceiptType("ใบกำกับภาษี")}
+                  className={clsx("flex-1 py-2 rounded-xl text-sm font-semibold transition-colors border", receiptType === "ใบกำกับภาษี" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100")}
+                >
+                  ใบกำกับภาษีเต็มรูป
+                </button>
+             </div>
+             {receiptType === "ใบกำกับภาษี" && (
+                <div className="space-y-2 p-3 bg-gray-50 rounded-xl border border-gray-100 mb-4">
+                   <input type="text" placeholder="ชื่อ-นามสกุล / บริษัท" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary" />
+                   <input type="text" placeholder="ที่อยู่" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className="w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary" />
+                   <input type="text" placeholder="เลขประจำตัวผู้เสียภาษี" value={customerTaxId} onChange={e => setCustomerTaxId(e.target.value)} className="w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary" />
+                </div>
+             )}
+          </div>
+
           <h4 className="font-medium text-sm text-gray-500 mb-3 tracking-wider">เลือกประเภทการจ่ายเงิน</h4>
           {/* Payment options */}
           <div className="grid grid-cols-3 gap-3 mb-4">
@@ -428,6 +459,8 @@ export default function POS() {
         subtotal={subtotal}
         tax={tax}
         total={total}
+        receiptType={receiptType}
+        customerInfo={{ customerName, customerAddress, customerTaxId }}
       />
     </div>
   );

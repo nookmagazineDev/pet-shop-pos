@@ -12,9 +12,10 @@ function getSpreadsheet() {
 function setup() {
   const ss = getSpreadsheet();
   const sheets = {
-    "Products": ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"],
+    "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
-    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails"],
+    "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy"],
+    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"]
   };
 
@@ -158,7 +159,14 @@ function seedData() {
   const rows = products.map((p, i) => [
     p[0], // Barcode
     p[1], // Name
+    "VAT", // VatStatus
+    p[2] * 0.7, // CostPrice
     p[2], // Price
+    p[2] * 0.9, // WholesalePrice
+    p[2] * 1.1, // ShopeePrice
+    p[2] * 1.1, // LazadaPrice
+    p[2] * 1.15, // LinemanPrice
+    "ทั่วไป", // Category
     p[3], // Quantity
     locations[i % locations.length], // Location
     "L-TEST-" + String(i + 1).padStart(3, "0"), // LotNumber
@@ -192,6 +200,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Expenses"));
   } else if (action === "getCustomers") {
     return jsonResponse(readSheetData("Customers"));
+  } else if (action === "getStockMovements") {
+    return jsonResponse(readSheetData("StockMovements"));
   }
   
   return jsonResponse({ error: "Invalid action" });
@@ -240,9 +250,14 @@ function processCheckout(payload) {
     orderId,
     new Date(),
     payload.totalAmount,
-    payload.tax,
+    payload.tax || 0,
     payload.paymentMethod,
-    JSON.stringify(payload.cart)
+    JSON.stringify(payload.cart),
+    payload.cashReceived || 0,
+    payload.changeReturn || 0,
+    payload.shopPlatform || "Store",
+    payload.receiptType || "ใบเสร็จ", 
+    payload.customerInfo ? JSON.stringify(payload.customerInfo) : ""
   ]);
   
   // Deduct Inventory — StoreStock first, fallback to Products
@@ -282,10 +297,10 @@ function processCheckout(payload) {
         const rowBarcode = String(prodData[i][0]).trim();
         const rowName   = String(prodData[i][1]).trim();
         if ((itemBarcode && rowBarcode === itemBarcode) || rowName === itemName) {
-          let currentStock = parseFloat(prodData[i][3]) || 0;
+          let currentStock = parseFloat(prodData[i][10]) || 0;
           if (currentStock > 0) {
             const deduct = Math.min(currentStock, qtyToDeduct);
-            prodSheet.getRange(i + 1, 4).setValue(currentStock - deduct);
+            prodSheet.getRange(i + 1, 11).setValue(currentStock - deduct);
             qtyToDeduct -= deduct;
           }
         }
@@ -312,11 +327,11 @@ function moveToStore(payload) {
   for (let i = 1; i < prodData.length; i++) {
     const rowBarcode = String(prodData[i][0]).trim();
     if (rowBarcode === searchBarcode) {
-      const currentQty = parseFloat(prodData[i][3]) || 0;
+      const currentQty = parseFloat(prodData[i][10]) || 0;
       if (currentQty < moveQty) {
         return jsonResponse({ error: "สต็อกคลังไม่พอ (มี " + currentQty + " ชิ้น แต่ต้องการย้าย " + moveQty + " ชิ้น)" });
       }
-      prodSheet.getRange(i + 1, 4).setValue(currentQty - moveQty);
+      prodSheet.getRange(i + 1, 11).setValue(currentQty - moveQty);
       deducted = true;
       break;
     }
@@ -332,6 +347,11 @@ function moveToStore(payload) {
       storeSheet.getRange(i + 1, 3).setValue(existing + moveQty);
       if (payload.storeLocation) storeSheet.getRange(i + 1, 4).setValue(payload.storeLocation);
       storeSheet.getRange(i + 1, 5).setValue(now);
+      
+      let moveSheet = ss.getSheetByName("StockMovements");
+      if (moveSheet) {
+        moveSheet.appendRow([now, searchBarcode, payload.name || "", moveQty, "Warehouse", payload.storeLocation || "Store", "System"]);
+      }
       return jsonResponse({ success: true, message: "ย้ายสินค้าเข้าหน้าร้านเรียบร้อย" });
     }
   }
@@ -344,6 +364,10 @@ function moveToStore(payload) {
     now,
     3 // Default LowStockThreshold for StoreStock
   ]);
+  let moveSheet = ss.getSheetByName("StockMovements");
+  if (moveSheet) {
+    moveSheet.appendRow([now, searchBarcode, payload.name || "", moveQty, "Warehouse", payload.storeLocation || "Store", "System"]);
+  }
   return jsonResponse({ success: true, message: "ย้ายสินค้าเข้าหน้าร้าน (รายการใหม่) เรียบร้อย" });
 }
 
@@ -414,14 +438,17 @@ function receiveGoods(payload) {
       
       // Match by Barcode (if provided) else by Name
       if ((searchBarcode && rowBarcode === searchBarcode) || (!searchBarcode && rowName === searchName)) {
-        let currentQty = parseFloat(data[i][3]) || 0;
+        let currentQty = parseFloat(data[i][10]) || 0;
         let addedQty = parseFloat(item.quantity) || 0;
         
-        sheet.getRange(i + 1, 4).setValue(currentQty + addedQty); // Quantity +=
-        if (item.location) sheet.getRange(i + 1, 5).setValue(item.location); // Location
-        if (item.lotNumber) sheet.getRange(i + 1, 6).setValue(item.lotNumber); // LotNumber
-        if (item.expiryDate) sheet.getRange(i + 1, 7).setValue(item.expiryDate); // ExpiryDate
-        if (item.receivingDate) sheet.getRange(i + 1, 8).setValue(item.receivingDate); // ReceivingDate
+        sheet.getRange(i + 1, 11).setValue(currentQty + addedQty); // Quantity +=
+        if (item.vatStatus) sheet.getRange(i + 1, 3).setValue(item.vatStatus);
+        if (item.unitCost) sheet.getRange(i + 1, 4).setValue(parseFloat(item.unitCost) || 0);
+        if (item.category) sheet.getRange(i + 1, 10).setValue(item.category);
+        if (item.location) sheet.getRange(i + 1, 12).setValue(item.location); // Location
+        if (item.lotNumber) sheet.getRange(i + 1, 13).setValue(item.lotNumber); // LotNumber
+        if (item.expiryDate) sheet.getRange(i + 1, 14).setValue(item.expiryDate); // ExpiryDate
+        if (item.receivingDate) sheet.getRange(i + 1, 15).setValue(item.receivingDate); // ReceivingDate
         
         found = true;
         updatedCount++;
@@ -434,7 +461,14 @@ function receiveGoods(payload) {
       sheet.appendRow([
         item.barcode || "",
         item.productName || "",
-        0, // Default Price
+        item.vatStatus || "VAT",
+        parseFloat(item.unitCost) || 0,
+        0, // Price
+        0, // WholesalePrice
+        0, // ShopeePrice
+        0, // LazadaPrice
+        0, // LinemanPrice
+        item.category || "ทั่วไป",
         parseFloat(item.quantity) || 0, // Quantity
         item.location || "",
         item.lotNumber || "",
@@ -459,10 +493,18 @@ function updateProduct(payload) {
     const rowBarcode = String(data[i][0]).trim();
     if (rowBarcode === searchBarcode) {
       if (payload.name      !== undefined) sheet.getRange(i + 1, 2).setValue(payload.name);
-      if (payload.price     !== undefined) sheet.getRange(i + 1, 3).setValue(parseFloat(payload.price) || 0);
-      if (payload.location  !== undefined) sheet.getRange(i + 1, 5).setValue(payload.location);
-      if (payload.expiryDate !== undefined) sheet.getRange(i + 1, 7).setValue(payload.expiryDate);
-      if (payload.lowStockThreshold !== undefined) sheet.getRange(i + 1, 10).setValue(parseFloat(payload.lowStockThreshold) || 0);
+      if (payload.vatStatus !== undefined) sheet.getRange(i + 1, 3).setValue(payload.vatStatus);
+      if (payload.costPrice !== undefined) sheet.getRange(i + 1, 4).setValue(parseFloat(payload.costPrice) || 0);
+      if (payload.price     !== undefined) sheet.getRange(i + 1, 5).setValue(parseFloat(payload.price) || 0);
+      if (payload.wholesalePrice !== undefined) sheet.getRange(i + 1, 6).setValue(parseFloat(payload.wholesalePrice) || 0);
+      if (payload.shopeePrice !== undefined) sheet.getRange(i + 1, 7).setValue(parseFloat(payload.shopeePrice) || 0);
+      if (payload.lazadaPrice !== undefined) sheet.getRange(i + 1, 8).setValue(parseFloat(payload.lazadaPrice) || 0);
+      if (payload.linemanPrice !== undefined) sheet.getRange(i + 1, 9).setValue(parseFloat(payload.linemanPrice) || 0);
+      if (payload.category  !== undefined) sheet.getRange(i + 1, 10).setValue(payload.category);
+      if (payload.quantity  !== undefined) sheet.getRange(i + 1, 11).setValue(parseFloat(payload.quantity) || 0);
+      if (payload.location  !== undefined) sheet.getRange(i + 1, 12).setValue(payload.location);
+      if (payload.expiryDate !== undefined) sheet.getRange(i + 1, 14).setValue(payload.expiryDate);
+      if (payload.lowStockThreshold !== undefined) sheet.getRange(i + 1, 17).setValue(parseFloat(payload.lowStockThreshold) || 0);
       return jsonResponse({ success: true, message: "Product updated" });
     }
   }
@@ -632,9 +674,9 @@ function readSheetData(sheetName) {
   
   // Auto-fix headers to ensure valid JSON keys
   if (sheetName === "Products") {
-    const requiredHeaders = ["Barcode", "Name", "Price", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"];
+    const requiredHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
-    if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[3] !== "Quantity" || currentHeaderRow[9] !== "LowStockThreshold") {
+    if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[10] !== "Quantity" || currentHeaderRow[16] !== "LowStockThreshold") {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
@@ -646,7 +688,7 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
   } else if (sheetName === "Transactions") {
-    const requiredHeaders = ["OrderID", "Date", "TotalAmount", "Status", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform"];
+    const requiredHeaders = ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, 1).getValues()[0][0];
     // If the first row is actually a transaction (starts with ORD) or doesn't match our strict header, insert a true header row.
     if (String(currentHeaderRow).indexOf("ORD-") === 0) {
@@ -689,4 +731,76 @@ function authorizeDrive() {
   } catch (e) {
     Logger.log("❌ Access Error: " + e.toString());
   }
+}
+
+// ⚠️ MIGRATION FUNCTION - Run this ONCE to update old Products sheets to use 17 columns
+function migrateProductsSheet() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName("Products");
+  if (!sheet) return;
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) {
+    Logger.log("Sheet empty or headers only.");
+    return;
+  }
+  
+  // Check if row 2 (index 1) has old length or if 3rd col (index 2) is numeric price
+  const sampleRow = data[1];
+  if (sampleRow.length > 10 && typeof sampleRow[2] === "string" && (sampleRow[2] === "VAT" || sampleRow[2] === "NON VAT")) {
+    Logger.log("Data is already aligned correctly.");
+    return;
+  }
+  
+  const newHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"];
+  
+  const newRows = [newHeaders];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    // If the data was already scrambled by auto-headers, let's try to parse smartly
+    // Old format column indexes: 0:Barcode, 1:Name, 2:Price, 3:Quantity, 4:Location, 5:Lot, 6:Exp, 7:Rec, 8:Img, 9:LowStock
+    
+    let isScrambled = false;
+    let oldPrice, oldQty, oldLoc, oldLot, oldExp, oldRec, oldImg, oldLow;
+    
+    if (row.length === 10 || (row.length >= 10 && typeof row[2] === "number")) {
+      // Typical old unstructured row
+      oldPrice = parseFloat(row[2]) || 0;
+      oldQty = parseFloat(row[3]) || 0;
+      oldLoc = row[4];
+      oldLot = row[5];
+      oldExp = row[6];
+      oldRec = row[7];
+      oldImg = row[8];
+      oldLow = row[9];
+    } else {
+      // Something weird, fallback to empty defaults, just preserve barcode and name
+      oldPrice = 0; oldQty = 0; oldLoc = ""; oldLot = ""; oldExp = ""; oldRec = ""; oldImg = ""; oldLow = 5;
+    }
+
+    newRows.push([
+      row[0], // Barcode
+      row[1], // Name
+      "VAT", // VatStatus
+      oldPrice * 0.7, // CostPrice mapped from old price
+      oldPrice, // Price
+      oldPrice * 0.9, // Wholesale
+      oldPrice * 1.1, // Shopee
+      oldPrice * 1.1, // Lazada
+      oldPrice * 1.15, // Lineman
+      "ทั่วไป", // Category
+      oldQty, // Quantity
+      oldLoc, // Location
+      oldLot, // LotNumber
+      oldExp, // ExpiryDate
+      oldRec, // ReceivingDate
+      oldImg, // ImageURL
+      oldLow // LowStockThreshold
+    ]);
+  }
+  
+  sheet.clear();
+  sheet.getRange(1, 1, newRows.length, newRows[0].length).setValues(newRows);
+  sheet.getRange(1, 1, 1, newRows[0].length).setFontWeight("bold");
+  Logger.log("⭐ Migration complete! Converted " + (data.length - 1) + " rows.");
 }

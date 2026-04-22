@@ -78,8 +78,10 @@ export default function Inventory() {
       productName: productNameInput,
       quantity: receiveQtyStr,
       unitCost: receiveUnitCostStr,
+      vatStatus: "VAT",
+      category: "ทั่วไป",
       location: receiveLocationStr,
-      lotNumber: orderNumberStr, // Use Order Number as Lot Number
+      lotNumber: orderNumberStr,
       expiryDate: receiveExpiryStr,
       receivingDate: new Date().toISOString().split('T')[0]
     };
@@ -152,7 +154,14 @@ export default function Inventory() {
       payload: {
         barcode: editItem.Barcode,
         name: editItem.Name,
+        vatStatus: editItem.VatStatus,
+        costPrice: editItem.CostPrice,
         price: editItem.Price,
+        wholesalePrice: editItem.WholesalePrice,
+        shopeePrice: editItem.ShopeePrice,
+        lazadaPrice: editItem.LazadaPrice,
+        linemanPrice: editItem.LinemanPrice,
+        category: editItem.Category,
         location: editItem.Location,
         expiryDate: editItem.ExpiryDate || "",
         lowStockThreshold: editItem.LowStockThreshold || 5
@@ -742,14 +751,87 @@ export default function Inventory() {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ราคา (บาท) *</label>
-                <input
-                  type="number" required min="0" step="0.01"
-                  value={editItem.Price}
-                  onChange={e => setEditItem(prev => ({ ...prev, Price: e.target.value }))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vat Status</label>
+                  <select
+                    value={editItem.VatStatus}
+                    onChange={e => setEditItem(prev => ({ ...prev, VatStatus: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  >
+                    <option value="VAT">VAT</option>
+                    <option value="NON VAT">NON VAT</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ประเภท</label>
+                  <input
+                    type="text"
+                    value={editItem.Category || ""}
+                    onChange={e => setEditItem(prev => ({ ...prev, Category: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ต้นทุน (Cost)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={editItem.CostPrice || 0}
+                    onChange={e => setEditItem(prev => ({ ...prev, CostPrice: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ราคาปลีก (Retail) *</label>
+                  <input
+                    type="number" required min="0" step="0.01"
+                    value={editItem.Price || 0}
+                    onChange={e => setEditItem(prev => ({ ...prev, Price: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ราคาส่ง (Wholesale)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={editItem.WholesalePrice || 0}
+                    onChange={e => setEditItem(prev => ({ ...prev, WholesalePrice: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ราคา Shopee</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={editItem.ShopeePrice || 0}
+                    onChange={e => setEditItem(prev => ({ ...prev, ShopeePrice: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ราคา Lazada</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={editItem.LazadaPrice || 0}
+                    onChange={e => setEditItem(prev => ({ ...prev, LazadaPrice: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ราคา Lineman</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={editItem.LinemanPrice || 0}
+                    onChange={e => setEditItem(prev => ({ ...prev, LinemanPrice: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><MapPin size={13} /> โลเคชั่นจัดเก็บ</label>
