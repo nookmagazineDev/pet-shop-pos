@@ -301,9 +301,9 @@ export default function Inventory() {
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr className="border-b border-gray-200 text-sm font-medium text-gray-500">
                   <th className="py-3 px-6">ข้อมูลสินค้า</th>
-                  <th className="py-3 px-6 text-right">ราคา</th>
-                  <th className="py-3 px-6">เลข Lot Number</th>
-                  <th className="py-3 px-6">ตำแหน่งจัดเก็บ (Location)</th>
+                  <th className="py-3 px-6 text-right whitespace-nowrap">ราคาทั้งหมด</th>
+                  <th className="py-3 px-6">เลข Lot</th>
+                  <th className="py-3 px-6">ตำแหน่งจัดเก็บ</th>
                   <th className="py-3 px-6">วันหมดอายุ</th>
                   <th className="py-3 px-6 text-right">จำนวนคลัง</th>
                   <th className="py-3 px-6 text-center">แก้ไข</th>
@@ -315,13 +315,23 @@ export default function Inventory() {
                 ) : filteredStock.length === 0 ? (
                   <tr><td colSpan="7" className="py-8 text-center text-gray-500">ไม่พบรายการสินค้า</td></tr>
                 ) : filteredStock.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={idx} className="hover:bg-gray-50/50 transition-colors bg-white">
                     <td className="py-4 px-6 text-sm">
                       <div className="font-semibold text-gray-900">{item.Name}</div>
-                      {item.Barcode && <div className="text-xs text-gray-500 mt-1">Barcode: {item.Barcode}</div>}
+                      {item.Barcode && <div className="text-xs text-gray-500 mt-1 font-mono">BC: {item.Barcode}</div>}
+                      <div className="text-[10px] text-gray-400 mt-1 uppercase">
+                         {item.Category || "ทั่วไป"} • {item.VatStatus || "VAT"}
+                      </div>
                     </td>
-                    <td className="py-4 px-6 text-sm text-right font-medium text-amber-600">
-                      ฿{parseFloat(item.Price || 0).toLocaleString()}
+                    <td className="py-4 px-6 text-sm text-right whitespace-nowrap">
+                      <div className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-xs items-center justify-end">
+                         <span className="text-gray-500">ต้นทุน:</span> <span className="font-semibold text-gray-700">฿{parseFloat(item.CostPrice || 0).toLocaleString()}</span>
+                         <span className="text-gray-500">ราคาปลีก:</span> <span className="font-bold text-amber-600">฿{parseFloat(item.Price || 0).toLocaleString()}</span>
+                         <span className="text-gray-500">ราคาส่ง:</span> <span className="font-medium text-blue-600">฿{parseFloat(item.WholesalePrice || 0).toLocaleString()}</span>
+                         <span className="text-gray-500">Shopee:</span> <span className="font-medium text-orange-500">฿{parseFloat(item.ShopeePrice || 0).toLocaleString()}</span>
+                         <span className="text-gray-500">Lazada:</span> <span className="font-medium text-blue-500">฿{parseFloat(item.LazadaPrice || 0).toLocaleString()}</span>
+                         <span className="text-gray-500">Lineman:</span> <span className="font-medium text-green-500">฿{parseFloat(item.LinemanPrice || 0).toLocaleString()}</span>
+                      </div>
                     </td>
                     <td className="py-4 px-6 text-sm text-gray-600">
                       <span className="bg-gray-100 px-2 py-1 rounded text-xs font-mono">{item.LotNumber || "-"}</span>
