@@ -11,6 +11,7 @@ export default function POS() {
   const { isShiftOpen, isChecking } = useShift();
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
+  const [promotions, setPromotions] = useState([]);
   const [cart, setCart] = useState([]);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("เงินสด");
@@ -26,9 +27,13 @@ export default function POS() {
 
   // Fetch products on load
   useEffect(() => {
+    // Fetch products and active promotions on load
     fetchApi("getProducts").then(data => {
-      // Fallback to empty if not array
       setProducts(Array.isArray(data) ? data : []);
+    });
+    fetchApi("getPromotions").then(data => {
+      const allPromos = Array.isArray(data) ? data : [];
+      setPromotions(allPromos.filter(p => p.Status === "ACTIVE"));
     });
   }, []);
 
@@ -118,8 +123,46 @@ export default function POS() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const tax = subtotal * 0.07;
-  const total = subtotal + tax;
+  
+  // Promotion Calculation Engine
+  const calculateDiscounts = () => {
+    let totalDiscount = 0;
+    
+    promotions.forEach(promo => {
+      if (promo.ConditionType === "MIN_AMOUNT") {
+        if (subtotal >= parseFloat(promo.ConditionValue1 || 0)) {
+          if (promo.DiscountType === "PERCENT") {
+            totalDiscount += subtotal * (parseFloat(promo.DiscountValue) / 100);
+          } else {
+            totalDiscount += parseFloat(promo.DiscountValue);
+          }
+        }
+      } else if (promo.ConditionType === "COMBO_ITEM") {
+        const item1 = cart.find(c => String(c.Barcode) === String(promo.ConditionValue1));
+        const item2 = cart.find(c => String(c.Barcode) === String(promo.ConditionValue2));
+        
+         if (item1 && item2) {
+            const timesMet = Math.min(item1.qty, item2.qty);
+            if (timesMet > 0) {
+              if (promo.DiscountType === "PERCENT") {
+                 // For percent combo discount, calculate based on the combined price of the pair
+                 const comboPrice = (item1.price + item2.price) * timesMet;
+                 totalDiscount += comboPrice * (parseFloat(promo.DiscountValue) / 100);
+              } else {
+                 totalDiscount += parseFloat(promo.DiscountValue) * timesMet;
+              }
+            }
+         }
+      }
+    });
+
+    return Math.min(totalDiscount, subtotal); // Discount cannot exceed subtotal
+  };
+
+  const discountAmount = calculateDiscounts();
+  const subtotalAfterDiscount = subtotal - discountAmount;
+  const tax = subtotalAfterDiscount * 0.07;
+  const total = subtotalAfterDiscount + tax;
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -130,6 +173,7 @@ export default function POS() {
       payload: {
         totalAmount: total,
         tax: tax,
+        discount: discountAmount,
         paymentMethod: paymentMethod,
         cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
         receiptType,
@@ -298,6 +342,13 @@ export default function POS() {
               <span>ราคาสินค้า</span>
               <span>฿{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
+            
+            {discountAmount > 0 && (
+               <div className="flex justify-between text-fuchsia-600 font-bold bg-fuchsia-50 px-2 py-1 -mx-2 rounded-lg">
+                 <span>ส่วนลดโปรโมชั่น</span>
+                 <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+               </div>
+            )}
             <div className="flex justify-between text-gray-500">
               <span>ภาษีมูลค่าเพิ่ม (7%)</span>
               <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>

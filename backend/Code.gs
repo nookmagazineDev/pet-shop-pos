@@ -15,8 +15,9 @@ function setup() {
     "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy"],
-    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo"],
-    "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"]
+    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount"],
+    "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"],
+    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"]
   };
 
   for (const sheetName in sheets) {
@@ -202,6 +203,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Customers"));
   } else if (action === "getStockMovements") {
     return jsonResponse(readSheetData("StockMovements"));
+  } else if (action === "getPromotions") {
+    return jsonResponse(readSheetData("Promotions"));
   }
   
   return jsonResponse({ error: "Invalid action" });
@@ -233,6 +236,10 @@ function doPost(e) {
       return addExpense(data.payload);
     } else if (action === "saveCustomer") {
       return saveCustomer(data.payload);
+    } else if (action === "savePromotion") {
+      return savePromotion(data.payload);
+    } else if (action === "togglePromotionStatus") {
+      return togglePromotionStatus(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -257,7 +264,8 @@ function processCheckout(payload) {
     payload.changeReturn || 0,
     payload.shopPlatform || "Store",
     payload.receiptType || "ใบเสร็จ", 
-    payload.customerInfo ? JSON.stringify(payload.customerInfo) : ""
+    payload.customerInfo ? JSON.stringify(payload.customerInfo) : "",
+    payload.discount || 0
   ]);
   
   // Deduct Inventory — StoreStock first, fallback to Products
@@ -667,13 +675,91 @@ function saveCustomer(payload) {
   return jsonResponse({ success: true, message: "Customer saved" });
 }
 
+function savePromotion(payload) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("Promotions");
+  if (!sheet) return jsonResponse({ error: "Promotions sheet not found. Run setup() first." });
+  
+  const data = sheet.getDataRange().getValues();
+  let found = false;
+  
+  // If it's a new promotion, payload.promoId might be empty
+  const searchPromoId = String(payload.promoId || "").trim();
+  const now = new Date();
+  
+  if (searchPromoId) {
+    for (let i = 1; i < data.length; i++) {
+      const rowPromoId = String(data[i][0]).trim();
+      if (rowPromoId === searchPromoId) {
+        // Update
+        sheet.getRange(i + 1, 2).setValue(payload.name || "");
+        sheet.getRange(i + 1, 3).setValue(payload.conditionType || "");
+        sheet.getRange(i + 1, 4).setValue(payload.conditionValue1 || "");
+        sheet.getRange(i + 1, 5).setValue(payload.conditionValue2 || "");
+        sheet.getRange(i + 1, 6).setValue(payload.discountType || "FIXED");
+        sheet.getRange(i + 1, 7).setValue(parseFloat(payload.discountValue) || 0);
+        if (payload.status !== undefined) sheet.getRange(i + 1, 8).setValue(payload.status);
+        if (payload.expiryDate !== undefined) sheet.getRange(i + 1, 9).setValue(payload.expiryDate);
+        found = true;
+        break;
+      }
+    }
+  }
+
+  if (!found) {
+    // Insert new
+    const newPromoId = searchPromoId || ("PRM-" + now.getTime());
+    sheet.appendRow([
+      newPromoId,
+      payload.name || "New Promotion",
+      payload.conditionType || "MIN_AMOUNT",
+      payload.conditionValue1 || "",
+      payload.conditionValue2 || "",
+      payload.discountType || "FIXED",
+      parseFloat(payload.discountValue) || 0,
+      payload.status || "ACTIVE",
+      payload.expiryDate || ""
+    ]);
+  }
+
+  return jsonResponse({ success: true, message: "Promotion saved" });
+}
+
+function togglePromotionStatus(payload) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName("Promotions");
+  if (!sheet) return jsonResponse({ error: "Promotions sheet not found" });
+
+  const data = sheet.getDataRange().getValues();
+  const searchPromoId = String(payload.promoId || "").trim();
+  
+  for (let i = 1; i < data.length; i++) {
+    const rowPromoId = String(data[i][0]).trim();
+    if (rowPromoId === searchPromoId) {
+      const currentStatus = String(data[i][7]).trim().toUpperCase();
+      const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+      sheet.getRange(i + 1, 8).setValue(newStatus);
+      return jsonResponse({ success: true, newStatus: newStatus });
+    }
+  }
+  
+  return jsonResponse({ error: "Promotion not found" });
+}
+
 // Utility: Read Sheet Data into Array of Objects
 function readSheetData(sheetName) {
   const sheet = getSpreadsheet().getSheetByName(sheetName);
   if (!sheet) return [];
   
   // Auto-fix headers to ensure valid JSON keys
-  if (sheetName === "Products") {
+  if (sheetName === "Promotions") {
+    const requiredHeaders = ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"];
+    const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
+    if (currentHeaderRow[0] !== "PromoID") {
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
+    }
+  } else if (sheetName === "Products") {
     const requiredHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
     if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[10] !== "Quantity" || currentHeaderRow[16] !== "LowStockThreshold") {
@@ -688,7 +774,7 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
   } else if (sheetName === "Transactions") {
-    const requiredHeaders = ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo"];
+    const requiredHeaders = ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, 1).getValues()[0][0];
     // If the first row is actually a transaction (starts with ORD) or doesn't match our strict header, insert a true header row.
     if (String(currentHeaderRow).indexOf("ORD-") === 0) {
