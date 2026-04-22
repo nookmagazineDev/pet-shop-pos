@@ -142,6 +142,7 @@ export default function Inventory() {
       const match = products.find(p => String(p.Barcode) === String(text).trim());
       if (match) {
         setProductNameInput(match.Name);
+        setReceiveUnitCostStr(match.CostPrice || "");
       }
     }
   };
@@ -325,12 +326,12 @@ export default function Inventory() {
                     </td>
                     <td className="py-4 px-6 text-sm text-right whitespace-nowrap">
                       <div className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-xs items-center justify-end">
-                         <span className="text-gray-500">ต้นทุน:</span> <span className="font-semibold text-gray-700">฿{parseFloat(item.CostPrice || 0).toLocaleString()}</span>
-                         <span className="text-gray-500">ราคาปลีก:</span> <span className="font-bold text-amber-600">฿{parseFloat(item.Price || 0).toLocaleString()}</span>
-                         <span className="text-gray-500">ราคาส่ง:</span> <span className="font-medium text-blue-600">฿{parseFloat(item.WholesalePrice || 0).toLocaleString()}</span>
-                         <span className="text-gray-500">Shopee:</span> <span className="font-medium text-orange-500">฿{parseFloat(item.ShopeePrice || 0).toLocaleString()}</span>
-                         <span className="text-gray-500">Lazada:</span> <span className="font-medium text-blue-500">฿{parseFloat(item.LazadaPrice || 0).toLocaleString()}</span>
-                         <span className="text-gray-500">Lineman:</span> <span className="font-medium text-green-500">฿{parseFloat(item.LinemanPrice || 0).toLocaleString()}</span>
+                         <span className="text-gray-500">ต้นทุน:</span> <span className="font-semibold text-gray-700">{(parseFloat(item.CostPrice) || 0) > 0 ? `฿${parseFloat(item.CostPrice).toLocaleString()}` : "-"}</span>
+                         <span className="text-gray-500">ราคาปลีก:</span> <span className="font-bold text-amber-600">{(parseFloat(item.Price) || 0) > 0 ? `฿${parseFloat(item.Price).toLocaleString()}` : "-"}</span>
+                         <span className="text-gray-500">ราคาส่ง:</span> <span className="font-medium text-blue-600">{(parseFloat(item.WholesalePrice) || 0) > 0 ? `฿${parseFloat(item.WholesalePrice).toLocaleString()}` : "-"}</span>
+                         <span className="text-gray-500">Shopee:</span> <span className="font-medium text-orange-500">{(parseFloat(item.ShopeePrice) || 0) > 0 ? `฿${parseFloat(item.ShopeePrice).toLocaleString()}` : "-"}</span>
+                         <span className="text-gray-500">Lazada:</span> <span className="font-medium text-blue-500">{(parseFloat(item.LazadaPrice) || 0) > 0 ? `฿${parseFloat(item.LazadaPrice).toLocaleString()}` : "-"}</span>
+                         <span className="text-gray-500">Lineman:</span> <span className="font-medium text-green-500">{(parseFloat(item.LinemanPrice) || 0) > 0 ? `฿${parseFloat(item.LinemanPrice).toLocaleString()}` : "-"}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 text-sm text-gray-600">
@@ -513,7 +514,14 @@ export default function Inventory() {
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
                       placeholder="สแกน หรือพิมพ์บาร์โค้ด..."
                       value={barcodeInput}
-                      onChange={(e) => setBarcodeInput(e.target.value)}
+                      onChange={(e) => {
+                         setBarcodeInput(e.target.value);
+                         const match = products.find(p => String(p.Barcode) === String(e.target.value).trim());
+                         if (match) {
+                           setProductNameInput(match.Name);
+                           setReceiveUnitCostStr(match.CostPrice || "");
+                         }
+                      }}
                     />
                     <button
                       type="button"
