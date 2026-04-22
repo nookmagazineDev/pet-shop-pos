@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import BarcodeScanner from "../components/BarcodeScanner";
@@ -164,6 +164,16 @@ export default function POS() {
   const tax = subtotalAfterDiscount * 0.07;
   const total = subtotalAfterDiscount + tax;
 
+  const relatedPromotions = cart.length > 0 ? promotions.filter(promo => {
+    if (promo.ConditionType === "COMBO_ITEM") {
+      // Check if at least one item of the COMBO is in the cart
+      const hasItem1 = cart.some(c => String(c.Barcode) === String(promo.ConditionValue1));
+      const hasItem2 = cart.some(c => String(c.Barcode) === String(promo.ConditionValue2));
+      return hasItem1 || hasItem2;
+    }
+    return false;
+  }) : [];
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     
@@ -288,16 +298,16 @@ export default function POS() {
         </div>
 
         {/* Cart Listing */}
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-4 flex flex-col">
           {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4">
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-4 min-h-[300px]">
               <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center">
                 <ShoppingCart size={40} className="opacity-50" />
               </div>
               <p className="text-lg">ยังไม่มีสินค้าในตะกร้า ลองสแกนดูสิ!</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="flex-1 space-y-3">
               {cart.map(item => (
                 <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-primary/30 transition-colors group bg-white shadow-sm hover:shadow-md">
                   <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover bg-gray-100" />
@@ -327,6 +337,24 @@ export default function POS() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Related Promotions section */}
+          {relatedPromotions.length > 0 && (
+            <div className="mt-6 p-4 bg-fuchsia-50 rounded-xl border border-fuchsia-100 shrink-0">
+               <h4 className="font-semibold text-fuchsia-800 mb-2 flex items-center gap-2">
+                 <Tag size={18} /> 
+                 โปรโมชั่นที่แนะนำสำหรับสินค้าในตะกร้า
+               </h4>
+               <ul className="space-y-2">
+                 {relatedPromotions.map((promo, idx) => (
+                   <li key={idx} className="text-sm text-fuchsia-700 flex items-start gap-2">
+                     <span className="mt-0.5 font-bold">•</span>
+                     <span>{promo.Name}</span>
+                   </li>
+                 ))}
+               </ul>
             </div>
           )}
         </div>
