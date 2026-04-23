@@ -17,7 +17,8 @@ function setup() {
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"],
-    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"]
+    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
+    "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"]
   };
 
   for (const sheetName in sheets) {
@@ -205,6 +206,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("StockMovements"));
   } else if (action === "getPromotions") {
     return jsonResponse(readSheetData("Promotions"));
+  } else if (action === "getTaxInvoices") {
+    return jsonResponse(readSheetData("TaxInvoices"));
   }
   
   return jsonResponse({ error: "Invalid action" });
@@ -267,6 +270,26 @@ function processCheckout(payload) {
     payload.customerInfo ? JSON.stringify(payload.customerInfo) : "",
     payload.discount || 0
   ]);
+
+  if (payload.receiptType === "ใบกำกับภาษี") {
+    let taxSheet = ss.getSheetByName("TaxInvoices");
+    if (!taxSheet) {
+      taxSheet = ss.insertSheet("TaxInvoices");
+      taxSheet.appendRow(["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"]);
+    }
+    const taxInvoiceNo = "INV-" + new Date().getTime();
+    const cInfo = payload.customerInfo || {};
+    taxSheet.appendRow([
+      taxInvoiceNo,
+      new Date(),
+      orderId,
+      cInfo.name || cInfo.customerName || "-",
+      cInfo.address || cInfo.customerAddress || "-",
+      cInfo.taxId || cInfo.customerTaxId || "-",
+      payload.totalAmount,
+      payload.tax || 0
+    ]);
+  }
   
   // Deduct Inventory — StoreStock first, fallback to Products
   const storeSheet = ss.getSheetByName("StoreStock");

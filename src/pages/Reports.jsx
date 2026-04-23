@@ -7,6 +7,7 @@ export default function Reports() {
   const [activeTab, setActiveTab] = useState("sales");
   const [transactions, setTransactions] = useState([]);
   const [stockMovements, setStockMovements] = useState([]);
+  const [taxInvoices, setTaxInvoices] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Filter States
@@ -20,8 +21,12 @@ export default function Reports() {
   const fetchData = async () => {
     setIsLoading(true);
     if (activeTab === "sales" || activeTab === "history" || activeTab === "tax") {
-      const tx = await fetchApi("getTransactions");
+      const [tx, taxInv] = await Promise.all([
+        fetchApi("getTransactions"),
+        fetchApi("getTaxInvoices")
+      ]);
       setTransactions(Array.isArray(tx) ? tx : []);
+      setTaxInvoices(Array.isArray(taxInv) ? taxInv : []);
     } else if (activeTab === "stock") {
       const moves = await fetchApi("getStockMovements");
       setStockMovements(Array.isArray(moves) ? moves : []);
@@ -42,6 +47,7 @@ export default function Reports() {
   // Process data for different views
   const filteredTransactions = transactions.filter(t => isBetweenDates(t.Date));
   const filteredStockMoves = stockMovements.filter(m => isBetweenDates(m.Date));
+  const filteredTaxInvoices = taxInvoices.filter(t => isBetweenDates(t.Date));
 
   // --- Reports Processing ---
   
@@ -66,6 +72,7 @@ export default function Reports() {
 
   // 2. Transasctions Split by Receipt / Tax Invoice
   const receiptsOnly = filteredTransactions.filter(t => (t.ReceiptType || "ใบเสร็จ") === "ใบเสร็จ");
+  // taxInvoicesOnly is now replaced by filteredTaxInvoices, but kept for fallback or backward compatibility
   const taxInvoicesOnly = filteredTransactions.filter(t => t.ReceiptType === "ใบกำกับภาษี");
 
   // 3. Tax Report (รายงานภาษีขาย) Focus on Sales and Tax Collected
@@ -211,27 +218,31 @@ export default function Reports() {
                 </div>
               </div>
 
-              <div className="flex-1 p-0">
+              <div className="flex-[1.5] p-0">
                 <div className="p-4 bg-purple-50/50 border-b border-gray-100">
-                  <h3 className="font-semibold text-purple-800">ฝั่งใบกำกับภาษี ({taxInvoicesOnly.length} รายการ)</h3>
+                  <h3 className="font-semibold text-purple-800">ฝั่งใบกำกับภาษี ({filteredTaxInvoices.length} รายการ)</h3>
                 </div>
                  <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 280px)" }}>
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-purple-50 sticky top-0">
                       <tr className="border-b border-purple-100 text-xs font-medium text-purple-700">
-                        <th className="py-2 px-4">OrderID</th>
+                        <th className="py-2 px-4">เลขใบกำกับ</th>
                         <th className="py-2 px-4">วันที่</th>
+                        <th className="py-2 px-4">ลูกค้า</th>
+                        <th className="py-2 px-4">เลขประตัวผู้เสียภาษี</th>
                         <th className="py-2 px-4 text-right">ยอดสุทธิ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {taxInvoicesOnly.length === 0 ? (
-                         <tr><td colSpan="3" className="p-4 text-center text-gray-400 text-sm">ไม่พบใบกำกับภาษี</td></tr>
-                      ) : taxInvoicesOnly.map((tx, i) => (
+                      {filteredTaxInvoices.length === 0 ? (
+                         <tr><td colSpan="5" className="p-4 text-center text-gray-400 text-sm">ไม่พบใบกำกับภาษี</td></tr>
+                      ) : filteredTaxInvoices.map((tx, i) => (
                          <tr key={i} className="hover:bg-gray-50 text-sm">
-                           <td className="py-3 px-4 font-mono text-gray-600">{tx.OrderID}</td>
+                           <td className="py-3 px-4 font-mono text-purple-600">{tx.TaxInvoiceNo}</td>
                            <td className="py-3 px-4 text-gray-500">{new Date(tx.Date).toLocaleString("th-TH")}</td>
-                           <td className="py-3 px-4 text-right font-medium">฿{parseFloat(tx.TotalAmount||0).toLocaleString()}</td>
+                           <td className="py-3 px-4 text-gray-800">{tx.CustomerName}</td>
+                           <td className="py-3 px-4 text-gray-500 font-mono">{tx.CustomerTaxID}</td>
+                           <td className="py-3 px-4 text-right font-bold text-gray-800">฿{parseFloat(tx.TotalAmount||0).toLocaleString()}</td>
                          </tr>
                       ))}
                     </tbody>
