@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { fetchApi, postApi } from "../api";
-import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, TrendingUp, TrendingDown, DollarSign, Calendar } from "lucide-react";
+import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, TrendingUp, TrendingDown, DollarSign, Calendar, FileSpreadsheet } from "lucide-react";
 import clsx from "clsx";
+import * as XLSX from "xlsx";
 
 export default function Accounting() {
   const [activeTab, setActiveTab] = useState("income");
@@ -9,6 +10,7 @@ export default function Accounting() {
   const [expenses, setExpenses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const printRef = useRef(null);
 
   // Date filter
   const today = new Date().toISOString().split('T')[0];
@@ -62,6 +64,79 @@ export default function Accounting() {
       setExpenses(Array.isArray(data) ? data.reverse() : []);
     }
     setIsLoading(false);
+  };
+
+  const exportToExcel = (type) => {
+    if (type === "income") {
+      const rows = filteredTransactions.map(tx => ({
+        "วันที่/เวลา": new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH"),
+        "รหัสออเดอร์": tx.OrderID || tx[0],
+        "ยอดรับ (บาท)": parseFloat(tx.TotalAmount || tx[2]) || 0,
+        "ช่องทางชำระ": tx.PaymentMethod || tx[4],
+      }));
+      rows.push({});
+      rows.push({ "วันที่/เวลา": "รวมทั้งสิ้น", "ยอดรับ (บาท)": totalIncome });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "รายรับ");
+      XLSX.writeFile(wb, `income_${dateFrom}_to_${dateTo}.xlsx`);
+    } else {
+      const rows = filteredExpenses.map(exp => ({
+        "วันที่ชำระ": new Date(exp.Date || exp.Timestamp || exp[1] || exp[0]).toLocaleDateString("th-TH"),
+        "รายการ": exp.Description || exp[2],
+        "หมวดหมู่": exp.Category || exp[3],
+        "ยอดเงิน (บาท)": parseFloat(exp.Amount || exp[4]) || 0,
+      }));
+      rows.push({});
+      rows.push({ "วันที่ชำระ": "รวมทั้งสิ้น", "ยอดเงิน (บาท)": totalExpenses });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "รายจ่าย");
+      XLSX.writeFile(wb, `expenses_${dateFrom}_to_${dateTo}.xlsx`);
+    }
+  };
+
+  const exportToPDF = (type) => {
+    const printWindow = window.open("", "_blank");
+    const title = type === "income" ? "รายงานรายรับ" : "รายงานรายจ่าย";
+    const rows = type === "income"
+      ? filteredTransactions.map(tx => `<tr>
+          <td>${new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH")}</td>
+          <td>${tx.OrderID || tx[0]}</td>
+          <td style="text-align:right">฿${parseFloat(tx.TotalAmount || tx[2]).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+          <td>${tx.PaymentMethod || tx[4] || ""}</td>
+        </tr>`).join("")
+      : filteredExpenses.map(exp => `<tr>
+          <td>${new Date(exp.Date || exp.Timestamp || exp[1] || exp[0]).toLocaleDateString("th-TH")}</td>
+          <td>${exp.Description || exp[2] || ""}</td>
+          <td>${exp.Category || exp[3] || ""}</td>
+          <td style="text-align:right">฿${parseFloat(exp.Amount || exp[4]).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+        </tr>`).join("");
+    const headers = type === "income"
+      ? `<th>วันที่/เวลา</th><th>รหัสออเดอร์</th><th>ยอดรับ (บาท)</th><th>ช่องทางชำระ</th>`
+      : `<th>วันที่ชำระ</th><th>รายการ</th><th>หมวดหมู่</th><th>ยอดเงิน (บาท)</th>`;
+    const total = type === "income" ? totalIncome : totalExpenses;
+    printWindow.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+      <title>${title}</title>
+      <style>
+        body { font-family: 'Sarabun', sans-serif; padding: 20px; font-size: 13px; }
+        h1 { font-size: 18px; margin-bottom: 4px; }
+        p { color: #555; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ccc; padding: 6px 10px; }
+        th { background: #f0f0f0; text-align: left; }
+        tfoot td { font-weight: bold; background: #f9f9f9; }
+        @page { margin: 15mm; }
+      </style></head><body>
+      <h1>${title}</h1>
+      <p>ช่วงวันที่: ${dateFrom} ถึง ${dateTo}</p>
+      <table><thead><tr>${headers}</tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="3"><strong>ยอดรวม</strong></td><td style="text-align:right"><strong>฿${total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</strong></td></tr></tfoot>
+      </table></body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 250);
   };
 
   useEffect(() => {
@@ -204,12 +279,19 @@ export default function Accounting() {
       {/* INCOME TAB */}
       {activeTab === "income" && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col flex-1 min-h-0">
-          <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-emerald-50/50 rounded-t-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-emerald-50/50 rounded-t-2xl">
             <h3 className="font-semibold text-emerald-800">ประวัติการขาย (รายรับ)</h3>
-            <button onClick={fetchData} className="text-emerald-600 hover:text-emerald-700 flex items-center gap-1 text-sm bg-emerald-100 px-3 py-1.5 rounded-lg">
-              <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
-              รีเฟรช
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => exportToExcel("income")} className="text-emerald-700 flex items-center gap-1 text-sm bg-emerald-100 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                <FileSpreadsheet size={14} /> Excel
+              </button>
+              <button onClick={() => exportToPDF("income")} className="text-blue-700 flex items-center gap-1 text-sm bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                <Printer size={14} /> PDF
+              </button>
+              <button onClick={fetchData} className="text-emerald-600 hover:text-emerald-700 flex items-center gap-1 text-sm bg-emerald-100 px-3 py-1.5 rounded-lg">
+                <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} /> รีเฟรช
+              </button>
+            </div>
           </div>
           <div className="overflow-auto flex-1 p-0">
             <table className="w-full text-left border-collapse">
@@ -328,12 +410,19 @@ export default function Accounting() {
 
           {/* Expense History Table */}
           <div className="w-full lg:w-2/3 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-0 flex-1">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-rose-50/50 rounded-t-2xl">
+          <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-rose-50/50 rounded-t-2xl">
               <h3 className="font-semibold text-rose-800">ประวัติรายจ่ายทั้งหมด</h3>
-              <button onClick={fetchData} className="text-rose-600 hover:text-rose-700 flex items-center gap-1 text-sm bg-rose-100 px-3 py-1.5 rounded-lg">
-                <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
-                รีเฟรช
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => exportToExcel("expense")} className="text-rose-700 flex items-center gap-1 text-sm bg-rose-100 hover:bg-rose-200 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                  <FileSpreadsheet size={14} /> Excel
+                </button>
+                <button onClick={() => exportToPDF("expense")} className="text-blue-700 flex items-center gap-1 text-sm bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                  <Printer size={14} /> PDF
+                </button>
+                <button onClick={fetchData} className="text-rose-600 hover:text-rose-700 flex items-center gap-1 text-sm bg-rose-100 px-3 py-1.5 rounded-lg">
+                  <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} /> รีเฟรช
+                </button>
+              </div>
             </div>
             <div className="overflow-auto flex-1 p-0">
               <table className="w-full text-left border-collapse">
