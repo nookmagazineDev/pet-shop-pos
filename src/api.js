@@ -22,6 +22,7 @@ export const fetchApi = async (action) => {
             ShopeePrice: item.ShopeePrice || item["shopee"] || item["shoppe"] || 0,
             LazadaPrice: item.LazadaPrice || item["lazada"] || 0,
             LinemanPrice: item.LinemanPrice || item["line"] || item["lineman"] || 0,
+            GrabFoodPrice: item.GrabFoodPrice || item["grab"] || item["grabfood"] || 0,
             Category: item.Category || item["ประเภท"] || item["หมวดหมู่"] || "ทั่วไป"
           };
        });

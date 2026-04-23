@@ -27,8 +27,24 @@ export default function OnlineSales() {
   }, []);
 
   useEffect(() => {
-    if (!isScannerOpen) barcodeRef.current?.focus();
-  }, [cart, isScannerOpen]);
+    if (!isScannerOpen && !isPaying && !isSaving) barcodeRef.current?.focus();
+  }, [cart, isScannerOpen, isPaying, isSaving]);
+
+  const getPlatformPrice = (product, platform) => {
+    if (!product) return 0;
+    if (platform === "Shopee" && product.ShopeePrice > 0) return Number(product.ShopeePrice);
+    if (platform === "Lazada" && product.LazadaPrice > 0) return Number(product.LazadaPrice);
+    if (platform === "Lineman" && product.LinemanPrice > 0) return Number(product.LinemanPrice);
+    if (platform === "GrabFood" && product.GrabFoodPrice > 0) return Number(product.GrabFoodPrice);
+    return Number(product.Price) || 0;
+  };
+
+  useEffect(() => {
+    setCart(prev => prev.map(item => ({
+      ...item,
+      price: item.productObj ? getPlatformPrice(item.productObj, orderPlatform) : item.price
+    })));
+  }, [orderPlatform]);
 
   const loadPendingOrders = () => {
     setIsLoadingOrders(true);
@@ -46,7 +62,7 @@ export default function OnlineSales() {
       const key = product.Barcode || product.Name;
       const existing = prev.find(item => item.id === key);
       if (existing) return prev.map(item => item.id === key ? { ...item, qty: item.qty + 1 } : item);
-      return [{ id: key, Barcode: product.Barcode, Name: product.Name, name: product.Name, price: Number(product.Price) || 0, qty: 1 }, ...prev];
+      return [{ id: key, Barcode: product.Barcode, Name: product.Name, name: product.Name, price: getPlatformPrice(product, orderPlatform), productObj: product, qty: 1 }, ...prev];
     });
     setBarcodeInput("");
   };
