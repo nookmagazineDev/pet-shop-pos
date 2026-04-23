@@ -314,7 +314,7 @@ export default function Reports() {
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {filteredStockMoves.length === 0 ? (
-                  <tr><td colSpan="4" className="py-8 text-center text-emerald-500/50">ไม่พบประวัติการย้ายสต็อก</td></tr>
+                  <tr><td colSpan="4" className="py-8 text-center text-emerald-500/80">ไม่พบประวัติการย้ายสต็อกในช่วงวันที่นี้<br/><span className="text-sm opacity-80">(ระบบจะบันทึกประวัติเฉพาะเวลาที่คุณทำรายการ "ย้ายสินค้าจากคลัง → หน้าร้าน" เท่านั้น)</span></td></tr>
                 ) : (
                   filteredStockMoves.map((m, idx) => (
                     <tr key={idx} className="hover:bg-emerald-50/30 text-sm">
