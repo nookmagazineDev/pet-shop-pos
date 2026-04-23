@@ -135,24 +135,45 @@ export default function POS() {
         if (subtotal >= parseFloat(promo.ConditionValue1 || 0)) {
           if (promo.DiscountType === "PERCENT") {
             totalDiscount += subtotal * (parseFloat(promo.DiscountValue) / 100);
+          } else if (promo.DiscountType === "FREE_ITEM") {
+             const freeBc = String(promo.DiscountValue).trim();
+             const freeItem = cart.find(c => String(c.Barcode) === freeBc);
+             if (freeItem && freeItem.qty > 0) {
+               totalDiscount += freeItem.price; // Give 1 piece free per bill if min amount met
+             }
           } else {
             totalDiscount += parseFloat(promo.DiscountValue);
           }
         }
       } else if (promo.ConditionType === "COMBO_ITEM") {
-        const item1 = cart.find(c => String(c.Barcode) === String(promo.ConditionValue1));
-        const item2 = cart.find(c => String(c.Barcode) === String(promo.ConditionValue2));
-        
-         if (item1 && item2) {
-            const timesMet = Math.min(item1.qty, item2.qty);
-            if (timesMet > 0) {
-              if (promo.DiscountType === "PERCENT") {
-                 // For percent combo discount, calculate based on the combined price of the pair
-                 const comboPrice = (item1.price + item2.price) * timesMet;
-                 totalDiscount += comboPrice * (parseFloat(promo.DiscountValue) / 100);
-              } else {
-                 totalDiscount += parseFloat(promo.DiscountValue) * timesMet;
-              }
+         const comboBarcodes = (promo.ConditionValue1 || "").includes(",") 
+           ? promo.ConditionValue1.split(",").map(b => b.trim()).filter(Boolean)
+           : [promo.ConditionValue1, promo.ConditionValue2].map(b => String(b).trim()).filter(Boolean);
+           
+         let minQty = Infinity;
+         let comboPrice = 0;
+         let allFound = true;
+         
+         for (const bc of comboBarcodes) {
+            const item = cart.find(c => String(c.Barcode) === bc);
+            if (!item) { allFound = false; break; }
+            minQty = Math.min(minQty, item.qty);
+            comboPrice += item.price;
+         }
+         
+         if (allFound && minQty > 0 && minQty !== Infinity) {
+            if (promo.DiscountType === "PERCENT") {
+               totalDiscount += (comboPrice * minQty) * (parseFloat(promo.DiscountValue) / 100);
+            } else if (promo.DiscountType === "FREE_ITEM") {
+               const freeBc = String(promo.DiscountValue).trim();
+               const freeItem = cart.find(c => String(c.Barcode) === freeBc);
+               if (freeItem && freeItem.qty > 0) {
+                  // E.g. Buy A+B get C free. If bought 2 A's, 2 B's, and 2 C's -> get 2 C's free.
+                  const freeDisQty = Math.min(freeItem.qty, minQty);
+                  totalDiscount += freeItem.price * freeDisQty;
+               }
+            } else {
+               totalDiscount += parseFloat(promo.DiscountValue) * minQty;
             }
          }
       }

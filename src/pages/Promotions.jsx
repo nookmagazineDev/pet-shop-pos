@@ -17,8 +17,8 @@ export default function Promotions() {
   const [name, setName] = useState("");
   const [conditionType, setConditionType] = useState("MIN_AMOUNT"); // MIN_AMOUNT or COMBO_ITEM
   const [conditionValue1, setConditionValue1] = useState("");
-  const [conditionValue2, setConditionValue2] = useState("");
-  const [discountType, setDiscountType] = useState("FIXED"); // FIXED or PERCENT
+  const [comboItems, setComboItems] = useState(["", ""]); // Array for A + B + C...
+  const [discountType, setDiscountType] = useState("FIXED"); // FIXED, PERCENT, or FREE_ITEM
   const [discountValue, setDiscountValue] = useState("");
 
   const fetchData = async () => {
@@ -41,8 +41,20 @@ export default function Promotions() {
       setEditPromo(promo);
       setName(promo.Name || "");
       setConditionType(promo.ConditionType || "MIN_AMOUNT");
-      setConditionValue1(promo.ConditionValue1 || "");
-      setConditionValue2(promo.ConditionValue2 || "");
+      if (promo.ConditionType === "COMBO_ITEM") {
+        if ((promo.ConditionValue1 || "").includes(",")) {
+          setComboItems(promo.ConditionValue1.split(","));
+        } else if (promo.ConditionValue2) {
+          // Backward compatibility
+          setComboItems([promo.ConditionValue1, promo.ConditionValue2]);
+        } else {
+          setComboItems([promo.ConditionValue1 || ""]);
+        }
+        setConditionValue1("");
+      } else {
+        setConditionValue1(promo.ConditionValue1 || "");
+        setComboItems(["", ""]);
+      }
       setDiscountType(promo.DiscountType || "FIXED");
       setDiscountValue(promo.DiscountValue || "");
     } else {
@@ -50,7 +62,7 @@ export default function Promotions() {
       setName("");
       setConditionType("MIN_AMOUNT");
       setConditionValue1("");
-      setConditionValue2("");
+      setComboItems(["", ""]);
       setDiscountType("FIXED");
       setDiscountValue("");
     }
@@ -59,8 +71,14 @@ export default function Promotions() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!name || !discountValue || !conditionValue1) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
-    if (conditionType === "COMBO_ITEM" && !conditionValue2) return alert("กรุณาเลือกสินค้าใบพ่วง (ชิ้นที่ 2) ให้ครบถ้วน");
+    if (!name || (!discountValue && discountValue !== 0)) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+    
+    let finalCondition1 = conditionValue1;
+    if (conditionType === "COMBO_ITEM") {
+      const validCombos = comboItems.filter(Boolean);
+      if (validCombos.length < 2) return alert("กรุณาเลือกรายการสินค้าซื้อให้ครบอย่างน้อย 2 รายการ");
+      finalCondition1 = validCombos.join(",");
+    }
 
     setIsSaving(true);
     const payload = {
@@ -69,8 +87,8 @@ export default function Promotions() {
         promoId: editPromo ? editPromo.PromoID : "",
         name,
         conditionType,
-        conditionValue1,
-        conditionValue2,
+        conditionValue1: finalCondition1,
+        conditionValue2: "", // Deprecated, kept empty
         discountType,
         discountValue,
         status: editPromo ? editPromo.Status : "ACTIVE"
@@ -153,8 +171,14 @@ export default function Promotions() {
                       </div>
                     ) : (
                       <div className="flex flex-col gap-1 text-xs">
-                        <div><span className="text-gray-500">ซื้อคู่ A:</span> <span className="font-medium">{getProductNameByBarcode(item.ConditionValue1)}</span></div>
-                        <div><span className="text-gray-500">คู่กับ B:</span> <span className="font-medium">{getProductNameByBarcode(item.ConditionValue2)}</span></div>
+                        {(() => {
+                           const items = (item.ConditionValue1 || "").includes(",") 
+                             ? item.ConditionValue1.split(",") 
+                             : [item.ConditionValue1, item.ConditionValue2].filter(Boolean);
+                           return items.map((bc, i) => (
+                             <div key={i}><span className="text-gray-500">ซื้อชิ้นที่ {i+1}:</span> <span className="font-medium">{getProductNameByBarcode(bc)}</span></div>
+                           ));
+                        })()}
                       </div>
                     )}
                   </td>
@@ -162,6 +186,8 @@ export default function Promotions() {
                     <div className="flex items-center gap-1.5 font-bold text-fuchsia-600 bg-fuchsia-50 px-3 py-1.5 rounded-lg w-max border border-fuchsia-100">
                       {item.DiscountType === "PERCENT" ? (
                         <>ลด {item.DiscountValue}% <Percent size={14} /></>
+                      ) : item.DiscountType === "FREE_ITEM" ? (
+                        <>แถม {getProductNameByBarcode(item.DiscountValue)} <Tag size={14} /></>
                       ) : (
                         <>ลด ฿{parseFloat(item.DiscountValue || 0).toLocaleString()} <Banknote size={14} /></>
                       )}
@@ -240,7 +266,7 @@ export default function Promotions() {
                     conditionType === "COMBO_ITEM" ? "border-fuchsia-500 bg-fuchsia-50 ring-1 ring-fuchsia-500" : "bg-white hover:bg-gray-50 border-gray-200"
                   )}>
                     <input type="radio" className="w-4 h-4 text-fuchsia-600" checked={conditionType === "COMBO_ITEM"} onChange={() => setConditionType("COMBO_ITEM")} />
-                    <span className="text-sm font-bold text-gray-800">ซื้อคู่ A + B</span>
+                    <span className="text-sm font-bold text-gray-800">ซื้อสินค้าเป็นชุด (Combos)</span>
                   </label>
                 </div>
 
@@ -256,27 +282,36 @@ export default function Promotions() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">สินค้าหลัก (A) *</label>
-                      <select
-                        required value={conditionValue1} onChange={e => setConditionValue1(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm"
-                      >
-                        <option value="">-- เลือกสินค้า A --</option>
-                        {products.map(p => <option key={p.Barcode} value={p.Barcode}>{p.Name} (บาร์โค้ด: {p.Barcode})</option>)}
-                      </select>
-                    </div>
-                    <div className="flex justify-center"><Plus size={16} className="text-gray-400" /></div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">สินค้าพ่วง (B) *</label>
-                      <select
-                        required value={conditionValue2} onChange={e => setConditionValue2(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm"
-                      >
-                        <option value="">-- เลือกสินค้า B --</option>
-                        {products.map(p => <option key={p.Barcode} value={p.Barcode}>{p.Name} (บาร์โค้ด: {p.Barcode})</option>)}
-                      </select>
-                    </div>
+                    {comboItems.map((val, idx) => (
+                      <div key={idx}>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex justify-between">
+                          <span>สินค้ารายการที่ {idx + 1} *</span>
+                          {idx >= 2 && (
+                            <button type="button" onClick={() => setComboItems(prev => prev.filter((_, i) => i !== idx))} className="text-fuchsia-600 hover:text-fuchsia-800 flex items-center gap-1">
+                              <X size={12}/> ลบ
+                            </button>
+                          )}
+                        </label>
+                        <select
+                          required value={val} onChange={e => {
+                            const newCombo = [...comboItems];
+                            newCombo[idx] = e.target.value;
+                            setComboItems(newCombo);
+                          }}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm"
+                        >
+                          <option value="">-- เลือกสินค้ารายการที่ {idx + 1} --</option>
+                          {products.map(p => <option key={p.Barcode} value={p.Barcode}>{p.Name} (บาร์โค้ด: {p.Barcode})</option>)}
+                        </select>
+                      </div>
+                    ))}
+                    <button 
+                      type="button" 
+                      onClick={() => setComboItems([...comboItems, ""])}
+                      className="w-full py-2.5 mt-2 border-2 border-dashed border-gray-300 text-gray-500 rounded-xl hover:bg-gray-50 hover:text-fuchsia-600 hover:border-fuchsia-200 transition-colors font-semibold text-sm flex items-center justify-center gap-2"
+                    >
+                      <Plus size={16} /> เพิ่มรายการสินค้าร่วมโปร
+                    </button>
                   </div>
                 )}
               </div>
@@ -292,16 +327,27 @@ export default function Promotions() {
                     >
                       <option value="FIXED">ลดเป็นบาท (฿)</option>
                       <option value="PERCENT">ลดเปอร์เซ็นต์ (%)</option>
+                      <option value="FREE_ITEM">ลดค่าของแถมเป็น (0฿)</option>
                     </select>
                   </div>
                   <div className="flex-1">
-                    <label className="block text-xs font-semibold text-fuchsia-700 mb-1.5">มูลค่าส่วนลด *</label>
-                    <input
-                      type="number" required min="1" step="0.01" max={discountType === "PERCENT" ? 100 : undefined}
-                      value={discountValue} onChange={e => setDiscountValue(e.target.value)}
-                      placeholder={discountType === "PERCENT" ? "เช่น 10" : "เช่น 100"}
-                      className="w-full px-4 py-3 rounded-xl border border-fuchsia-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm font-bold text-fuchsia-900"
-                    />
+                    <label className="block text-xs font-semibold text-fuchsia-700 mb-1.5">{discountType === "FREE_ITEM" ? "เลือกสินค้าของแถม *" : "มูลค่าส่วนลด *"}</label>
+                    {discountType === "FREE_ITEM" ? (
+                      <select
+                        required value={discountValue} onChange={e => setDiscountValue(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-fuchsia-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm font-bold text-fuchsia-900"
+                      >
+                        <option value="">-- เลือกสินค้าแถมฟรี --</option>
+                        {products.map(p => <option key={p.Barcode} value={p.Barcode}>{p.Name}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type="number" required min="1" step="0.01" max={discountType === "PERCENT" ? 100 : undefined}
+                        value={discountValue} onChange={e => setDiscountValue(e.target.value)}
+                        placeholder={discountType === "PERCENT" ? "เช่น 10" : "เช่น 100"}
+                        className="w-full px-4 py-3 rounded-xl border border-fuchsia-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm font-bold text-fuchsia-900"
+                      />
+                    )}
                   </div>
                 </div>
               </div>
