@@ -42,8 +42,8 @@ export default function Promotions() {
       setName(promo.Name || "");
       setConditionType(promo.ConditionType || "MIN_AMOUNT");
       if (promo.ConditionType === "COMBO_ITEM") {
-        if ((promo.ConditionValue1 || "").includes(",")) {
-          setComboItems(promo.ConditionValue1.split(","));
+        if (String(promo.ConditionValue1 || "").includes(",")) {
+          setComboItems(String(promo.ConditionValue1).split(","));
         } else if (promo.ConditionValue2) {
           // Backward compatibility
           setComboItems([promo.ConditionValue1, promo.ConditionValue2]);
@@ -172,8 +172,8 @@ export default function Promotions() {
                     ) : (
                       <div className="flex flex-col gap-1 text-xs">
                         {(() => {
-                           const items = (item.ConditionValue1 || "").includes(",") 
-                             ? item.ConditionValue1.split(",") 
+                           const items = String(item.ConditionValue1 || "").includes(",") 
+                             ? String(item.ConditionValue1).split(",") 
                              : [item.ConditionValue1, item.ConditionValue2].filter(Boolean);
                            return items.map((bc, i) => (
                              <div key={i}><span className="text-gray-500">ซื้อชิ้นที่ {i+1}:</span> <span className="font-medium">{getProductNameByBarcode(bc)}</span></div>

@@ -146,8 +146,8 @@ export default function POS() {
           }
         }
       } else if (promo.ConditionType === "COMBO_ITEM") {
-         const comboBarcodes = (promo.ConditionValue1 || "").includes(",") 
-           ? promo.ConditionValue1.split(",").map(b => b.trim()).filter(Boolean)
+         const comboBarcodes = String(promo.ConditionValue1 || "").includes(",") 
+           ? String(promo.ConditionValue1).split(",").map(b => b.trim()).filter(Boolean)
            : [promo.ConditionValue1, promo.ConditionValue2].map(b => String(b).trim()).filter(Boolean);
            
          let minQty = Infinity;
