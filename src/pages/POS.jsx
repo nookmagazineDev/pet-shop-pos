@@ -58,6 +58,7 @@ export default function POS() {
         Name: product.Name,
         name: product.Name,  // keep lowercase alias for display
         price: Number(product.Price) || 0,
+        costPrice: Number(product.CostPrice) || 0,
         image: product.ImageURL || "https://placehold.co/300x300?text=No+Image",
         vatStatus: product.VatStatus || "VAT",
         qty: 1 

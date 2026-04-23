@@ -8,6 +8,7 @@ export default function Reports() {
   const [transactions, setTransactions] = useState([]);
   const [stockMovements, setStockMovements] = useState([]);
   const [taxInvoices, setTaxInvoices] = useState([]);
+  const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Filter States
@@ -21,12 +22,14 @@ export default function Reports() {
   const fetchData = async () => {
     setIsLoading(true);
     if (activeTab === "sales" || activeTab === "history" || activeTab === "tax") {
-      const [tx, taxInv] = await Promise.all([
+      const [tx, taxInv, prods] = await Promise.all([
         fetchApi("getTransactions"),
-        fetchApi("getTaxInvoices")
+        fetchApi("getTaxInvoices"),
+        fetchApi("getProducts")
       ]);
       setTransactions(Array.isArray(tx) ? tx : []);
       setTaxInvoices(Array.isArray(taxInv) ? taxInv : []);
+      setProducts(Array.isArray(prods) ? prods : []);
     } else if (activeTab === "stock") {
       const moves = await fetchApi("getStockMovements");
       setStockMovements(Array.isArray(moves) ? moves : []);
@@ -60,15 +63,35 @@ export default function Reports() {
         cart.forEach(item => {
           const barcode = item.Barcode || "Unknown";
           if (!salesByProduct[barcode]) {
-            salesByProduct[barcode] = { name: item.name || item.Name || "Unknown", qty: 0, revenue: 0 };
+            salesByProduct[barcode] = { name: item.name || item.Name || "Unknown", qty: 0, revenue: 0, cost: 0, profit: 0 };
           }
-          salesByProduct[barcode].qty += parseFloat(item.qty || 0);
-          salesByProduct[barcode].revenue += parseFloat(item.price || item.Price || 0) * parseFloat(item.qty || 0);
+          
+          const qty = parseFloat(item.qty || 0);
+          const price = parseFloat(item.price || item.Price || 0);
+          let costPrice = parseFloat(item.costPrice || item.CostPrice || 0);
+          
+          if (costPrice === 0) {
+            const fallbackProd = products.find(p => String(p.Barcode) === String(barcode)) || {};
+            costPrice = parseFloat(fallbackProd.CostPrice || 0);
+          }
+          
+          const revenue = price * qty;
+          const cost = costPrice * qty;
+          
+          salesByProduct[barcode].qty += qty;
+          salesByProduct[barcode].revenue += revenue;
+          salesByProduct[barcode].cost += cost;
+          salesByProduct[barcode].profit += (revenue - cost);
         });
       }
     } catch(e) {}
   });
   const salesByProductArray = Object.entries(salesByProduct).map(([barcode, data]) => ({ barcode, ...data }));
+  
+  const totalMenuQty = salesByProductArray.reduce((acc, obj) => acc + obj.qty, 0);
+  const totalMenuRevenue = salesByProductArray.reduce((acc, obj) => acc + obj.revenue, 0);
+  const totalMenuCost = salesByProductArray.reduce((acc, obj) => acc + obj.cost, 0);
+  const totalMenuProfit = salesByProductArray.reduce((acc, obj) => acc + obj.profit, 0);
 
   // 2. Transasctions Split by Receipt / Tax Invoice
   const receiptsOnly = filteredTransactions.filter(t => (t.ReceiptType || "ใบเสร็จ") === "ใบเสร็จ");
@@ -157,8 +180,13 @@ export default function Reports() {
         {/* --- TAB: SALES BY PRODUCT --- */}
         {!isLoading && activeTab === "sales" && (
           <div className="flex-1 overflow-auto">
-            <div className="p-4 bg-gray-50/50 border-b border-gray-100">
+             <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
                <h3 className="font-semibold text-gray-800 flex items-center gap-2"><FileBox size={18}/> รายการขายสินค้าตามวันที่เลือก</h3>
+               <div className="flex gap-4 text-sm font-medium">
+                 <div className="text-gray-600">ยอดขายรวม: <span className="text-gray-900 font-bold">฿{totalMenuRevenue.toLocaleString()}</span></div>
+                 <div className="text-gray-600">ต้นทุนรวม: <span className="text-amber-600 font-bold">฿{totalMenuCost.toLocaleString()}</span></div>
+                 <div className="text-gray-600">กำไรรวม: <span className={clsx("font-bold", totalMenuProfit >= 0 ? "text-emerald-600" : "text-rose-600")}>฿{totalMenuProfit.toLocaleString()}</span></div>
+               </div>
             </div>
             <table className="w-full text-left border-collapse">
               <thead className="bg-gray-50 sticky top-0">
@@ -166,19 +194,23 @@ export default function Reports() {
                   <th className="py-3 px-6">Barcode</th>
                   <th className="py-3 px-6">ชื่อสินค้า</th>
                   <th className="py-3 px-6 text-right">จำนวนที่ขายได้</th>
-                  <th className="py-3 px-6 text-right">ยอดขายรวม (บาท)</th>
+                  <th className="py-3 px-6 text-right">ยอดขายรวม</th>
+                  <th className="py-3 px-6 text-right">ต้นทุนรวม</th>
+                  <th className="py-3 px-6 text-right">กำไรขั้นต้น</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {salesByProductArray.length === 0 ? (
-                  <tr><td colSpan="4" className="py-8 text-center text-gray-400">ไม่พบรายการขายในช่วงเวลานี้</td></tr>
+                  <tr><td colSpan="6" className="py-8 text-center text-gray-400">ไม่พบรายการขายในช่วงเวลานี้</td></tr>
                 ) : (
                   salesByProductArray.sort((a,b) => b.qty - a.qty).map((item, idx) => (
                     <tr key={idx} className="hover:bg-gray-50/50">
                       <td className="py-4 px-6 text-sm text-gray-600">{item.barcode}</td>
                       <td className="py-4 px-6 text-sm font-medium text-gray-900">{item.name}</td>
                       <td className="py-4 px-6 text-sm text-right font-bold text-gray-800">{item.qty}</td>
-                      <td className="py-4 px-6 text-sm text-right font-medium text-amber-600">฿{item.revenue.toLocaleString()}</td>
+                      <td className="py-4 px-6 text-sm text-right font-medium text-blue-600">฿{item.revenue.toLocaleString()}</td>
+                      <td className="py-4 px-6 text-sm text-right font-medium text-amber-600">฿{item.cost.toLocaleString()}</td>
+                      <td className={clsx("py-4 px-6 text-sm text-right font-bold", item.profit >= 0 ? "text-emerald-600" : "text-rose-600")}>฿{item.profit.toLocaleString()}</td>
                     </tr>
                   ))
                 )}

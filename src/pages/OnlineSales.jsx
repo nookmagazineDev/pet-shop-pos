@@ -62,7 +62,7 @@ export default function OnlineSales() {
       const key = product.Barcode || product.Name;
       const existing = prev.find(item => item.id === key);
       if (existing) return prev.map(item => item.id === key ? { ...item, qty: item.qty + 1 } : item);
-      return [{ id: key, Barcode: product.Barcode, Name: product.Name, name: product.Name, price: getPlatformPrice(product, orderPlatform), productObj: product, qty: 1 }, ...prev];
+      return [{ id: key, Barcode: product.Barcode, Name: product.Name, name: product.Name, price: getPlatformPrice(product, orderPlatform), costPrice: Number(product.CostPrice) || 0, productObj: product, qty: 1 }, ...prev];
     });
     setBarcodeInput("");
   };
@@ -104,7 +104,7 @@ export default function OnlineSales() {
         totalAmount: total,
         tax: tax,
         paymentMethod: `${orderPlatform} รอชำระ`,
-        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name, qty: c.qty, price: c.price }))
+        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name, qty: c.qty, price: c.price, costPrice: c.costPrice }))
       }
     });
     setIsSaving(false);
