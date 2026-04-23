@@ -15,10 +15,6 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
-  useEffect(() => {
-    fetchData();
-  }, [activeTab]);
-
   const fetchData = async () => {
     setIsLoading(true);
     if (activeTab === "sales" || activeTab === "history" || activeTab === "tax") {
@@ -36,6 +32,10 @@ export default function Reports() {
     }
     setIsLoading(false);
   };
+
+  useEffect(() => {
+    fetchData();
+  }, [activeTab]);
 
   const isBetweenDates = (dateStr) => {
     if (!dateStr) return false;
