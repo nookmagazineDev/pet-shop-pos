@@ -59,6 +59,7 @@ export default function POS() {
         name: product.Name,  // keep lowercase alias for display
         price: Number(product.Price) || 0,
         image: product.ImageURL || "https://placehold.co/300x300?text=No+Image",
+        vatStatus: product.VatStatus || "VAT",
         qty: 1 
       }, ...prev];
     });
@@ -160,8 +161,11 @@ export default function POS() {
   };
 
   const discountAmount = calculateDiscounts();
+  const vatableSubtotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? 0 : (item.price * item.qty)), 0);
+  const vatableRatio = subtotal > 0 ? (vatableSubtotal / subtotal) : 0;
+  const vatableSubtotalAfterDiscount = vatableSubtotal - (discountAmount * vatableRatio);
   const subtotalAfterDiscount = subtotal - discountAmount;
-  const tax = subtotalAfterDiscount * 0.07;
+  const tax = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * 0.07 : 0;
   const total = subtotalAfterDiscount + tax;
 
   const relatedPromotions = cart.length > 0 ? promotions.filter(promo => {
