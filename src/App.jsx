@@ -11,8 +11,10 @@ import Reports from "./pages/Reports";
 import Promotions from "./pages/Promotions";
 import Login from "./pages/Login";
 import AdminUsers from "./pages/AdminUsers";
+import PrinterSettings from "./pages/PrinterSettings";
 import { ShiftProvider } from "./context/ShiftContext";
 import { AuthProvider } from "./context/AuthContext";
+import { PrinterProvider } from "./context/PrinterContext";
 
 // Role definitions
 const ALL = ["admin", "manager", "staff", "cashier"];
@@ -22,7 +24,8 @@ const STORE_ALL = ["admin", "manager", "staff", "cashier"]; // same as ALL
 function App() {
   return (
     <AuthProvider>
-      <ShiftProvider>
+      <PrinterProvider>
+        <ShiftProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -36,10 +39,12 @@ function App() {
               <Route path="reports" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Reports /></ProtectedRoute>} />
               <Route path="promotions" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Promotions /></ProtectedRoute>} />
               <Route path="admin/users" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsers /></ProtectedRoute>} />
+              <Route path="settings/printer" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><PrinterSettings /></ProtectedRoute>} />
             </Route>
           </Routes>
         </BrowserRouter>
-      </ShiftProvider>
+        </ShiftProvider>
+      </PrinterProvider>
     </AuthProvider>
   );
 }
