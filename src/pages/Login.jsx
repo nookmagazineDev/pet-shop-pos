@@ -30,10 +30,10 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo & Branding */}
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl">
-            <span className="text-4xl">🐾</span>
+          <div className="flex items-center justify-center mx-auto mb-4">
+            <img src="/logo.png" alt="mamaa ME' Logo" className="h-36 w-auto drop-shadow-2xl" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-1">Pet Shop POS</h1>
+          <h1 className="text-3xl font-bold text-white mb-1">mamaa ME'</h1>
           <p className="text-white/70 text-sm">บริษัทมะมามี (1989) จำกัด</p>
         </div>
 

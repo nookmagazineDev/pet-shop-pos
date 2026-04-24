@@ -59,9 +59,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
         .hr { border-top:1px dashed #000; margin:3px 0; }
         table { width:100%; border-collapse:collapse; }
         td { padding:1px 2px; vertical-align:top; }
+        .logo { display:block; margin:0 auto 4px; max-height:${paperMm <= 58 ? "40px" : "60px"}; width:auto; }
         @media print { @page { size:${paperMm}mm auto; margin:0; } }
       </style>
     </head><body>
+      <div class="center"><img class="logo" src="${window.location.origin}/logo.png" alt="logo" /></div>
       <div class="center bold" style="font-size:1.15em">${settings.shopName}</div>
       <div class="center" style="font-size:0.9em">${settings.shopAddress}</div>
       <div class="center">โทร: ${settings.shopPhone}</div>

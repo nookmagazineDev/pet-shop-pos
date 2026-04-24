@@ -38,8 +38,12 @@ export default function Layout() {
     <div className="flex flex-col md:flex-row h-screen bg-gray-50 text-gray-900 font-sans">
       {/* Sidebar (Desktop) */}
       <aside className="w-64 bg-white border-r border-gray-200 flex-col shadow-sm hidden md:flex shrink-0">
-        <div className="h-16 flex items-center px-6 border-b border-gray-200 shrink-0">
-          <h1 className="text-lg font-bold text-primary">บริษัทมะมามี (1989) จำกัด</h1>
+        <div className="h-20 flex items-center px-4 border-b border-gray-200 shrink-0 gap-3">
+          <img src="/logo.png" alt="mamaa ME'" className="h-14 w-auto object-contain shrink-0" />
+          <div className="min-w-0">
+            <div className="font-bold text-primary leading-tight text-sm">mamaa ME'</div>
+            <div className="text-[10px] text-gray-400 leading-tight">บริษัทมะมามี (1989) จำกัด</div>
+          </div>
         </div>
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => (
