@@ -671,10 +671,23 @@ function receiveGoods(payload) {
       if ((searchBarcode && rowBarcode === searchBarcode) || (!searchBarcode && rowName === searchName)) {
         let currentQty = parseFloat(data[i][10]) || 0;
         let addedQty = parseFloat(item.quantity) || 0;
-        
-        sheet.getRange(i + 1, 11).setValue(currentQty + addedQty); // Quantity +=
+        let newTotalQty = currentQty + addedQty;
+
+        sheet.getRange(i + 1, 11).setValue(newTotalQty); // Quantity +=
         if (item.vatStatus) sheet.getRange(i + 1, 3).setValue(item.vatStatus);
-        if (item.unitCost) sheet.getRange(i + 1, 4).setValue(parseFloat(item.unitCost) || 0);
+
+        // ====== WEIGHTED AVERAGE COST ======
+        // newAvgCost = (existingQty * oldCost + addedQty * newUnitCost) / (existingQty + addedQty)
+        if (item.unitCost && addedQty > 0) {
+          const oldCost = parseFloat(data[i][3]) || 0;
+          const newUnitCost = parseFloat(item.unitCost) || 0;
+          const avgCost = newTotalQty > 0
+            ? ((currentQty * oldCost) + (addedQty * newUnitCost)) / newTotalQty
+            : newUnitCost;
+          sheet.getRange(i + 1, 4).setValue(Math.round(avgCost * 100) / 100); // CostPrice = weighted avg
+        }
+        // ===================================
+
         if (item.category) sheet.getRange(i + 1, 10).setValue(item.category);
         if (item.location) sheet.getRange(i + 1, 12).setValue(item.location); // Location
         if (item.lotNumber) sheet.getRange(i + 1, 13).setValue(item.lotNumber); // LotNumber
