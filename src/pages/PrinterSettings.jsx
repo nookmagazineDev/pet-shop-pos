@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { usePrinter } from "../context/PrinterContext";
-import { Printer, Save, TestTube, CheckCircle, Info, Wifi, Monitor } from "lucide-react";
+import { Printer, Save, TestTube, CheckCircle, Info, Wifi, Monitor, ServerCrash } from "lucide-react";
+import toast from "react-hot-toast";
 
-function printReceipt(settings, isTest = false) {
+async function printReceipt(settings, isTest = false) {
   const paperMm = parseInt(settings.paperWidth) || 80;
   const items = isTest
     ? [
@@ -21,6 +22,34 @@ function printReceipt(settings, isTest = false) {
       <td style="text-align:right">${i.price.toFixed(2)}</td>
       <td style="text-align:right">${(i.price * i.qty).toFixed(2)}</td>
     </tr>`).join("");
+
+  if (settings.enableDirectPrint) {
+    // Send to Node.js local bridge
+    try {
+      const response = await fetch("http://localhost:3001/print", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...settings,
+          items,
+          subtotal,
+          tax,
+          total,
+          isTest,
+          receiptType: "ใบกำกับภาษีอย่างย่อ"
+        })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        toast.error("พิมพ์ไม่สำเร็จ: " + data.message);
+      } else {
+        toast.success("ส่งคำสั่งพิมพ์เรียบร้อย");
+      }
+    } catch (e) {
+      toast.error("ไม่สามารถเชื่อมต่อโปรแกรม Print Server ได้ (localhost:3001)");
+    }
+    return;
+  }
 
   const win = window.open("", "_blank", "width=400,height=600");
   win.document.write(`<!DOCTYPE html><html><head>
@@ -144,7 +173,26 @@ export default function PrinterSettings() {
               placeholder="192.168.1.100"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm font-mono"
             />
-            <p className="text-xs text-gray-400 mt-1">บันทึกไว้เพื่ออ้างอิง — ดูวิธีตั้งค่าด้านล่าง</p>
+            <p className="text-xs text-gray-400 mt-1">บันทึกไว้เพื่ออ้างอิง หรือใช้งานร่วมกับ Direct Print ด้านล่าง</p>
+          </div>
+
+          <div className="pt-2 border-t border-gray-100">
+            <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={form.enableDirectPrint}
+                  onChange={(e) => setForm(prev => ({ ...prev, enableDirectPrint: e.target.checked }))}
+                />
+                <div className={`block w-10 h-6 rounded-full transition-colors ${form.enableDirectPrint ? "bg-indigo-500" : "bg-gray-300"}`}></div>
+                <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${form.enableDirectPrint ? "transform translate-x-4" : ""}`}></div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-bold text-gray-800">เปิดใช้งานเสิร์ฟเวอร์ปริ้นจิ๋ว (Direct Print Port 9100)</span>
+                <span className="text-xs text-gray-500">พิมพ์ตรงหน้าต่างไม่เด้ง (ต้องเปิดโปรแกรมหลังบ้าน print-server ทิ้งไว้)</span>
+              </div>
+            </label>
           </div>
 
           <div>

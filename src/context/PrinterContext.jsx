@@ -5,6 +5,7 @@ const PrinterContext = createContext(null);
 const DEFAULTS = {
   printerIp: "",
   paperWidth: "80",  // mm
+  enableDirectPrint: false, // true = use node bridge
   shopName: "บริษัทมะมามี (1989) จำกัด",
   shopAddress: "100/116 พุทธมณฑลสาย 2 ซอย 24 แขวงศาลาธรรมสพน์ เขตทวีวัฒนา กรุงเทพมหานคร 10170",
   shopPhone: "085-363-8383",

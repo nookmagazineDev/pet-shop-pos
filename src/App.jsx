@@ -15,6 +15,7 @@ import PrinterSettings from "./pages/PrinterSettings";
 import { ShiftProvider } from "./context/ShiftContext";
 import { AuthProvider } from "./context/AuthContext";
 import { PrinterProvider } from "./context/PrinterContext";
+import { Toaster } from "react-hot-toast";
 
 // Role definitions
 const ALL = ["admin", "manager", "staff", "cashier"];
@@ -42,6 +43,7 @@ function App() {
               <Route path="settings/printer" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><PrinterSettings /></ProtectedRoute>} />
             </Route>
           </Routes>
+          <Toaster position="top-right" />
         </BrowserRouter>
         </ShiftProvider>
       </PrinterProvider>

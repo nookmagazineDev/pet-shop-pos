@@ -1,5 +1,6 @@
 import { X, Printer } from "lucide-react";
 import { usePrinter } from "../context/PrinterContext";
+import toast from "react-hot-toast";
 
 export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, tax, total, receiptType, customerInfo }) {
   if (!isOpen) return null;
@@ -7,7 +8,37 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
   const { settings } = usePrinter();
   const paperMm = parseInt(settings.paperWidth) || 80;
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (settings.enableDirectPrint) {
+      try {
+        const response = await fetch("http://localhost:3001/print", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...settings,
+            items: cart,
+            subtotal,
+            tax,
+            total,
+            isTest: false,
+            receiptType,
+            paymentMethod,
+            customerInfo
+          })
+        });
+        const data = await response.json();
+        if (!data.success) {
+          toast.error("พิมพ์ไม่สำเร็จ: " + data.message);
+        } else {
+          toast.success("พิมพ์ใบเสร็จเรียบร้อยแล้ว");
+          onClose(); // Auto close the modal on success
+        }
+      } catch (e) {
+        toast.error("ไม่สามารถเชื่อมต่อ Print Server ได้ (เปิดโปรแกรมหลังบ้านหรือยัง?)");
+      }
+      return;
+    }
+
     const win = window.open("", "_blank", "width=420,height=700");
     const rows = cart.map(item => `
       <tr>
