@@ -15,7 +15,7 @@ function setup() {
     "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy"],
-    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount"],
+    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
     "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
@@ -293,7 +293,8 @@ function processCheckout(payload) {
     payload.shopPlatform || "Store",
     payload.receiptType || "ใบเสร็จ", 
     payload.customerInfo ? JSON.stringify(payload.customerInfo) : "",
-    payload.discount || 0
+    payload.discount || 0,
+    payload._actor ? payload._actor.username : ""
   ]);
 
   if (payload.receiptType === "ใบกำกับภาษี") {
