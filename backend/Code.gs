@@ -15,6 +15,7 @@ function setup() {
     "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy"],
+    "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
@@ -223,6 +224,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Promotions"));
   } else if (action === "getTaxInvoices") {
     return jsonResponse(readSheetData("TaxInvoices"));
+  } else if (action === "getReturns") {
+    return jsonResponse(readSheetData("Returns"));
   } else if (action === "getUsers") {
     return jsonResponse(getUsers());
   }
@@ -270,6 +273,8 @@ function doPost(e) {
       return deleteUser(data.payload);
     } else if (action === "cancelTransaction") {
       return cancelTransaction(data.payload);
+    } else if (action === "processReturn") {
+      return processReturn(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -446,6 +451,93 @@ function cancelTransaction(payload) {
 
   logActivity("POS", "Cancel Order", orderId, payload._actor);
   return jsonResponse({ success: true, message: "ยกเลิกออเดอร์และคืนสต็อกสำเร็จ" });
+}
+
+function processReturn(payload) {
+  const ss = getSpreadsheet();
+  const txSheet = ss.getSheetByName("Transactions");
+  const returnSheet = ss.getSheetByName("Returns");
+  if (!returnSheet) {
+    ss.insertSheet("Returns").appendRow(["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"]);
+  }
+
+  const orderId = String(payload.orderId || "").trim();
+  const cancelNote = String(payload.cancelNote || "").trim();
+  const returnedItems = payload.returnedItems || []; // array of {barcode, name, returnQty, price}
+  const isFullCancel = payload.isFullCancel === true;
+
+  if (!orderId || returnedItems.length === 0) return jsonResponse({ error: "ข้อมูลการคืนไม่ครบถ้วน" });
+  if (!cancelNote) return jsonResponse({ error: "กรุณาระบุหมายเหตุการคืนสินค้า" });
+
+  // 1) Update Transaction Status
+  const data = txSheet.getDataRange().getValues();
+  let foundRow = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === orderId) {
+      foundRow = i + 1;
+      break;
+    }
+  }
+
+  if (foundRow !== -1) {
+    const headers = data[0];
+    let statusCol = headers.indexOf("Status") + 1 || 14;
+    let noteCol = headers.indexOf("CancelNote") + 1 || 15;
+    const newStatus = isFullCancel ? "CANCELLED" : "PARTIAL_RETURN";
+    txSheet.getRange(foundRow, statusCol).setValue(newStatus);
+    
+    // Concat note if already exists
+    const existingNote = String(txSheet.getRange(foundRow, noteCol).getValue() || "").trim();
+    const appendedNote = existingNote ? existingNote + " | " + cancelNote : cancelNote;
+    txSheet.getRange(foundRow, noteCol).setValue(appendedNote);
+  }
+
+  // 2) Process Returns and Restock
+  const storeSheet = ss.getSheetByName("StoreStock");
+  const stockMoves = ss.getSheetByName("StockMovements");
+  const targetReturnsSheet = ss.getSheetByName("Returns");
+  const now = new Date();
+  const actorName = payload._actor ? payload._actor.username : "System";
+
+  let totalRefund = 0;
+
+  returnedItems.forEach(item => {
+    const barcode = String(item.barcode || "").trim();
+    const name = String(item.name || "").trim();
+    const qty = parseFloat(item.returnQty) || 0;
+    const price = parseFloat(item.price) || 0;
+    const refundAmt = qty * price;
+    
+    if (qty > 0) {
+      totalRefund += refundAmt;
+      
+      // Add to Returns sheet
+      targetReturnsSheet.appendRow([now, orderId, barcode, name, qty, refundAmt, cancelNote, actorName]);
+
+      // Restock to StoreStock
+      if (storeSheet) {
+        const storeData = storeSheet.getDataRange().getValues();
+        for (let s = 1; s < storeData.length; s++) {
+          const sBarcode = String(storeData[s][0]).trim();
+          const sName = String(storeData[s][1]).trim();
+          if ((barcode && sBarcode === barcode) || (sName === name)) {
+            const existingQty = parseFloat(storeData[s][2]) || 0;
+            storeSheet.getRange(s + 1, 3).setValue(existingQty + qty);
+            storeSheet.getRange(s + 1, 5).setValue(now);
+            break;
+          }
+        }
+      }
+
+      // Log to StockMovements
+      if (stockMoves) {
+        stockMoves.appendRow([now, barcode, name, qty, "Returned (Order " + orderId + ")", "Store", actorName]);
+      }
+    }
+  });
+
+  logActivity("POS", isFullCancel ? "Cancel Order" : "Partial Return", orderId, payload._actor);
+  return jsonResponse({ success: true, message: `ทำการคืนสินค้าเรียบร้อยแล้ว (ยอดคืนเงิน ฿${totalRefund})` });
 }
 
 function moveToStore(payload) {

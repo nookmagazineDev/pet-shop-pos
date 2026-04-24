@@ -9,6 +9,7 @@ export default function Reports() {
   const [transactions, setTransactions] = useState([]);
   const [stockMovements, setStockMovements] = useState([]);
   const [taxInvoices, setTaxInvoices] = useState([]);
+  const [returnsHistory, setReturnsHistory] = useState([]);
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -16,6 +17,7 @@ export default function Reports() {
   const [selectedTx, setSelectedTx] = useState(null);
   const [cancelNote, setCancelNote] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
+  const [returnQtys, setReturnQtys] = useState({});
 
   // Filter States
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -23,15 +25,17 @@ export default function Reports() {
 
   const fetchData = async () => {
     setIsLoading(true);
-    if (activeTab === "sales" || activeTab === "history" || activeTab === "tax") {
-      const [tx, taxInv, prods] = await Promise.all([
+    if (activeTab === "sales" || activeTab === "history" || activeTab === "tax" || activeTab === "returns") {
+      const [tx, taxInv, prods, ret] = await Promise.all([
         fetchApi("getTransactions"),
         fetchApi("getTaxInvoices"),
-        fetchApi("getProducts")
+        fetchApi("getProducts"),
+        fetchApi("getReturns")
       ]);
       setTransactions(Array.isArray(tx) ? tx : []);
       setTaxInvoices(Array.isArray(taxInv) ? taxInv : []);
       setProducts(Array.isArray(prods) ? prods : []);
+      setReturnsHistory(Array.isArray(ret) ? ret : []);
     } else if (activeTab === "stock") {
       const moves = await fetchApi("getStockMovements");
       setStockMovements(Array.isArray(moves) ? moves : []);
@@ -57,31 +61,76 @@ export default function Reports() {
   const filteredTransactions = transactions.filter(t => isBetweenDates(t.Date));
   const filteredStockMoves = stockMovements.filter(m => isBetweenDates(m.Date));
   const filteredTaxInvoices = taxInvoices.filter(t => isBetweenDates(t.Date));
+  const filteredReturns = returnsHistory.filter(r => isBetweenDates(r.Timestamp));
 
   const handleViewDetails = (tx) => {
     const fullTx = filteredTransactions.find(t => t.OrderID === tx.OrderID) || tx;
     setSelectedTx(fullTx);
     setCancelNote("");
+    
+    // Auto-select ALL possible quantities by default for convenience
+    const newQtys = {};
+    try {
+      const cart = typeof fullTx.CartDetails === 'string' ? JSON.parse(fullTx.CartDetails) : fullTx.CartDetails;
+      if (Array.isArray(cart)) {
+        cart.forEach((item, idx) => {
+          const bCode = String(item.Barcode || item.barcode);
+          const alreadyReturned = filteredReturns.filter(r => r.OrderID === fullTx.OrderID && String(r.Barcode) === bCode).reduce((sum, r) => sum + parseFloat(r.ReturnQty||0), 0);
+          newQtys[idx] = Math.max(0, (parseFloat(item.qty)||0) - alreadyReturned);
+        });
+      }
+    } catch(e) {}
+    setReturnQtys(newQtys);
   };
 
   const handleCancelTransaction = async () => {
-    if (!cancelNote.trim()) { toast.error("กรุณาระบุเหตุผลการยกเลิก"); return; }
-    if (!window.confirm("คุณแน่ใจหรือไม่ที่จะยกเลิกออเดอร์นี้? สต็อกจะถูกคืนกลับอัตโนมัติ")) return;
+    // Collect selected items
+    const cart = typeof selectedTx.CartDetails === 'string' ? JSON.parse(selectedTx.CartDetails) : selectedTx.CartDetails;
+    let itemsToReturn = [];
+    if (Array.isArray(cart)) {
+      cart.forEach((item, idx) => {
+        const qty = returnQtys[idx] || 0;
+        if (qty > 0) {
+          itemsToReturn.push({
+            barcode: item.Barcode || item.barcode || "Unknown",
+            name: item.Name || item.name || "Unknown",
+            returnQty: qty,
+            price: item.Price || item.price || 0
+          });
+        }
+      });
+    }
+
+    if (itemsToReturn.length === 0) { toast.error("กรุณาเลือกสินค้าที่ต้องการคืนอย่างน้อย 1 ชิ้น"); return; }
+    if (!cancelNote.trim()) { toast.error("กรุณาระบุเหตุผลการคืนสินค้า"); return; }
+    const totalRef = itemsToReturn.reduce((sq, it) => sq + (it.returnQty * it.price), 0);
+    if (!window.confirm(`คุณต้องการคืนสินค้า ${itemsToReturn.length} รายการ (มูลค่าคืนเงิน ฿${totalRef.toLocaleString()})\nแน่ใจหรือไม่? สต็อกจะบวกกลับอัตโนมัติ`)) return;
     
     setIsCancelling(true);
+    let isFullCancel = true;
+    if (Array.isArray(cart)) {
+      cart.forEach((item, idx) => {
+        const bCode = String(item.Barcode || item.barcode);
+        const alreadyReturned = filteredReturns.filter(r => r.OrderID === selectedTx.OrderID && String(r.Barcode) === bCode).reduce((sum, r) => sum + parseFloat(r.ReturnQty||0), 0);
+        const returningNow = returnQtys[idx] || 0;
+        if ((parseFloat(item.qty)||0) - alreadyReturned - returningNow > 0) isFullCancel = false;
+      });
+    }
+
     const res = await postApi({
-      action: "cancelTransaction",
-      payload: { orderId: selectedTx.OrderID, cancelNote }
+      action: "processReturn",
+      payload: { orderId: selectedTx.OrderID, cancelNote, returnedItems: itemsToReturn, isFullCancel }
     });
     setIsCancelling(false);
     
     if (res.success) {
-      toast.success("ยกเลิกออเดอร์เรียบร้อยแล้ว");
+      toast.success(res.message || "ทำรายการสำเร็จ");
       setSelectedTx(null);
       setCancelNote("");
+      setReturnQtys({});
       fetchData(); // Reload data
     } else {
-      toast.error(res.error || "เกิดข้อผิดพลาดในการยกเลิก");
+      toast.error(res.error || "เกิดข้อผิดพลาดในการทำรายการ");
     }
   };
 
@@ -119,6 +168,22 @@ export default function Reports() {
       }
     } catch(e) {}
   });
+  // Deduct Returned Items from Sales
+  filteredReturns.forEach(ret => {
+    const barcode = String(ret.Barcode || "Unknown");
+    if (salesByProduct[barcode]) {
+      const retQty = parseFloat(ret.ReturnQty || 0);
+      const retRefund = parseFloat(ret.RefundAmount || 0);
+      const costPerUnit = salesByProduct[barcode].qty > 0 ? (salesByProduct[barcode].cost / salesByProduct[barcode].qty) : 0;
+      const retCost = costPerUnit * retQty;
+
+      salesByProduct[barcode].qty -= retQty;
+      salesByProduct[barcode].revenue -= retRefund;
+      salesByProduct[barcode].cost -= retCost;
+      salesByProduct[barcode].profit -= (retRefund - retCost);
+    }
+  });
+
   const salesByProductArray = Object.entries(salesByProduct).map(([barcode, data]) => ({ barcode, ...data }));
   
   const totalMenuQty = salesByProductArray.reduce((acc, obj) => acc + obj.qty, 0);
@@ -128,12 +193,17 @@ export default function Reports() {
 
   // 2. Transasctions Split by Receipt / Tax Invoice
   const receiptsOnly = filteredTransactions.filter(t => (t.ReceiptType || "ใบเสร็จ") === "ใบเสร็จ");
-  // taxInvoicesOnly is now replaced by filteredTaxInvoices, but kept for fallback or backward compatibility
   const taxInvoicesOnly = filteredTransactions.filter(t => t.ReceiptType === "ใบกำกับภาษี");
 
   // 3. Tax Report (รายงานภาษีขาย) Focus on Sales and Tax Collected
-  const totalTaxCollected = filteredTransactions.reduce((acc, tx) => acc + (parseFloat(tx.Tax) || 0), 0);
-  const totalSalesRevenue = filteredTransactions.reduce((acc, tx) => acc + (parseFloat(tx.TotalAmount) || 0), 0);
+  const totalRefundAmount = filteredReturns.reduce((acc, ret) => acc + (parseFloat(ret.RefundAmount) || 0), 0);
+  const grossSalesRevenue = filteredTransactions.reduce((acc, tx) => acc + (parseFloat(tx.TotalAmount) || 0), 0);
+  const totalSalesRevenue = grossSalesRevenue - totalRefundAmount;
+  
+  // Try mapping tax proportion. We'll simply scale down tax by the refund ratio
+  const grossTaxCollected = filteredTransactions.reduce((acc, tx) => acc + (parseFloat(tx.Tax) || 0), 0);
+  const taxRefundRatio = grossSalesRevenue > 0 ? totalSalesRevenue / grossSalesRevenue : 1;
+  const totalTaxCollected = grossTaxCollected * taxRefundRatio;
 
 
   return (
@@ -168,6 +238,15 @@ export default function Reports() {
             )}
           >
             รายงานภาษีขาย
+          </button>
+          <button 
+            onClick={() => setActiveTab("returns")}
+            className={clsx(
+              "px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap flex items-center gap-1.5",
+              activeTab === "returns" ? "bg-white text-rose-600 shadow-sm" : "text-gray-500 hover:text-rose-600"
+            )}
+          >
+            ประวัติการคืนสินค้า
           </button>
           <button 
             onClick={() => setActiveTab("stock")}
@@ -339,10 +418,11 @@ export default function Reports() {
 
                <div className="bg-white border text-amber-800 border-amber-200 rounded-2xl p-6 shadow-sm">
                  <div className="flex items-center gap-3 mb-2">
-                    <Calculator className="text-amber-500" />
-                    <h3 className="font-semibold text-lg">มูลค่าภาษีขายที่เก็บมาได้ (Output Tax)</h3>
-                  </div>
-                  <div className="text-4xl font-bold text-amber-600">฿{totalTaxCollected.toLocaleString("th-TH", {minimumFractionDigits: 2})}</div>
+                   <ArrowRightLeft className="text-emerald-500" />
+                   <h3 className="font-semibold text-lg">ภาษีขายโดยประมาณ (Estimated Tax)</h3>
+                 </div>
+                 <div className="text-4xl font-bold">฿{totalTaxCollected.toLocaleString("th-TH", {minimumFractionDigits: 2})}</div>
+                 <div className="text-sm mt-3 font-medium opacity-80">(หักลบยอดส่วนลดและยอดคืนสินค้าแล้ว)</div>
                </div>
             </div>
 
@@ -451,21 +531,45 @@ export default function Reports() {
                 </div>
               )}
 
-              <h4 className="font-bold text-gray-800 text-sm mb-3 pb-2 border-b border-gray-100">รายการสินค้า</h4>
+              <h4 className="font-bold text-gray-800 text-sm mb-3 pb-2 border-b border-gray-100 flex justify-between">
+                <span>รายการสินค้า</span>
+                {selectedTx.Status !== "CANCELLED" && <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">* ปรับ +/- เพื่อระบุจำนวนที่ต้องการคืน</span>}
+              </h4>
               <ul className="space-y-3 mb-5">
                 {(()=>{
                   try {
                     const cart = typeof selectedTx.CartDetails === 'string' ? JSON.parse(selectedTx.CartDetails) : selectedTx.CartDetails;
                     if (Array.isArray(cart)) {
-                      return cart.map((item, idx) => (
-                        <li key={idx} className="flex justify-between items-start text-sm">
-                           <div>
+                      return cart.map((item, idx) => {
+                        const bCode = String(item.Barcode || item.barcode);
+                        const alreadyReturned = filteredReturns.filter(r => r.OrderID === selectedTx.OrderID && String(r.Barcode) === bCode).reduce((sum, r) => sum + parseFloat(r.ReturnQty||0), 0);
+                        const maxReturn = (parseFloat(item.qty)||0) - alreadyReturned;
+                        const returnQty = returnQtys[idx] || 0;
+                        const price = item.price || item.Price || 0;
+
+                        return (
+                        <li key={idx} className="flex flex-col sm:flex-row justify-between sm:items-center text-sm border-b border-gray-50 pb-2">
+                           <div className="flex-1 mb-2 sm:mb-0">
                              <span className="font-medium text-gray-800">{item.qty}x {item.name || item.Name}</span>
-                             {item.note && <div className="text-xs text-gray-500 mt-0.5 pl-4">- โน๊ต: {item.note}</div>}
+                             <div className="text-xs text-gray-500 mt-0.5 max-w-[200px] truncate">฿{price.toLocaleString()} ต่อชิ้น</div>
+                             {alreadyReturned > 0 && <div className="text-xs text-rose-500 font-bold mt-0.5">ถูกคืนไปแล้ว {alreadyReturned} ชิ้น</div>}
                            </div>
-                           <span className="font-medium text-gray-900 text-right">฿{((item.price || item.Price || 0) * item.qty).toLocaleString()}</span>
+                           <div className="flex items-center gap-3">
+                              {selectedTx.Status !== "CANCELLED" && maxReturn > 0 ? (
+                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                                  <button onClick={() => setReturnQtys(p => ({...p, [idx]: Math.max(0, (p[idx]||0) - 1)}))} className="px-2 py-1 bg-gray-50 hover:bg-red-50 text-red-500 font-bold transition-colors">-</button>
+                                  <span className="px-3 text-sm font-bold text-gray-700 w-8 text-center">{returnQty}</span>
+                                  <button onClick={() => setReturnQtys(p => ({...p, [idx]: Math.min(maxReturn, (p[idx]||0) + 1)}))} className="px-2 py-1 bg-gray-50 hover:bg-emerald-50 text-emerald-600 font-bold transition-colors">+</button>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-gray-400 font-medium px-2 truncate w-24 text-right">
+                                  {maxReturn === 0 && selectedTx.Status !== "CANCELLED" ? "(ไม่มีให้คืนเพิ่ม)" : ""}
+                                </div>
+                              )}
+                              <span className="font-medium text-gray-900 text-right w-16">฿{(price * item.qty).toLocaleString()}</span>
+                           </div>
                         </li>
-                      ));
+                      )});
                     }
                   } catch(e) {}
                   return <li className="text-sm text-gray-500">ไม่สามารถโหลดรายการสินค้าได้</li>;
@@ -473,15 +577,27 @@ export default function Reports() {
               </ul>
               
               <div className="flex justify-between border-t border-gray-200 pt-3 font-bold text-gray-800 text-lg">
-                 <span>ยอดสุทธิ</span>
+                 <span>ยอดสุทธิ (เดิม)</span>
                  <span className="text-primary">฿{parseFloat(selectedTx.TotalAmount || 0).toLocaleString()}</span>
               </div>
+
+              {selectedTx.Status !== "CANCELLED" && (
+                <div className="flex justify-between mt-2 font-bold text-rose-600 text-lg bg-rose-50 p-3 rounded-xl border border-rose-100 shadow-sm">
+                   <span>ยอดที่จะคืนเงินลูกค้า (Refund)</span>
+                   <span>฿{(()=>{
+                     let ref = 0;
+                     const c = typeof selectedTx.CartDetails === 'string' ? JSON.parse(selectedTx.CartDetails) : selectedTx.CartDetails;
+                     if(Array.isArray(c)) c.forEach((it, i) => ref += (it.price||it.Price||0)*(returnQtys[i]||0));
+                     return ref.toLocaleString();
+                   })()}</span>
+                </div>
+              )}
             </div>
             
             {/* Action Bar */}
             {selectedTx.Status !== "CANCELLED" && (
               <div className="p-4 bg-gray-50 border-t flex flex-col gap-3">
-                 <p className="text-[11px] text-red-600 font-medium flex items-center gap-1">* ⚠️ หากยกเลิกบิล สินค้าจะถูกบวกสต็อกหลับคืนเข้าคลังหน้าร้าน และเก็บเข้าประวัติย้ายสต็อกโดยอัตโนมัติ</p>
+                 <p className="text-[11px] text-red-600 font-medium flex items-center gap-1">* ⚠️ สินค้าที่ระบุยอดคืน จะถูกบวกสต็อกกลับเข้าคลังหน้าร้าน และเก็บเข้าประวัติย้ายสต็อกโดยอัตโนมัติ</p>
                  <div className="flex flex-col sm:flex-row gap-2">
                     <input 
                       type="text" 
