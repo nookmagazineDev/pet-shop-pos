@@ -59,13 +59,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
     }
 
     const win = window.open("", "_blank", "width=420,height=700");
-    const rows = cart.map(item => `
-      <tr>
-        <td>${item.name || item.Name}<br/><span style="font-size:0.85em;color:#777">${item.barcode || item.Barcode || ""}</span></td>
+    const rows = cart.map(item => {
+      const noteHtml = item.note || item.Note ? `<tr><td colspan="4" style="font-size:0.9em; padding-left: 6px;"> - โน๊ต: ${item.note || item.Note}</td></tr>` : "";
+      return `<tr>
+        <td style="max-width:140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name || item.Name}</td>
         <td style="text-align:center">${item.qty}</td>
         <td style="text-align:right">${(parseFloat(item.price) || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
         <td style="text-align:right">${((parseFloat(item.price) || 0) * item.qty).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-      </tr>`).join("");
+      </tr>${noteHtml}`;
+    }).join("");
 
     win.document.write(`<!DOCTYPE html><html><head>
       <meta charset="UTF-8">
@@ -85,9 +87,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
     </head><body>
       <div class="center"><img class="logo" src="${window.location.origin}/logo.png" alt="logo" /></div>
       <div class="center bold" style="font-size:1.1em">${settings.shopName}</div>
-      <div class="center" style="font-size:0.9em">${settings.shopAddress}</div>
+      <div class="center" style="font-size:0.9em">${settings.shopAddress || "สาขา 00001"}</div>
       <div class="center">TAX# ${settings.shopTaxId} ${settings.shopBranch}</div>
-      <div class="center bold" style="margin-top:2px">${receiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษีเต็มรูป" : "ใบกำกับภาษีอย่างย่อ"}</div>
+      <div class="center bold" style="margin-top:2px">${receiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษีเต็มรูป" : "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ"}</div>
       <div class="center" style="font-size:0.9em;margin-bottom:2px">(VAT Included)</div>
       
       <div class="hr"></div>

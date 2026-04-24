@@ -52,9 +52,9 @@ app.post("/print", async (req, res) => {
     if (customerInfo && receiptType === "ใบกำกับภาษี") {
         printer.drawLine();
         printer.alignLeft();
-        printer.println("Customer: " + (customerInfo.customerName || "-"));
-        printer.println("Address: " + (customerInfo.customerAddress || "-"));
-        printer.println("Tax ID: " + (customerInfo.customerTaxId || "-"));
+        printer.println("ลูกค้า: " + (customerInfo.customerName || "-"));
+        printer.println("ที่อยู่: " + (customerInfo.customerAddress || "-"));
+        printer.println("เลขภาษี: " + (customerInfo.customerTaxId || "-"));
     }
 
     printer.drawLine();
@@ -62,10 +62,10 @@ app.post("/print", async (req, res) => {
     // Items
     printer.alignLeft();
     printer.tableCustom([
-      { text: "Item", align: "LEFT", width: 0.45 },
-      { text: "Qty", align: "CENTER", width: 0.15 },
-      { text: "Price", align: "RIGHT", width: 0.20 },
-      { text: "Total", align: "RIGHT", width: 0.20 },
+      { text: "รายการ", align: "LEFT", width: 0.45 },
+      { text: "จำนวน", align: "CENTER", width: 0.15 },
+      { text: "ราคา", align: "RIGHT", width: 0.20 },
+      { text: "ราคารวม", align: "RIGHT", width: 0.20 },
     ]);
 
     printer.drawLine();
@@ -81,6 +81,9 @@ app.post("/print", async (req, res) => {
           { text: Number(item.price || item.Price || 0).toFixed(2), align: "RIGHT", width: 0.20 },
           { text: (Number(item.price || item.Price || 0) * item.qty).toFixed(2), align: "RIGHT", width: 0.20 },
         ]);
+        if (item.note || item.Note) {
+            printer.println(" - โน๊ต: " + (item.note || item.Note));
+        }
       });
     }
 
@@ -88,7 +91,7 @@ app.post("/print", async (req, res) => {
     
     // Subtotal
     printer.tableCustom([
-      { text: "Subtotal", align: "LEFT", width: 0.5 },
+      { text: "รวม", align: "LEFT", width: 0.5 },
       { text: Number(subtotal || 0).toFixed(2), align: "RIGHT", width: 0.5 }
     ]);
     
@@ -104,13 +107,13 @@ app.post("/print", async (req, res) => {
       { text: Number(vatableAdjusted || 0).toFixed(2), align: "RIGHT", width: 0.5 }
     ]);
     printer.tableCustom([
-      { text: "VAT 7%", align: "LEFT", width: 0.5 },
+      { text: "VAT 7 %", align: "LEFT", width: 0.5 },
       { text: Number(tax || 0).toFixed(2), align: "RIGHT", width: 0.5 }
     ]);
     
     printer.bold(true);
     printer.tableCustom([
-      { text: "Total", align: "LEFT", width: 0.5 },
+      { text: "สุทธิ", align: "LEFT", width: 0.5 },
       { text: Number(total || 0).toFixed(2), align: "RIGHT", width: 0.5 }
     ]);
     printer.bold(false);
@@ -128,15 +131,15 @@ app.post("/print", async (req, res) => {
     printer.drawLine();
     
     // Staff and metadata
-    printer.tableCustom([ { text: "Staff", align: "LEFT", width: 0.4 }, { text: String(empName || "-"), align: "RIGHT", width: 0.6 } ]);
-    printer.tableCustom([ { text: "Station", align: "LEFT", width: 0.4 }, { text: "POS #1", align: "RIGHT", width: 0.6 } ]);
+    printer.tableCustom([ { text: "พนักงาน", align: "LEFT", width: 0.4 }, { text: String(empName || "-"), align: "RIGHT", width: 0.6 } ]);
+    printer.tableCustom([ { text: "จุดขาย", align: "LEFT", width: 0.4 }, { text: "POS #1", align: "RIGHT", width: 0.6 } ]);
     if (recNo) {
-       printer.tableCustom([ { text: "Slip No.", align: "LEFT", width: 0.4 }, { text: recNo, align: "RIGHT", width: 0.6 } ]);
+       printer.tableCustom([ { text: "เลขที่", align: "LEFT", width: 0.4 }, { text: recNo, align: "RIGHT", width: 0.6 } ]);
     }
     
     printer.newLine();
     printer.alignCenter();
-    printer.println("** Date: " + new Date().toLocaleString("en-GB") + " **");
+    printer.println("** วันที่ " + new Date().toLocaleString("en-GB") + " **");
 
     if (footerNote) {
        printer.newLine();
