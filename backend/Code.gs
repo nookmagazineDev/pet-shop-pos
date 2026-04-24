@@ -29,6 +29,7 @@ function setup() {
       sheet = ss.insertSheet(sheetName);
       sheet.appendRow(sheets[sheetName]);
       sheet.getRange(1, 1, 1, sheets[sheetName].length).setFontWeight("bold");
+    }
   }
 }
 
