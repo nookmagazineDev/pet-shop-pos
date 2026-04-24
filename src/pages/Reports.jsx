@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { FileText, ArrowRightLeft, Calendar, FileBox, Calculator, Loader2, X } from "lucide-react";
+import { FileText, ArrowRightLeft, Calendar, FileBox, Calculator, Loader2, X, Download } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
+import { exportToExcel } from "../utils/excelExport";
 import toast from "react-hot-toast";
 
 export default function Reports() {
@@ -205,6 +206,64 @@ export default function Reports() {
   const taxRefundRatio = grossSalesRevenue > 0 ? totalSalesRevenue / grossSalesRevenue : 1;
   const totalTaxCollected = grossTaxCollected * taxRefundRatio;
 
+  const handleExportExcel = () => {
+    if (activeTab === "sales") {
+      const exportData = salesByProductArray.map(item => ({
+        "บาร์โค้ด": item.barcode,
+        "ชื่อเมนู/สินค้า": item.name || "-",
+        "จำนวนที่ขายได้": item.qty,
+        "รายรับรวม (ยอดขาย)": item.revenue,
+        "ต้นทุนรวม": item.cost,
+        "กำไรสุทธิ": item.profit
+      }));
+      exportToExcel(exportData, "SalesDetail", "Sales_Report");
+    } else if (activeTab === "history") {
+      const exportData = filteredTransactions.map(tx => ({
+        "เลขที่บิล": tx.OrderID,
+        "วันที่": new Date(tx.Date).toLocaleString("th-TH"),
+        "ประเภทใบเสร็จ": tx.ReceiptType || "ใบเสร็จ",
+        "ชื่อลูกค้า": tx.CustomerInfo ? (JSON.parse(tx.CustomerInfo).name || JSON.parse(tx.CustomerInfo).customerName || "-") : "-",
+        "ยอดชำระสุทธิ": tx.TotalAmount,
+        "ภาษี (VAT)": tx.Tax || 0,
+        "วิธีการชำระเงิน": tx.PaymentMethod,
+        "ช่องทาง": tx.ShopPlatform || "Store",
+        "สถานะ": tx.Status || "COMPLETED",
+        "ผู้ทำรายการ": tx.Username || "-"
+      }));
+      exportToExcel(exportData, "SalesHistory", "Sales_History");
+    } else if (activeTab === "tax") {
+      const exportData = filteredTransactions.filter(t => parseFloat(t.Tax) > 0).map(tx => ({
+        "วันที่ทำรายการ": new Date(tx.Date).toLocaleString("th-TH"),
+        "ประเภทใบเสร็จ": tx.ReceiptType || "ใบเสร็จ",
+        "เลขที่อ้างอิง": tx.OrderID,
+        "ยอดขายสุทธิ": tx.TotalAmount,
+        "ภาษีมูลค่าเพิ่ม (VAT)": tx.Tax
+      }));
+      exportToExcel(exportData, "TaxReport", "Tax_Transaction_Report");
+    } else if (activeTab === "returns") {
+      const exportData = filteredReturns.map(ret => ({
+        "วันที่ทำรายการ": new Date(ret.Timestamp).toLocaleString("th-TH"),
+        "เลขที่บิลที่คืน": ret.OrderID,
+        "บาร์โค้ด": ret.Barcode,
+        "ชื่อสินค้า": ret.ProductName,
+        "จำนวนที่คืน": ret.ReturnQty,
+        "ยอดทอน/คืนเงิน": ret.RefundAmount,
+        "เหตุผล/หมายเหตุ": ret.ReturnNote,
+        "ผู้ทำรายการ": ret.ActionBy
+      }));
+      exportToExcel(exportData, "ReturnsHistory", "Returns_History");
+    } else if (activeTab === "stock") {
+      const exportData = filteredStockMoves.map(move => ({
+        "วันที่ย้าย": new Date(move.Date).toLocaleString("th-TH"),
+        "บาร์โค้ด": move.Barcode,
+        "ชื่อสินค้า": move.Name,
+        "จำนวน": move.Quantity,
+        "รูปแบบ/เป้าหมาย": move.ToLocation,
+        "ผู้ทำรายการ": move.MovedBy || "System"
+      }));
+      exportToExcel(exportData, "StockMovements", "Stock_Movements");
+    }
+  };
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -260,25 +319,35 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Date Filter */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Calendar size={18} className="text-gray-400" />
-          <span className="text-sm font-medium text-gray-700">ช่วงวันที่แสดงผล:</span>
+      {/* Date Filter and Actions */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar size={18} className="text-gray-400" />
+            <span className="text-sm font-medium text-gray-700">ช่วงวันที่แสดงผล:</span>
+          </div>
+          <input 
+            type="date" 
+            value={startDate} 
+            onChange={e => setStartDate(e.target.value)}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary"
+          />
+          <span className="text-gray-400">ถึง</span>
+          <input 
+            type="date" 
+            value={endDate} 
+            onChange={e => setEndDate(e.target.value)}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary"
+          />
         </div>
-        <input 
-          type="date" 
-          value={startDate} 
-          onChange={e => setStartDate(e.target.value)}
-          className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary"
-        />
-        <span className="text-gray-400">ถึง</span>
-        <input 
-          type="date" 
-          value={endDate} 
-          onChange={e => setEndDate(e.target.value)}
-          className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary"
-        />
+        
+        <button 
+          onClick={handleExportExcel} 
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 font-medium text-sm whitespace-nowrap"
+        >
+          <Download size={18} />
+          <span>Export Excel</span>
+        </button>
       </div>
 
       <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-0 overflow-hidden">

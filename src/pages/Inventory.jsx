@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye } from "lucide-react";
+import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye, Download } from "lucide-react";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
+import { exportToExcel } from "../utils/excelExport";
 import { useAuth } from "../context/AuthContext";
 
 export default function Inventory() {
@@ -227,6 +228,40 @@ export default function Inventory() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (activeTab === "stock") {
+      const exportData = filteredStock.map(p => ({
+        "หมวดหมู่": p.Category || "ทั่วไป",
+        "บาร์โค้ด": p.Barcode,
+        "ชื่อสินค้า": p.Name,
+        "สถานะภาษี": p.VatStatus || "VAT",
+        "ต้นทุน (ทุน)": p.CostPrice || 0,
+        "ราคาขายปลีก": p.Price || 0,
+        "ราคาขายส่ง": p.WholesalePrice || 0,
+        "Shopee": p.ShopeePrice || 0,
+        "Lazada": p.LazadaPrice || 0,
+        "LineMan/Grab": p.LinemanPrice || p.GrabFoodPrice || 0,
+        "จำนวนคงเหลือ": p.Quantity || 0,
+        "ตำแหน่งจัดเก็บ": p.Location || "-",
+        "วันหมดอายุ": p.ExpiryDate || "-"
+      }));
+      exportToExcel(exportData, "MasterStock", "Master_Stock_Inventory");
+    } else if (activeTab === "store") {
+      const exportData = storeStock.filter(item => 
+        item.Name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        item.Barcode?.toString().includes(searchQuery) ||
+        item.StoreLocation?.toLowerCase().includes(searchQuery.toLowerCase())
+      ).map(m => ({
+        "บาร์โค้ด": m.Barcode,
+        "ชื่อสินค้า": m.Name,
+        "จำนวนหน้าร้าน": m.Quantity || 0,
+        "ที่อยู่เวที": m.StoreLocation || "หน้าร้านทั่วไป",
+        "อัปเดตล่าสุด": m.UpdatedAt ? new Date(m.UpdatedAt).toLocaleString("th-TH") : "-"
+      }));
+      exportToExcel(exportData, "StoreStock", "Store_Stock_Inventory");
+    }
+  };
+
   return (
     <div className="flex flex-col h-full space-y-6">
 
@@ -274,6 +309,16 @@ export default function Inventory() {
             <Store size={14} /> สต็อคหน้าร้าน
           </button>
         </div>
+        
+        {(activeTab === "stock" || activeTab === "store") && (
+          <button 
+            onClick={handleExportExcel} 
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 font-medium text-sm w-full sm:w-auto"
+          >
+            <Download size={18} />
+            <span>Export Excel</span>
+          </button>
+        )}
       </div>
 
       {activeTab === "stock" && (
