@@ -17,7 +17,7 @@ import { AuthProvider } from "./context/AuthContext";
 // Role definitions
 const ALL = ["admin", "manager", "staff", "cashier"];
 const MANAGEMENT = ["admin", "manager"];
-const STORE = ["admin", "manager", "staff"];
+const STORE_ALL = ["admin", "manager", "staff", "cashier"]; // same as ALL
 
 function App() {
   return (
@@ -29,10 +29,10 @@ function App() {
             <Route path="/" element={<Layout />}>
               <Route index element={<ProtectedRoute allowedRoles={ALL}><Dashboard /></ProtectedRoute>} />
               <Route path="pos" element={<ProtectedRoute allowedRoles={ALL}><POS /></ProtectedRoute>} />
-              <Route path="online" element={<ProtectedRoute allowedRoles={STORE}><OnlineSales /></ProtectedRoute>} />
-              <Route path="inventory" element={<ProtectedRoute allowedRoles={STORE}><Inventory /></ProtectedRoute>} />
-              <Route path="shift" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Shift /></ProtectedRoute>} />
-              <Route path="accounting" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Accounting /></ProtectedRoute>} />
+              <Route path="online" element={<ProtectedRoute allowedRoles={STORE_ALL}><OnlineSales /></ProtectedRoute>} />
+              <Route path="inventory" element={<ProtectedRoute allowedRoles={STORE_ALL}><Inventory /></ProtectedRoute>} />
+              <Route path="shift" element={<ProtectedRoute allowedRoles={STORE_ALL}><Shift /></ProtectedRoute>} />
+              <Route path="accounting" element={<ProtectedRoute allowedRoles={STORE_ALL}><Accounting /></ProtectedRoute>} />
               <Route path="reports" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Reports /></ProtectedRoute>} />
               <Route path="promotions" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Promotions /></ProtectedRoute>} />
               <Route path="admin/users" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsers /></ProtectedRoute>} />

@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft } from "lucide-react";
+import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye } from "lucide-react";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
+import { useAuth } from "../context/AuthContext";
 
 export default function Inventory() {
+  const { currentUser } = useAuth();
+  const canEdit = currentUser?.role !== "staff"; // staff = view only
   const [activeTab, setActiveTab] = useState("stock");
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -255,6 +258,9 @@ export default function Inventory() {
               "px-6 py-2 rounded-lg font-medium text-sm transition-all",
               activeTab === "receive" ? "bg-white text-primary shadow-sm" : "text-gray-500 hover:text-gray-900"
             )}
+            disabled={!canEdit}
+            title={!canEdit ? "ไม่มีสิทธิ์เข้าถึง" : undefined}
+            style={!canEdit ? { display: "none" } : {}}
           >
             ใบรับของเข้าคลัง (Receive Goods)
           </button>
@@ -364,20 +370,27 @@ export default function Inventory() {
                     </td>
                     <td className="py-4 px-6 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => setEditItem({ ...item })}
-                          className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                          title="แก้ไขสินค้า"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          onClick={() => { setMoveSource(item); setMoveQty("1"); setMoveLocation(""); setIsMoveModalOpen(true); }}
-                          className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                          title="ย้ายสินค้าเข้าหน้าร้าน"
-                        >
-                          <ArrowRightLeft size={16} />
-                        </button>
+                        {canEdit && (
+                          <>
+                            <button
+                              onClick={() => setEditItem({ ...item })}
+                              className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                              title="แก้ไขสินค้า"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              onClick={() => { setMoveSource(item); setMoveQty("1"); setMoveLocation(""); setIsMoveModalOpen(true); }}
+                              className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                              title="ย้ายสินค้าเข้าหน้าร้าน"
+                            >
+                              <ArrowRightLeft size={16} />
+                            </button>
+                          </>
+                        )}
+                        {!canEdit && (
+                          <span className="text-xs text-gray-400 flex items-center gap-1"><Eye size={14} /> ดูเท่านั้น</span>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -397,12 +410,14 @@ export default function Inventory() {
               <span className="font-semibold">สินค้าหน้าร้าน (StoreStock)</span>
               <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">{storeStock.length} รายการ</span>
             </div>
-            <button
-              onClick={() => { setMoveSource(null); setMoveQty("1"); setMoveLocation(""); setIsMoveModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm"
-            >
-              <ArrowRightLeft size={16} /> ย้ายสินค้าเข้าหน้าร้าน
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => { setMoveSource(null); setMoveQty("1"); setMoveLocation(""); setIsMoveModalOpen(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm"
+              >
+                <ArrowRightLeft size={16} /> ย้ายสินค้าเข้าหน้าร้าน
+              </button>
+            )}
           </div>
           <div className="flex-1 overflow-auto">
             <table className="w-full text-left border-collapse min-w-[700px]">
