@@ -190,15 +190,41 @@ export default function POS() {
   const tax = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * 0.07 : 0;
   const total = subtotalAfterDiscount + tax;
 
-  const relatedPromotions = cart.length > 0 ? promotions.filter(promo => {
-    if (promo.ConditionType === "COMBO_ITEM") {
-      // Check if at least one item of the COMBO is in the cart
-      const hasItem1 = cart.some(c => String(c.Barcode) === String(promo.ConditionValue1));
-      const hasItem2 = cart.some(c => String(c.Barcode) === String(promo.ConditionValue2));
-      return hasItem1 || hasItem2;
-    }
-    return false;
-  }) : [];
+  const getPromoHints = () => {
+    const hints = [];
+    promotions.forEach(promo => {
+      if (promo.ConditionType === "MIN_AMOUNT") {
+        const target = parseFloat(promo.ConditionValue1 || 0);
+        if (subtotal >= target) {
+           hints.push({ text: `เงื่อนไขครบแล้ว: ${promo.Name}`, achieved: true });
+        } else {
+           const diff = target - subtotal;
+           hints.push({ text: `ขาดอีก ฿${diff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} จะได้รับ: ${promo.Name}`, achieved: false });
+        }
+      } else if (promo.ConditionType === "COMBO_ITEM" && cart.length > 0) {
+        const comboBarcodes = String(promo.ConditionValue1 || "").includes(",") 
+           ? String(promo.ConditionValue1).split(",").map(b => b.trim()).filter(Boolean)
+           : [promo.ConditionValue1, promo.ConditionValue2].map(b => String(b).trim()).filter(Boolean);
+        const hasSome = comboBarcodes.some(bc => cart.some(c => String(c.Barcode) === bc));
+        
+        let minQty = Infinity;
+        let allFound = true;
+        for (const bc of comboBarcodes) {
+            const item = cart.find(c => String(c.Barcode) === bc);
+            if (!item) { allFound = false; break; }
+            minQty = Math.min(minQty, item.qty);
+        }
+        
+        if (allFound && minQty > 0) {
+           hints.push({ text: `เข้าเงื่อนไขโปร: ${promo.Name}`, achieved: true });
+        } else if (hasSome) {
+           hints.push({ text: `แนะนำซื้อคู่/ชุดเพิ่ม: ${promo.Name}`, achieved: false });
+        }
+      }
+    });
+    return hints;
+  };
+  const promoHints = getPromoHints();
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -367,17 +393,17 @@ export default function POS() {
           )}
 
           {/* Related Promotions section */}
-          {relatedPromotions.length > 0 && (
+          {promoHints.length > 0 && (
             <div className="mt-6 p-4 bg-fuchsia-50 rounded-xl border border-fuchsia-100 shrink-0">
                <h4 className="font-semibold text-fuchsia-800 mb-2 flex items-center gap-2">
                  <Tag size={18} /> 
-                 โปรโมชั่นที่แนะนำสำหรับสินค้าในตะกร้า
+                 รายการส่งเสริมการขาย (Promotions)
                </h4>
                <ul className="space-y-2">
-                 {relatedPromotions.map((promo, idx) => (
-                   <li key={idx} className="text-sm text-fuchsia-700 flex items-start gap-2">
-                     <span className="mt-0.5 font-bold">•</span>
-                     <span>{promo.Name}</span>
+                 {promoHints.map((hint, idx) => (
+                   <li key={idx} className={`text-sm flex items-start gap-2 ${hint.achieved ? "text-green-700 font-bold" : "text-fuchsia-700"}`}>
+                     <span className="mt-0.5">{hint.achieved ? "🎉" : "•"}</span>
+                     <span>{hint.text}</span>
                    </li>
                  ))}
                </ul>
