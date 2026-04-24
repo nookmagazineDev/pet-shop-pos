@@ -8,6 +8,21 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
   const { settings } = usePrinter();
   const paperMm = parseInt(settings.paperWidth) || 80;
 
+  // --- Shared receipt metadata (used by both Direct Print and Popup Print) ---
+  const now = new Date();
+  const dStr = now.toLocaleDateString("th-TH", { year: "2-digit", month: "2-digit", day: "2-digit" }).replace(/\//g, "");
+  const recNo = "ST" + dStr + String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+
+  let userObj = {};
+  try { userObj = JSON.parse(sessionStorage.getItem("pos_user") || "{}"); } catch (e) {}
+  const empName = userObj.displayName || "พนักงาน";
+
+  const discountAmount = subtotal - (total - tax);
+  const nonVatTotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? (item.price * item.qty) : 0), 0);
+  const nonVatAdjusted = subtotal > 0 ? nonVatTotal - (discountAmount * (nonVatTotal / subtotal)) : 0;
+  const vatableAdjusted = (total - tax) - nonVatAdjusted;
+  // ---------------------------------------------------------------------------
+
   const handlePrint = async () => {
     if (settings.enableDirectPrint) {
       try {
@@ -42,19 +57,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       }
       return;
     }
-
-    const now = new Date();
-    const dStr = now.toLocaleDateString("th-TH", { year: "2-digit", month: "2-digit", day: "2-digit" }).replace(/\//g, "");
-    const recNo = "ST" + dStr + String(Math.floor(Math.random() * 10000)).padStart(4,"0");
-    
-    let userObj = {};
-    try { userObj = JSON.parse(sessionStorage.getItem("pos_user") || "{}"); } catch (e) {}
-    const empName = userObj.displayName || "พนักงาน";
-
-    const discountAmount = subtotal - (total - tax);
-    const nonVatTotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? (item.price * item.qty) : 0), 0);
-    const nonVatAdjusted = subtotal > 0 ? nonVatTotal - (discountAmount * (nonVatTotal / subtotal)) : 0;
-    const vatableAdjusted = (total - tax) - nonVatAdjusted;
 
     const win = window.open("", "_blank", "width=420,height=700");
     const rows = cart.map(item => `
