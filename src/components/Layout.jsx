@@ -1,21 +1,37 @@
 
-import { Outlet, NavLink } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Clock, Globe, LogOut, Wallet, FileText, Tag } from "lucide-react";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { LayoutDashboard, ShoppingCart, Package, Clock, Globe, LogOut, Wallet, FileText, Tag, ShieldCheck } from "lucide-react";
 import { useShift } from "../context/ShiftContext";
+import { useAuth } from "../context/AuthContext";
+import clsx from "clsx";
+
+const ALL_MENU = [
+  { name: "แดชบอร์ด", fullName: "แดชบอร์ด (Dashboard)", path: "/", icon: <LayoutDashboard size={20} />, roles: ["admin", "manager", "staff", "cashier"] },
+  { name: "POS", fullName: "ระบบขายหน้าร้าน (POS)", path: "/pos", icon: <ShoppingCart size={20} />, roles: ["admin", "manager", "staff", "cashier"] },
+  { name: "ออนไลน์", fullName: "ขายออนไลน์ (Online)", path: "/online", icon: <Globe size={20} />, roles: ["admin", "manager", "staff"] },
+  { name: "คลังสินค้า", fullName: "คลังสินค้า (Inventory)", path: "/inventory", icon: <Package size={20} />, roles: ["admin", "manager", "staff"] },
+  { name: "จัดการกะ", fullName: "จัดการกะ (Shift)", path: "/shift", icon: <Clock size={20} />, roles: ["admin", "manager"] },
+  { name: "บัญชี", fullName: "รายรับ-รายจ่าย (Ledger)", path: "/accounting", icon: <Wallet size={20} />, roles: ["admin", "manager"] },
+  { name: "รายงาน", fullName: "รายงาน (Reports)", path: "/reports", icon: <FileText size={20} />, roles: ["admin", "manager"] },
+  { name: "โปรโมชั่น", fullName: "โปรโมชั่น (Promotions)", path: "/promotions", icon: <Tag size={20} />, roles: ["admin", "manager"] },
+  { name: "พนักงาน", fullName: "จัดการพนักงาน (Admin)", path: "/admin/users", icon: <ShieldCheck size={20} />, roles: ["admin"], adminOnly: true },
+];
 
 export default function Layout() {
   const { isShiftOpen, shiftState } = useShift();
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
 
-  const menuItems = [
-    { name: "แดชบอร์ด", fullName: "แดชบอร์ด (Dashboard)", path: "/", icon: <LayoutDashboard size={20} /> },
-    { name: "POS", fullName: "ระบบขายหน้าร้าน (POS)", path: "/pos", icon: <ShoppingCart size={20} /> },
-    { name: "ออนไลน์", fullName: "ขายออนไลน์ (Online)", path: "/online", icon: <Globe size={20} /> },
-    { name: "คลังสินค้า", fullName: "คลังสินค้า (Inventory)", path: "/inventory", icon: <Package size={20} /> },
-    { name: "จัดการกะ", fullName: "จัดการกะ (Shift)", path: "/shift", icon: <Clock size={20} /> },
-    { name: "บัญชี", fullName: "รายรับ-รายจ่าย (Ledger)", path: "/accounting", icon: <Wallet size={20} /> },
-    { name: "รายงาน", fullName: "รายงาน (Reports)", path: "/reports", icon: <FileText size={20} /> },
-    { name: "โปรโมชั่น", fullName: "โปรโมชั่น (Promotions)", path: "/promotions", icon: <Tag size={20} /> },
-  ];
+  const role = currentUser?.role || "staff";
+  const menuItems = ALL_MENU.filter(item => item.roles.includes(role));
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
+  const roleLabels = { admin: "ผู้ดูแลระบบ", manager: "ผู้จัดการ", staff: "พนักงาน", cashier: "แคชเชียร์" };
+  const roleLabel = roleLabels[role] || role;
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-gray-50 text-gray-900 font-sans">
@@ -24,17 +40,20 @@ export default function Layout() {
         <div className="h-16 flex items-center px-6 border-b border-gray-200 shrink-0">
           <h1 className="text-lg font-bold text-primary">บริษัทมะมามี (1989) จำกัด</h1>
         </div>
-        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === "/"}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium ${
+                clsx(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium",
+                  item.adminOnly && "border border-dashed border-purple-200",
                   isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                }`
+                    ? item.adminOnly ? "bg-purple-100 text-purple-700 border-purple-300" : "bg-primary text-primary-foreground"
+                    : item.adminOnly ? "text-purple-600 hover:bg-purple-50" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                )
               }
             >
               {item.icon}
@@ -42,8 +61,21 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="p-4 border-t border-gray-200 shrink-0">
-          <button className="flex items-center gap-3 px-3 py-2.5 w-full text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium">
+        <div className="p-4 border-t border-gray-200 shrink-0 space-y-2">
+          {/* User info */}
+          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-50">
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+              {(currentUser?.displayName || "?")[0]?.toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-gray-800 truncate">{currentUser?.displayName || "ผู้ใช้งาน"}</div>
+              <div className="text-xs text-gray-500">{roleLabel}</div>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-3 py-2.5 w-full text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium"
+          >
             <LogOut size={20} />
             ออกจากระบบ
           </button>
@@ -60,10 +92,16 @@ export default function Layout() {
             </div>
           </div>
           <div className="flex items-center gap-3 md:gap-4">
-            <div className="text-xs md:text-sm font-medium hidden sm:block">พนักงานหน้าร้าน</div>
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary-foreground font-bold">
-              พ
+            <div className="text-xs md:text-sm font-medium hidden sm:block text-gray-700">
+              {currentUser?.displayName || ""} <span className="text-gray-400 text-xs">({roleLabel})</span>
             </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1.5 rounded-lg transition-colors"
+            >
+              <LogOut size={14} />
+              <span className="hidden sm:inline">ออก</span>
+            </button>
           </div>
         </header>
         <div className="flex-1 overflow-auto p-2 sm:p-4 md:p-8">
@@ -73,20 +111,19 @@ export default function Layout() {
 
       {/* Bottom Navigation (Mobile) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around px-2 py-1.5 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        {menuItems.map((item) => (
+        {menuItems.slice(0, 6).map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
+            end={item.path === "/"}
             className={({ isActive }) =>
-              `flex flex-col items-center p-1.5 rounded-lg transition-colors min-w-[64px] ${
-                isActive
-                  ? "text-primary font-bold"
-                  : "text-gray-500 hover:text-gray-900"
-              }`
+              clsx("flex flex-col items-center p-1.5 rounded-lg transition-colors min-w-[48px]",
+                isActive ? "text-primary font-bold" : "text-gray-500 hover:text-gray-900"
+              )
             }
           >
             {item.icon}
-            <span className="text-[10px] mt-1">{item.name}</span>
+            <span className="text-[9px] mt-1">{item.name}</span>
           </NavLink>
         ))}
       </nav>

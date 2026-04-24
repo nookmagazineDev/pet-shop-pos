@@ -18,7 +18,8 @@ function setup() {
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
-    "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"]
+    "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
+    "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"]
   };
 
   for (const sheetName in sheets) {
@@ -208,6 +209,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Promotions"));
   } else if (action === "getTaxInvoices") {
     return jsonResponse(readSheetData("TaxInvoices"));
+  } else if (action === "getUsers") {
+    return jsonResponse(getUsers());
   }
   
   return jsonResponse({ error: "Invalid action" });
@@ -243,6 +246,14 @@ function doPost(e) {
       return savePromotion(data.payload);
     } else if (action === "togglePromotionStatus") {
       return togglePromotionStatus(data.payload);
+    } else if (action === "login") {
+      return loginUser(data.payload);
+    } else if (action === "saveUser") {
+      return saveUser(data.payload);
+    } else if (action === "toggleUserStatus") {
+      return toggleUserStatus(data.payload);
+    } else if (action === "deleteUser") {
+      return deleteUser(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -913,3 +924,149 @@ function migrateProductsSheet() {
   sheet.getRange(1, 1, 1, newRows[0].length).setFontWeight("bold");
   Logger.log("⭐ Migration complete! Converted " + (data.length - 1) + " rows.");
 }
+
+// ==========================================
+// USER MANAGEMENT FUNCTIONS
+// ==========================================
+
+function loginUser(payload) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("Users");
+  if (!sheet) {
+    // Auto-create Users sheet with default admin if not present
+    sheet = ss.insertSheet("Users");
+    sheet.appendRow(["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"]);
+    sheet.getRange(1, 1, 1, 8).setFontWeight("bold");
+    // Default admin account: admin / admin1234
+    sheet.appendRow(["USR-001", "admin", "admin1234", "ผู้ดูแลระบบ", "admin", "TRUE", new Date().toISOString(), ""]);
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const usernameIdx = headers.indexOf("Username");
+  const passwordIdx = headers.indexOf("Password");
+  const roleIdx = headers.indexOf("Role");
+  const displayNameIdx = headers.indexOf("DisplayName");
+  const isActiveIdx = headers.indexOf("IsActive");
+  const userIdIdx = headers.indexOf("UserID");
+  const lastLoginIdx = headers.indexOf("LastLogin");
+
+  const username = String(payload.username || "").trim().toLowerCase();
+  const password = String(payload.password || "").trim();
+
+  for (let i = 1; i < data.length; i++) {
+    const rowUser = String(data[i][usernameIdx] || "").trim().toLowerCase();
+    const rowPass = String(data[i][passwordIdx] || "").trim();
+    const isActive = String(data[i][isActiveIdx]).toUpperCase() === "TRUE";
+
+    if (rowUser === username && rowPass === password) {
+      if (!isActive) {
+        return jsonResponse({ success: false, error: "บัญชีนี้ถูกระงับการใช้งาน" });
+      }
+      // Update last login
+      sheet.getRange(i + 1, lastLoginIdx + 1).setValue(new Date().toISOString());
+      return jsonResponse({
+        success: true,
+        user: {
+          userId: data[i][userIdIdx],
+          username: data[i][usernameIdx],
+          displayName: data[i][displayNameIdx],
+          role: data[i][roleIdx],
+          isActive: isActive
+        }
+      });
+    }
+  }
+  return jsonResponse({ success: false, error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
+}
+
+function getUsers() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName("Users");
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const headers = data[0];
+  return data.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = row[i]; });
+    delete obj["Password"]; // Never return passwords
+    return obj;
+  });
+}
+
+function saveUser(payload) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("Users");
+  if (!sheet) {
+    sheet = ss.insertSheet("Users");
+    sheet.appendRow(["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"]);
+    sheet.getRange(1, 1, 1, 8).setFontWeight("bold");
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const userIdIdx = headers.indexOf("UserID");
+  const usernameIdx = headers.indexOf("Username");
+
+  if (payload.userId) {
+    // Edit existing user
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][userIdIdx]) === String(payload.userId)) {
+        sheet.getRange(i + 1, usernameIdx + 1).setValue(payload.username || data[i][usernameIdx]);
+        if (payload.password) {
+          sheet.getRange(i + 1, headers.indexOf("Password") + 1).setValue(payload.password);
+        }
+        sheet.getRange(i + 1, headers.indexOf("DisplayName") + 1).setValue(payload.displayName || data[i][headers.indexOf("DisplayName")]);
+        sheet.getRange(i + 1, headers.indexOf("Role") + 1).setValue(payload.role || data[i][headers.indexOf("Role")]);
+        return jsonResponse({ success: true });
+      }
+    }
+    return jsonResponse({ success: false, error: "ไม่พบผู้ใช้งาน" });
+  } else {
+    // Check username unique
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][usernameIdx]).toLowerCase() === String(payload.username || "").toLowerCase()) {
+        return jsonResponse({ success: false, error: "มี Username นี้อยู่ในระบบแล้ว" });
+      }
+    }
+    const newId = "USR-" + new Date().getTime();
+    sheet.appendRow([newId, payload.username, payload.password, payload.displayName, payload.role, "TRUE", new Date().toISOString(), ""]);
+    return jsonResponse({ success: true, userId: newId });
+  }
+}
+
+function toggleUserStatus(payload) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName("Users");
+  if (!sheet) return jsonResponse({ success: false, error: "No Users sheet" });
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const userIdIdx = headers.indexOf("UserID");
+  const isActiveIdx = headers.indexOf("IsActive");
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][userIdIdx]) === String(payload.userId)) {
+      const current = String(data[i][isActiveIdx]).toUpperCase() === "TRUE";
+      sheet.getRange(i + 1, isActiveIdx + 1).setValue(current ? "FALSE" : "TRUE");
+      return jsonResponse({ success: true });
+    }
+  }
+  return jsonResponse({ success: false, error: "ไม่พบผู้ใช้งาน" });
+}
+
+function deleteUser(payload) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName("Users");
+  if (!sheet) return jsonResponse({ success: false });
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const userIdIdx = headers.indexOf("UserID");
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][userIdIdx]) === String(payload.userId)) {
+      sheet.deleteRow(i + 1);
+      return jsonResponse({ success: true });
+    }
+  }
+  return jsonResponse({ success: false, error: "ไม่พบผู้ใช้งาน" });
+}
+
