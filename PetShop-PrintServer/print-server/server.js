@@ -36,6 +36,11 @@ app.post("/print", async (req, res) => {
 
     // --- Build Receipt ---
     printer.alignCenter();
+    try {
+      await printer.printImage("./logo.png");
+    } catch (err) {
+      console.log("Note: Logo image could not be printed.", err.message);
+    }
     printer.bold(true);
     printer.setTextSize(1, 1);
     printer.println(shopName || "Receipt");
