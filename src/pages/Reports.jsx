@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { FileText, ArrowRightLeft, Calendar, FileBox, Calculator, Loader2 } from "lucide-react";
+import { FileText, ArrowRightLeft, Calendar, FileBox, Calculator, Loader2, X } from "lucide-react";
 import clsx from "clsx";
-import { fetchApi } from "../api";
+import { fetchApi, postApi } from "../api";
+import toast from "react-hot-toast";
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState("sales");
@@ -10,6 +11,11 @@ export default function Reports() {
   const [taxInvoices, setTaxInvoices] = useState([]);
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Detail Modal States
+  const [selectedTx, setSelectedTx] = useState(null);
+  const [cancelNote, setCancelNote] = useState("");
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Filter States
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -51,6 +57,33 @@ export default function Reports() {
   const filteredTransactions = transactions.filter(t => isBetweenDates(t.Date));
   const filteredStockMoves = stockMovements.filter(m => isBetweenDates(m.Date));
   const filteredTaxInvoices = taxInvoices.filter(t => isBetweenDates(t.Date));
+
+  const handleViewDetails = (tx) => {
+    const fullTx = filteredTransactions.find(t => t.OrderID === tx.OrderID) || tx;
+    setSelectedTx(fullTx);
+    setCancelNote("");
+  };
+
+  const handleCancelTransaction = async () => {
+    if (!cancelNote.trim()) { toast.error("กรุณาระบุเหตุผลการยกเลิก"); return; }
+    if (!window.confirm("คุณแน่ใจหรือไม่ที่จะยกเลิกออเดอร์นี้? สต็อกจะถูกคืนกลับอัตโนมัติ")) return;
+    
+    setIsCancelling(true);
+    const res = await postApi({
+      action: "cancelTransaction",
+      payload: { orderId: selectedTx.OrderID, cancelNote }
+    });
+    setIsCancelling(false);
+    
+    if (res.success) {
+      toast.success("ยกเลิกออเดอร์เรียบร้อยแล้ว");
+      setSelectedTx(null);
+      setCancelNote("");
+      fetchData(); // Reload data
+    } else {
+      toast.error(res.error || "เกิดข้อผิดพลาดในการยกเลิก");
+    }
+  };
 
   // --- Reports Processing ---
   
@@ -239,8 +272,11 @@ export default function Reports() {
                       {receiptsOnly.length === 0 ? (
                          <tr><td colSpan="3" className="p-4 text-center text-gray-400 text-sm">ไม่พบใบเสร็จรับเงิน</td></tr>
                       ) : receiptsOnly.map((tx, i) => (
-                         <tr key={i} className="hover:bg-gray-50 text-sm">
-                           <td className="py-3 px-4 font-mono text-gray-600">{tx.OrderID}</td>
+                         <tr key={i} onClick={() => handleViewDetails(tx)} className="hover:bg-gray-50 text-sm cursor-pointer transition-colors">
+                           <td className="py-3 px-4 font-mono text-gray-600 flex items-center gap-2">
+                             {tx.OrderID}
+                             {tx.Status === "CANCELLED" && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold">ยกเลิกแล้ว</span>}
+                           </td>
                            <td className="py-3 px-4 text-gray-500">{new Date(tx.Date).toLocaleString("th-TH")}</td>
                            <td className="py-3 px-4 text-right font-medium">฿{parseFloat(tx.TotalAmount||0).toLocaleString()}</td>
                          </tr>
@@ -268,15 +304,20 @@ export default function Reports() {
                     <tbody className="divide-y divide-gray-100">
                       {filteredTaxInvoices.length === 0 ? (
                          <tr><td colSpan="5" className="p-4 text-center text-gray-400 text-sm">ไม่พบใบกำกับภาษี</td></tr>
-                      ) : filteredTaxInvoices.map((tx, i) => (
-                         <tr key={i} className="hover:bg-gray-50 text-sm">
-                           <td className="py-3 px-4 font-mono text-purple-600">{tx.TaxInvoiceNo}</td>
+                      ) : filteredTaxInvoices.map((tx, i) => {
+                         const matchStatus = filteredTransactions.find(t => t.OrderID === tx.OrderID)?.Status;
+                         return (
+                         <tr key={i} onClick={() => handleViewDetails(tx)} className="hover:bg-gray-50 text-sm cursor-pointer transition-colors">
+                           <td className="py-3 px-4 font-mono text-purple-600 flex flex-col items-start gap-1">
+                             <span>{tx.TaxInvoiceNo}</span>
+                             {matchStatus === "CANCELLED" && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold">ยกเลิกแล้ว</span>}
+                           </td>
                            <td className="py-3 px-4 text-gray-500">{new Date(tx.Date).toLocaleString("th-TH")}</td>
                            <td className="py-3 px-4 text-gray-800">{tx.CustomerName}</td>
                            <td className="py-3 px-4 text-gray-500 font-mono">{tx.CustomerTaxID}</td>
                            <td className="py-3 px-4 text-right font-bold text-gray-800">฿{parseFloat(tx.TotalAmount||0).toLocaleString()}</td>
                          </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
@@ -380,6 +421,88 @@ export default function Reports() {
           </div>
         )}
       </div>
+
+      {/* Transaction Details Modal */}
+      {selectedTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+              <h3 className="font-semibold text-gray-800 flex items-center gap-2">รายละเอียดบิล <span className="font-mono text-primary text-sm bg-blue-50 px-2 py-0.5 rounded">{selectedTx.OrderID}</span></h3>
+              <button onClick={() => setSelectedTx(null)} className="p-1 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors"><X size={20}/></button>
+            </div>
+            
+            <div className="p-5 flex-1 overflow-auto">
+              <div className="mb-5 grid grid-cols-2 gap-y-3 gap-x-2 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <div><strong>วันที่:</strong> <span className="text-gray-900">{new Date(selectedTx.Date).toLocaleString("th-TH")}</span></div>
+                <div><strong>พนักงาน (ดึงชื่อ):</strong> <span className="text-gray-900">{selectedTx.Username || "-"}</span></div>
+                <div><strong>ช่องทาง:</strong> <span className="text-gray-900">{selectedTx.PaymentMethod || "-"}</span></div>
+                <div>
+                   <strong>สถานะ:</strong> 
+                   {selectedTx.Status === "CANCELLED" 
+                     ? <span className="text-red-600 font-bold ml-1 bg-red-100 px-2 py-0.5 rounded">ยกเลิก/ขอคืน</span>
+                     : <span className="text-emerald-600 font-bold ml-1 bg-emerald-100 px-2 py-0.5 rounded">สมบูรณ์</span>}
+                </div>
+              </div>
+              
+              {selectedTx.Status === "CANCELLED" && (
+                <div className="mb-5 p-3 bg-red-50 text-red-800 text-sm rounded-xl border border-red-200 shadow-sm flex flex-col gap-1">
+                   <div className="font-bold text-red-900 flex items-center gap-2"><ArrowRightLeft size={16}/> บิลนี้ถูกยกเลิกแล้ว</div>
+                   <div className="text-red-700 font-medium">หมายเหตุ: {selectedTx.CancelNote || "-"}</div>
+                </div>
+              )}
+
+              <h4 className="font-bold text-gray-800 text-sm mb-3 pb-2 border-b border-gray-100">รายการสินค้า</h4>
+              <ul className="space-y-3 mb-5">
+                {(()=>{
+                  try {
+                    const cart = typeof selectedTx.CartDetails === 'string' ? JSON.parse(selectedTx.CartDetails) : selectedTx.CartDetails;
+                    if (Array.isArray(cart)) {
+                      return cart.map((item, idx) => (
+                        <li key={idx} className="flex justify-between items-start text-sm">
+                           <div>
+                             <span className="font-medium text-gray-800">{item.qty}x {item.name || item.Name}</span>
+                             {item.note && <div className="text-xs text-gray-500 mt-0.5 pl-4">- โน๊ต: {item.note}</div>}
+                           </div>
+                           <span className="font-medium text-gray-900 text-right">฿{((item.price || item.Price || 0) * item.qty).toLocaleString()}</span>
+                        </li>
+                      ));
+                    }
+                  } catch(e) {}
+                  return <li className="text-sm text-gray-500">ไม่สามารถโหลดรายการสินค้าได้</li>;
+                })()}
+              </ul>
+              
+              <div className="flex justify-between border-t border-gray-200 pt-3 font-bold text-gray-800 text-lg">
+                 <span>ยอดสุทธิ</span>
+                 <span className="text-primary">฿{parseFloat(selectedTx.TotalAmount || 0).toLocaleString()}</span>
+              </div>
+            </div>
+            
+            {/* Action Bar */}
+            {selectedTx.Status !== "CANCELLED" && (
+              <div className="p-4 bg-gray-50 border-t flex flex-col gap-3">
+                 <p className="text-[11px] text-red-600 font-medium flex items-center gap-1">* ⚠️ หากยกเลิกบิล สินค้าจะถูกบวกสต็อกหลับคืนเข้าคลังหน้าร้าน และเก็บเข้าประวัติย้ายสต็อกโดยอัตโนมัติ</p>
+                 <div className="flex flex-col sm:flex-row gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="ระบุหมายเหตุ/เหตุผลที่ยกเลิก (บังคับ)" 
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200 transition-all font-medium"
+                      value={cancelNote}
+                      onChange={e => setCancelNote(e.target.value)}
+                    />
+                    <button 
+                      onClick={handleCancelTransaction}
+                      disabled={isCancelling}
+                      className="whitespace-nowrap px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isCancelling ? "ระบบกำลังดำเนินการ..." : "ยืนยันยกเลิก/คืนออเดอร์"}
+                    </button>
+                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

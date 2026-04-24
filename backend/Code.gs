@@ -268,6 +268,8 @@ function doPost(e) {
       return toggleUserStatus(data.payload);
     } else if (action === "deleteUser") {
       return deleteUser(data.payload);
+    } else if (action === "cancelTransaction") {
+      return cancelTransaction(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -294,7 +296,9 @@ function processCheckout(payload) {
     payload.receiptType || "ใบเสร็จ", 
     payload.customerInfo ? JSON.stringify(payload.customerInfo) : "",
     payload.discount || 0,
-    payload._actor ? payload._actor.username : ""
+    payload._actor ? payload._actor.username : "",
+    "COMPLETED",
+    ""
   ]);
 
   if (payload.receiptType === "ใบกำกับภาษี") {
@@ -367,6 +371,81 @@ function processCheckout(payload) {
   
   logActivity("POS/Online", "Checkout", orderId, payload._actor);
   return jsonResponse({ success: true, orderId: orderId });
+}
+
+function cancelTransaction(payload) {
+  const ss = getSpreadsheet();
+  const txSheet = ss.getSheetByName("Transactions");
+  const orderId = String(payload.orderId || "").trim();
+  const cancelNote = String(payload.cancelNote || "").trim();
+  
+  if (!orderId) return jsonResponse({ error: "No Order ID provided" });
+  if (!cancelNote) return jsonResponse({ error: "กรุณาระบุหมายเหตุการยกเลิก" });
+
+  const data = txSheet.getDataRange().getValues();
+  let foundRow = -1;
+  let cartDetailsStr = "";
+  let currentStatus = "";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === orderId) {
+      foundRow = i + 1;
+      cartDetailsStr = String(data[i][5]);
+      currentStatus = String(data[i][13]);
+      break;
+    }
+  }
+
+  if (foundRow === -1) return jsonResponse({ error: "ไม่พบข้อมูลออเดอร์นี้" });
+  if (currentStatus === "CANCELLED") return jsonResponse({ error: "ออเดอร์นี้ถูกยกเลิกไปแล้ว" });
+
+  const headers = data[0];
+  let statusCol = headers.indexOf("Status") + 1;
+  let noteCol = headers.indexOf("CancelNote") + 1;
+  
+  if (statusCol === 0) statusCol = 14; 
+  if (noteCol === 0) noteCol = 15;
+
+  txSheet.getRange(foundRow, statusCol).setValue("CANCELLED");
+  txSheet.getRange(foundRow, noteCol).setValue(cancelNote);
+
+  // Return Stock
+  let cart = [];
+  try { cart = JSON.parse(cartDetailsStr); } catch (e) {}
+
+  if (Array.isArray(cart) && cart.length > 0) {
+    const storeSheet = ss.getSheetByName("StoreStock");
+    const stockMoves = ss.getSheetByName("StockMovements");
+    const now = new Date();
+    
+    if (storeSheet) {
+      const storeData = storeSheet.getDataRange().getValues();
+      cart.forEach(item => {
+        const itemBarcode = String(item.Barcode || "").trim();
+        const itemName = String(item.Name || item.name || "").trim();
+        const qtyToReturn = parseFloat(item.qty) || 0;
+        
+        if (qtyToReturn > 0) {
+          for (let s = 1; s < storeData.length; s++) {
+            const sBarcode = String(storeData[s][0]).trim();
+            const sName = String(storeData[s][1]).trim();
+            if ((itemBarcode && sBarcode === itemBarcode) || (sName === itemName)) {
+              const existingQty = parseFloat(storeData[s][2]) || 0;
+              storeSheet.getRange(s + 1, 3).setValue(existingQty + qtyToReturn);
+              storeSheet.getRange(s + 1, 5).setValue(now);
+              break;
+            }
+          }
+          if (stockMoves) {
+            stockMoves.appendRow([now, itemBarcode, itemName, qtyToReturn, "Returned (Order)", "Store", payload._actor ? payload._actor.username : "System"]);
+          }
+        }
+      });
+    }
+  }
+
+  logActivity("POS", "Cancel Order", orderId, payload._actor);
+  return jsonResponse({ success: true, message: "ยกเลิกออเดอร์และคืนสต็อกสำเร็จ" });
 }
 
 function moveToStore(payload) {
