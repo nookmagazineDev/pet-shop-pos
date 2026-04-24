@@ -37,6 +37,18 @@ export const fetchApi = async (action) => {
 
 export const postApi = async (data) => {
   try {
+    // Inject actor information automatically if not present and available
+    if (data.payload && typeof data.payload === 'object' && !data.payload._actor) {
+      const userStr = sessionStorage.getItem("pos_user");
+      if (userStr) {
+        try {
+          data.payload._actor = JSON.parse(userStr);
+        } catch (e) {
+          // ignore parse error inline
+        }
+      }
+    }
+
     const response = await fetch(API_URL, {
       method: 'POST',
       body: JSON.stringify(data),

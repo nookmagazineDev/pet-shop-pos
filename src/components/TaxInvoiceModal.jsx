@@ -23,7 +23,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
             isTest: false,
             receiptType,
             paymentMethod,
-            customerInfo
+            customerInfo,
+            empName,
+            recNo,
+            nonVatAdjusted,
+            vatableAdjusted
           })
         });
         const data = await response.json();
@@ -39,13 +43,26 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       return;
     }
 
+    const now = new Date();
+    const dStr = now.toLocaleDateString("th-TH", { year: "2-digit", month: "2-digit", day: "2-digit" }).replace(/\//g, "");
+    const recNo = "ST" + dStr + String(Math.floor(Math.random() * 10000)).padStart(4,"0");
+    
+    let userObj = {};
+    try { userObj = JSON.parse(sessionStorage.getItem("pos_user") || "{}"); } catch (e) {}
+    const empName = userObj.displayName || "พนักงาน";
+
+    const discountAmount = subtotal - (total - tax);
+    const nonVatTotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? (item.price * item.qty) : 0), 0);
+    const nonVatAdjusted = subtotal > 0 ? nonVatTotal - (discountAmount * (nonVatTotal / subtotal)) : 0;
+    const vatableAdjusted = (total - tax) - nonVatAdjusted;
+
     const win = window.open("", "_blank", "width=420,height=700");
     const rows = cart.map(item => `
       <tr>
         <td>${item.name || item.Name}<br/><span style="font-size:0.85em;color:#777">${item.barcode || item.Barcode || ""}</span></td>
         <td style="text-align:center">${item.qty}</td>
-        <td style="text-align:right">${(item.price || item.Price || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-        <td style="text-align:right">${((item.price || item.Price || 0) * item.qty).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+        <td style="text-align:right">${(parseFloat(item.price) || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+        <td style="text-align:right">${((parseFloat(item.price) || 0) * item.qty).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
       </tr>`).join("");
 
     win.document.write(`<!DOCTYPE html><html><head>
@@ -56,47 +73,62 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
         body { font-family:'Courier New', monospace; font-size:${paperMm <= 58 ? "11px" : "12px"}; width:${paperMm}mm; padding:4mm 3mm; background:white; color:#000; }
         .center { text-align:center; }
         .bold { font-weight:bold; }
-        .hr { border-top:1px dashed #000; margin:3px 0; }
+        .hr { border-top:1px dashed #CCC; margin:4px 0; }
         table { width:100%; border-collapse:collapse; }
-        td { padding:1px 2px; vertical-align:top; }
-        .logo { display:block; margin:0 auto 4px; max-height:${paperMm <= 58 ? "40px" : "60px"}; width:auto; }
+        td { padding:2px; vertical-align:top; }
+        .logo { display:block; margin:0 auto 4px; max-height:${paperMm <= 58 ? "50px" : "80px"}; width:auto; filter:grayscale(100%); }
+        .flex-between { display:flex; justify-content:space-between; }
         @media print { @page { size:${paperMm}mm auto; margin:0; } }
       </style>
     </head><body>
       <div class="center"><img class="logo" src="${window.location.origin}/logo.png" alt="logo" /></div>
-      <div class="center bold" style="font-size:1.15em">${settings.shopName}</div>
+      <div class="center bold" style="font-size:1.1em">${settings.shopName}</div>
       <div class="center" style="font-size:0.9em">${settings.shopAddress}</div>
-      <div class="center">โทร: ${settings.shopPhone}</div>
-      <div class="center">เลขภาษี: ${settings.shopTaxId} ${settings.shopBranch}</div>
-      <div class="hr"></div>
-      <div class="center bold">${receiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษีเต็มรูป" : "ใบกำกับภาษีอย่างย่อ"}</div>
-      <div>วันที่: ${new Date().toLocaleString("th-TH")}</div>
-      <div>ชำระโดย: ${paymentMethod}</div>
-      ${receiptType === "ใบกำกับภาษี" && customerInfo ? `
-        <div class="hr"></div>
-        <div>ลูกค้า: ${customerInfo.customerName || "-"}</div>
-        <div>ที่อยู่: ${customerInfo.customerAddress || "-"}</div>
-        <div>เลขภาษี: ${customerInfo.customerTaxId || "-"}</div>` : ""}
+      <div class="center">TAX# ${settings.shopTaxId} ${settings.shopBranch}</div>
+      <div class="center bold" style="margin-top:2px">${receiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษีเต็มรูป" : "ใบกำกับภาษีอย่างย่อ"}</div>
+      <div class="center" style="font-size:0.9em;margin-bottom:2px">(VAT Included)</div>
+      
       <div class="hr"></div>
       <table>
         <thead><tr>
-          <td class="bold">รายการ</td>
-          <td class="bold" style="text-align:center">จน.</td>
-          <td class="bold" style="text-align:right">ราคา</td>
-          <td class="bold" style="text-align:right">รวม</td>
+          <td>รายการ</td>
+          <td style="text-align:center">จำนวน</td>
+          <td style="text-align:right">ราคา</td>
+          <td style="text-align:right">ราคารวม</td>
         </tr></thead>
-        <tbody>${rows}</tbody>
       </table>
       <div class="hr"></div>
-      <table>
-        <tr><td>ราคาสินค้า</td><td style="text-align:right">${subtotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td></tr>
-        <tr><td>VAT 7%</td><td style="text-align:right">${tax.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td></tr>
-      </table>
-      <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:1.1em;border-top:1px solid #000;padding-top:3px;margin-top:3px">
-        <span>รวมทั้งสิ้น (THB)</span><span>${total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+      <table><tbody>${rows}</tbody></table>
+      
+      <div class="hr"></div>
+      <div class="flex-between">
+        <span>รวม</span>
+        <span>${subtotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
       </div>
+      
       <div class="hr"></div>
-      <div class="center" style="margin-top:6px">${settings.footerNote}</div>
+      <div class="flex-between"><span>NonVAT</span><span>${nonVatAdjusted.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></div>
+      <div class="flex-between"><span>VATable</span><span>${vatableAdjusted.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></div>
+      <div class="flex-between"><span>VAT 7 %</span><span>${tax.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></div>
+      <div class="flex-between bold" style="font-size:1.05em; margin-top:2px;">
+        <span>สุทธิ</span><span>${total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+      </div>
+      
+      <div class="hr"></div>
+      <div class="flex-between">
+        <span>${paymentMethod}</span>
+        <span>${total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+      </div>
+      
+      <div class="hr"></div>
+      <div class="flex-between"><span>พนักงาน</span><span>${empName}</span></div>
+      <div class="flex-between"><span>จุดขาย</span><span>POS #1</span></div>
+      <div class="flex-between"><span>เลขที่</span><span>${recNo}</span></div>
+      
+      <br/><br/>
+      <div class="center">** วันที่ ${now.toLocaleString("th-TH", { hour12: false })} **</div>
+      <div class="center" style="margin-top:2px">${settings.footerNote || "-"}</div>
+      <script>window.onload = function() { window.print(); window.close(); }</script>
     </body></html>`);
     win.document.close();
     win.focus();

@@ -19,7 +19,8 @@ function setup() {
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
     "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
-    "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"]
+    "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"],
+    "ActivityLog": ["Timestamp", "User", "Role", "Module", "Action", "ReferenceID", "Details"]
   };
 
   for (const sheetName in sheets) {
@@ -28,7 +29,19 @@ function setup() {
       sheet = ss.insertSheet(sheetName);
       sheet.appendRow(sheets[sheetName]);
       sheet.getRange(1, 1, 1, sheets[sheetName].length).setFontWeight("bold");
-    }
+  }
+}
+
+function logActivity(module, actionType, referenceId, actorObj) {
+  try {
+    const ss = getSpreadsheet();
+    let sheet = ss.getSheetByName("ActivityLog");
+    if (!sheet) return;
+    const actor = actorObj || { displayName: "ระบบ", username: "system", role: "system" };
+    const userStr = actor.displayName + " (" + actor.username + ")";
+    sheet.appendRow([ new Date(), userStr, actor.role, module, actionType, referenceId || "N/A", "" ]);
+  } catch (e) {
+    Logger.log("logActivity Error: " + e);
   }
 }
 
@@ -350,6 +363,7 @@ function processCheckout(payload) {
     }
   });
   
+  logActivity("POS/Online", "Checkout", orderId, payload._actor);
   return jsonResponse({ success: true, orderId: orderId });
 }
 
@@ -394,6 +408,7 @@ function moveToStore(payload) {
       if (moveSheet) {
         moveSheet.appendRow([now, searchBarcode, payload.name || "", moveQty, "Warehouse", payload.storeLocation || "Store", "System"]);
       }
+      logActivity("Inventory", "Move To Store", searchBarcode, payload._actor);
       return jsonResponse({ success: true, message: "ย้ายสินค้าเข้าหน้าร้านเรียบร้อย" });
     }
   }
@@ -410,6 +425,7 @@ function moveToStore(payload) {
   if (moveSheet) {
     moveSheet.appendRow([now, searchBarcode, payload.name || "", moveQty, "Warehouse", payload.storeLocation || "Store", "System"]);
   }
+  logActivity("Inventory", "Move To Store (New)", searchBarcode, payload._actor);
   return jsonResponse({ success: true, message: "ย้ายสินค้าเข้าหน้าร้าน (รายการใหม่) เรียบร้อย" });
 }
 
@@ -523,6 +539,7 @@ function receiveGoods(payload) {
     }
   });
   
+  logActivity("Inventory", "Receive Goods", receiptId, payload._actor);
   return jsonResponse({ success: true, message: `Stock updated: ${updatedCount} items, Added: ${addedCount} items. Logged under Receipt ${receiptId}` });
 }
 
@@ -547,6 +564,7 @@ function updateProduct(payload) {
       if (payload.location  !== undefined) sheet.getRange(i + 1, 12).setValue(payload.location);
       if (payload.expiryDate !== undefined) sheet.getRange(i + 1, 14).setValue(payload.expiryDate);
       if (payload.lowStockThreshold !== undefined) sheet.getRange(i + 1, 17).setValue(parseFloat(payload.lowStockThreshold) || 0);
+      logActivity("Inventory", "Edit Product", searchBarcode, payload._actor);
       return jsonResponse({ success: true, message: "Product updated" });
     }
   }
@@ -564,6 +582,7 @@ function updateStoreStockDetail(payload) {
       if (payload.storeLocation !== undefined) sheet.getRange(i + 1, 4).setValue(payload.storeLocation);
       if (payload.lowStockThreshold !== undefined) sheet.getRange(i + 1, 6).setValue(parseFloat(payload.lowStockThreshold) || 0);
       sheet.getRange(i + 1, 5).setValue(new Date()); // update UpdatedAt
+      logActivity("Inventory", "Edit Store Stock", searchBarcode, payload._actor);
       return jsonResponse({ success: true, message: "Store stock details updated" });
     }
   }
@@ -582,6 +601,7 @@ function openShift(payload) {
     "",
     ""
   ]);
+  logActivity("Shift", "Open Shift", shiftId, payload._actor);
   return jsonResponse({ success: true, shiftId: shiftId });
 }
 
@@ -596,6 +616,7 @@ function closeShift(payload) {
       sheet.getRange(i + 1, 4).setValue(new Date()); // CloseTime
       sheet.getRange(i + 1, 6).setValue(payload.actualCash); // ActualCash
       sheet.getRange(i + 1, 7).setValue(payload.discrepancy); // Discrepancy
+      logActivity("Shift", "Close Shift", data[i][0] /* ShiftID */, payload._actor);
       return jsonResponse({ success: true });
     }
   }
@@ -617,6 +638,7 @@ function updateTransactionPayment(payload) {
     const rowOrderId = String(data[i][0]).trim();
     if (rowOrderId === searchOrderId) {
       sheet.getRange(i + 1, 5).setValue(newPaymentMethod); // Col 5 = PaymentMethod
+      logActivity("Accounting", "Update PaymentMethod", searchOrderId, payload._actor);
       return jsonResponse({ success: true, message: "Payment status updated" });
     }
   }

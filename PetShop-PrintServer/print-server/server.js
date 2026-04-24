@@ -12,7 +12,7 @@ app.use(express.json());
 
 app.post("/print", async (req, res) => {
   try {
-    const { paperWidth, shopName, shopAddress, shopPhone, shopTaxId, shopBranch, footerNote, items, subtotal, tax, total, isTest, receiptType, paymentMethod, customerInfo } = req.body;
+    const { paperWidth, shopName, shopAddress, shopPhone, shopTaxId, shopBranch, footerNote, items, subtotal, tax, total, isTest, receiptType, paymentMethod, customerInfo, empName, recNo, nonVatAdjusted, vatableAdjusted } = req.body;
     const ip = req.body.ip || req.body.printerIp;
 
     if (!ip) {
@@ -38,26 +38,20 @@ app.post("/print", async (req, res) => {
     printer.alignCenter();
     printer.bold(true);
     printer.setTextSize(1, 1);
-    // Since Thai characters over raw TCP to generic printers can be a major pain point due to hardware codepage limitations, 
-    // we use basic printing. If Thai comes out as gibberish, the printer's dip switches or software code page must be set to Thai (CP874).
     printer.println(shopName || "Receipt");
     printer.setTextNormal();
     printer.bold(false);
     
     if (shopAddress) printer.println(shopAddress);
     if (shopPhone) printer.println("Tel: " + shopPhone);
-    if (shopTaxId) printer.println("Tax ID: " + shopTaxId + (shopBranch ? ` (${shopBranch})` : ""));
+    if (shopTaxId) printer.println("TAX# " + shopTaxId + (shopBranch ? ` ${shopBranch}` : ""));
     
-    printer.drawLine();
-    printer.alignCenter();
     printer.println(isTest ? "** TEST PRINT **" : (receiptType === "ใบกำกับภาษี" ? "Tax Invoice (Full)" : "ABB Tax Invoice"));
-    
-    printer.alignLeft();
-    printer.println("Date: " + new Date().toLocaleString("en-GB"));
-    if (paymentMethod && !isTest) printer.println("Payment: " + paymentMethod);
+    printer.println("(VAT Included)");
     
     if (customerInfo && receiptType === "ใบกำกับภาษี") {
         printer.drawLine();
+        printer.alignLeft();
         printer.println("Customer: " + (customerInfo.customerName || "-"));
         printer.println("Address: " + (customerInfo.customerAddress || "-"));
         printer.println("Tax ID: " + (customerInfo.customerTaxId || "-"));
@@ -66,19 +60,20 @@ app.post("/print", async (req, res) => {
     printer.drawLine();
     
     // Items
-    printer.bold(true);
+    printer.alignLeft();
     printer.tableCustom([
       { text: "Item", align: "LEFT", width: 0.45 },
       { text: "Qty", align: "CENTER", width: 0.15 },
       { text: "Price", align: "RIGHT", width: 0.20 },
       { text: "Total", align: "RIGHT", width: 0.20 },
     ]);
-    printer.bold(false);
+
+    printer.drawLine();
 
     if (items && items.length > 0) {
       items.forEach(item => {
         let name = item.name || item.Name || "Item";
-        // If name is too long, we might truncate to fit column
+        // If name is too long, truncate to fit column
         name = name.length > 18 ? name.substring(0, 18) + ".." : name;
         printer.tableCustom([
           { text: name, align: "LEFT", width: 0.45 },
@@ -91,10 +86,22 @@ app.post("/print", async (req, res) => {
 
     printer.drawLine();
     
-    // Totals
+    // Subtotal
     printer.tableCustom([
       { text: "Subtotal", align: "LEFT", width: 0.5 },
       { text: Number(subtotal || 0).toFixed(2), align: "RIGHT", width: 0.5 }
+    ]);
+    
+    printer.drawLine();
+    
+    // Tax breakdown
+    printer.tableCustom([
+      { text: "NonVAT", align: "LEFT", width: 0.5 },
+      { text: Number(nonVatAdjusted || 0).toFixed(2), align: "RIGHT", width: 0.5 }
+    ]);
+    printer.tableCustom([
+      { text: "VATable", align: "LEFT", width: 0.5 },
+      { text: Number(vatableAdjusted || 0).toFixed(2), align: "RIGHT", width: 0.5 }
     ]);
     printer.tableCustom([
       { text: "VAT 7%", align: "LEFT", width: 0.5 },
@@ -103,15 +110,38 @@ app.post("/print", async (req, res) => {
     
     printer.bold(true);
     printer.tableCustom([
-      { text: "Total (THB)", align: "LEFT", width: 0.5 },
+      { text: "Total", align: "LEFT", width: 0.5 },
       { text: Number(total || 0).toFixed(2), align: "RIGHT", width: 0.5 }
     ]);
     printer.bold(false);
 
     printer.drawLine();
+    
+    // Payment
+    if (paymentMethod && !isTest) {
+      printer.tableCustom([
+        { text: paymentMethod, align: "LEFT", width: 0.5 },
+        { text: Number(total || 0).toFixed(2), align: "RIGHT", width: 0.5 }
+      ]);
+    }
+    
+    printer.drawLine();
+    
+    // Staff and metadata
+    printer.tableCustom([ { text: "Staff", align: "LEFT", width: 0.4 }, { text: String(empName || "-"), align: "RIGHT", width: 0.6 } ]);
+    printer.tableCustom([ { text: "Station", align: "LEFT", width: 0.4 }, { text: "POS #1", align: "RIGHT", width: 0.6 } ]);
+    if (recNo) {
+       printer.tableCustom([ { text: "Slip No.", align: "LEFT", width: 0.4 }, { text: recNo, align: "RIGHT", width: 0.6 } ]);
+    }
+    
+    printer.newLine();
     printer.alignCenter();
-    if (footerNote) printer.println(footerNote);
-    if (isTest) printer.println("--- Test Print ---");
+    printer.println("** Date: " + new Date().toLocaleString("en-GB") + " **");
+
+    if (footerNote) {
+       printer.newLine();
+       printer.println(footerNote);
+    }
 
     printer.newLine();
     printer.newLine();
