@@ -12,7 +12,8 @@ app.use(express.json());
 
 app.post("/print", async (req, res) => {
   try {
-    const { ip, paperWidth, shopName, shopAddress, shopPhone, shopTaxId, shopBranch, footerNote, items, subtotal, tax, total, isTest, receiptType, paymentMethod, customerInfo } = req.body;
+    const { paperWidth, shopName, shopAddress, shopPhone, shopTaxId, shopBranch, footerNote, items, subtotal, tax, total, isTest, receiptType, paymentMethod, customerInfo } = req.body;
+    const ip = req.body.ip || req.body.printerIp;
 
     if (!ip) {
       return res.status(400).json({ success: false, message: "Printer IP is required" });
