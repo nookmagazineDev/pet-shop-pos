@@ -47,6 +47,11 @@ export default function Inventory() {
   const [supplierPhone, setSupplierPhone] = useState("");
   const [supplierEmail, setSupplierEmail] = useState("");
   const [supplierTaxId, setSupplierTaxId] = useState("");
+  const [isAddSupplierModalOpen, setIsAddSupplierModalOpen] = useState(false);
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
+  const [newSupplierData, setNewSupplierData] = useState({
+    name: "", contactPerson: "", phone: "", email: "", address: "", taxId: ""
+  });
 
   // New Product Modal states
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
@@ -115,6 +120,37 @@ export default function Inventory() {
     setSupplierEmail("");
     setSupplierTaxId("");
     setSelectedSupplier(null);
+  };
+
+  const handleSaveNewSupplier = async (e) => {
+    e.preventDefault();
+    if (!newSupplierData.name.trim()) {
+      alert("กรุณาระบุชื่อบริษัท/ผู้จำหน่าย");
+      return;
+    }
+    setIsSavingSupplier(true);
+    const res = await postApi({
+      action: "saveSupplier",
+      payload: { ...newSupplierData }
+    });
+    setIsSavingSupplier(false);
+    if (res.success) {
+      // Auto-select the newly created supplier
+      const created = {
+        Name: newSupplierData.name,
+        Phone: newSupplierData.phone,
+        Email: newSupplierData.email,
+        TaxID: newSupplierData.taxId,
+        Address: newSupplierData.address,
+        ContactPerson: newSupplierData.contactPerson
+      };
+      selectSupplier(created);
+      fetchSuppliers();
+      setNewSupplierData({ name: "", contactPerson: "", phone: "", email: "", address: "", taxId: "" });
+      setIsAddSupplierModalOpen(false);
+    } else {
+      alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
+    }
   };
 
   const filteredStock = products.filter(item => 
@@ -666,11 +702,20 @@ export default function Inventory() {
               <div className="grid grid-cols-2 gap-4">
                 {/* Supplier Search */}
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
-                    บริษัทที่นำเข้า *
-                    {selectedSupplier && (
-                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-semibold">บันทึกในระบบ</span>
-                    )}
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      บริษัทที่นำเข้า *
+                      {selectedSupplier && (
+                        <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-semibold">บันทึกในระบบ</span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setNewSupplierData({ name: supplierSearch, contactPerson: "", phone: "", email: "", address: "", taxId: "" }); setIsAddSupplierModalOpen(true); }}
+                      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-semibold bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-lg transition-colors"
+                    >
+                      <Plus size={12} /> เพิ่มผู้จำหน่ายใหม่
+                    </button>
                   </label>
                   <div className="relative">
                     <div className="flex gap-2">
@@ -935,6 +980,110 @@ export default function Inventory() {
         </div>
       )}
 
+
+      {/* Add Supplier Modal */}
+      {isAddSupplierModalOpen && (
+        <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                  <Plus size={18} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">เพิ่มผู้จำหน่าย/บริษัทคู่ค้าใหม่</h3>
+                  <p className="text-xs text-gray-400">กรอกข้อมูลผู้จำหน่ายให้ครบถ้วนเพื่อบันทึกลงระบบ</p>
+                </div>
+              </div>
+              <button onClick={() => setIsAddSupplierModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveNewSupplier} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">ชื่อบริษัท/ผู้จำหน่าย <span className="text-red-500">*</span></label>
+                  <input
+                    type="text" required
+                    value={newSupplierData.name}
+                    onChange={e => setNewSupplierData(p => ({ ...p, name: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                    placeholder="เช่น CP Foods, Betagro Group..."
+                    autoFocus
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">ผู้ติดต่อ (ContactPerson)</label>
+                  <input
+                    type="text"
+                    value={newSupplierData.contactPerson}
+                    onChange={e => setNewSupplierData(p => ({ ...p, contactPerson: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                    placeholder="ชื่อผู้ติดต่อ..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">เบอร์โทร</label>
+                  <input
+                    type="text"
+                    value={newSupplierData.phone}
+                    onChange={e => setNewSupplierData(p => ({ ...p, phone: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                    placeholder="เช่น 02-xxx-xxxx"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">เลขประจำตัวผู้เสียภาษี (TaxID)</label>
+                  <input
+                    type="text"
+                    value={newSupplierData.taxId}
+                    onChange={e => setNewSupplierData(p => ({ ...p, taxId: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                    placeholder="13 หลัก"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">อีเมล</label>
+                  <input
+                    type="email"
+                    value={newSupplierData.email}
+                    onChange={e => setNewSupplierData(p => ({ ...p, email: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                    placeholder="email@company.com"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">ที่อยู่</label>
+                  <textarea
+                    rows={2}
+                    value={newSupplierData.address}
+                    onChange={e => setNewSupplierData(p => ({ ...p, address: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm resize-none"
+                    placeholder="ที่อยู่สำนักงาน..."
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddSupplierModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSupplier}
+                  className="flex-1 py-2.5 bg-primary text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {isSavingSupplier ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {isSavingSupplier ? "กำลังบันทึก..." : "บันทึกผู้จำหน่าย"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Move to Store Modal */}
       {isMoveModalOpen && (
