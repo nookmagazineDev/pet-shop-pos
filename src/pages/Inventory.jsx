@@ -39,6 +39,15 @@ export default function Inventory() {
   const [editStoreItem, setEditStoreItem] = useState(null);
   const [isEditStoreSaving, setIsEditStoreSaving] = useState(false);
 
+  // Supplier states
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [supplierPhone, setSupplierPhone] = useState("");
+  const [supplierEmail, setSupplierEmail] = useState("");
+  const [supplierTaxId, setSupplierTaxId] = useState("");
+
   // New Product Modal states
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
@@ -72,15 +81,41 @@ export default function Inventory() {
     });
   };
 
+  const fetchSuppliers = () => {
+    fetchApi("getSuppliers").then(data => {
+      setSuppliers(Array.isArray(data) ? data : []);
+    });
+  };
+
   useEffect(() => {
     fetchProducts();
+    fetchSuppliers();
   }, []);
 
   useEffect(() => {
     if (activeTab === "stock") fetchProducts();
     if (activeTab === "store") fetchStoreStock();
-    if (activeTab === "receive") fetchProducts();
+    if (activeTab === "receive") { fetchProducts(); fetchSuppliers(); }
   }, [activeTab]);
+
+  const selectSupplier = (s) => {
+    setCompanyNameStr(s.Name || "");
+    setSupplierSearch(s.Name || "");
+    setSupplierPhone(s.Phone || "");
+    setSupplierEmail(s.Email || "");
+    setSupplierTaxId(s.TaxID || "");
+    setSelectedSupplier(s);
+    setShowSupplierDropdown(false);
+  };
+
+  const clearSupplier = () => {
+    setCompanyNameStr("");
+    setSupplierSearch("");
+    setSupplierPhone("");
+    setSupplierEmail("");
+    setSupplierTaxId("");
+    setSelectedSupplier(null);
+  };
 
   const filteredStock = products.filter(item => 
     item.Name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -185,6 +220,9 @@ export default function Inventory() {
       payload: {
         companyName: companyNameStr,
         orderNumber: orderNumberStr,
+        supplierPhone,
+        supplierEmail,
+        supplierTaxId,
         items: receiveCart,
         fileName: poFile ? poFile.fileName : "",
         fileData: poFile ? poFile.base64 : ""
@@ -199,8 +237,13 @@ export default function Inventory() {
       setReceiveCart([]);
       setCompanyNameStr("");
       setOrderNumberStr("");
+      setSupplierSearch("");
+      setSupplierPhone("");
+      setSupplierEmail("");
+      setSupplierTaxId("");
+      setSelectedSupplier(null);
       setPoFile(null);
-      fetchProducts(); // Refresh stock immediately
+      fetchProducts();
       setActiveTab("stock");
     } else {
       alert("เกิดข้อผิดพลาดในการบันทึก: " + (res.error || "Unknown"));
@@ -621,16 +664,78 @@ export default function Inventory() {
 
             <div className="space-y-4 mb-8">
               <div className="grid grid-cols-2 gap-4">
+                {/* Supplier Search */}
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                    บริษัทที่นำเข้า *
+                    {selectedSupplier && (
+                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-semibold">บันทึกในระบบ</span>
+                    )}
+                  </label>
+                  <div className="relative">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={supplierSearch}
+                        onChange={e => { setSupplierSearch(e.target.value); setCompanyNameStr(e.target.value); setShowSupplierDropdown(true); setSelectedSupplier(null); }}
+                        onFocus={() => setShowSupplierDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowSupplierDropdown(false), 150)}
+                        className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                        placeholder="ค้นหาหรือพิมพ์ชื่อบริษัท..."
+                      />
+                      {(companyNameStr || selectedSupplier) && (
+                        <button type="button" onClick={clearSupplier} className="px-3 py-2 text-gray-400 hover:text-red-500 border border-gray-200 rounded-xl transition-colors">
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                    {showSupplierDropdown && (
+                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                        {suppliers
+                          .filter(s => String(s.Name || "").toLowerCase().includes(supplierSearch.toLowerCase()))
+                          .map((s, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onMouseDown={() => selectSupplier(s)}
+                              className="w-full text-left px-4 py-2.5 hover:bg-primary/5 flex flex-col border-b border-gray-50 last:border-0 transition-colors"
+                            >
+                              <span className="font-semibold text-gray-900 text-sm">{s.Name}</span>
+                              <span className="text-xs text-gray-400">
+                                {s.Phone && `โทร: ${s.Phone}`}{s.Phone && s.TaxID && " | "}{s.TaxID && `TAX: ${s.TaxID}`}
+                              </span>
+                            </button>
+                          ))}
+                        {suppliers.filter(s => String(s.Name || "").toLowerCase().includes(supplierSearch.toLowerCase())).length === 0 && (
+                          <div className="px-4 py-3 text-sm text-gray-400 text-center">ไม่พบ — จะบันทึกเป็นรายการใหม่อัตโนมัติ</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Extra supplier info */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">บริษัทที่นำเข้า *</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">เบอร์โทร Supplier</label>
                   <input
                     type="text"
-                    value={companyNameStr}
-                    onChange={(e) => setCompanyNameStr(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
-                    placeholder="เช่น CP, Betagro..."
+                    value={supplierPhone}
+                    onChange={e => setSupplierPhone(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                    placeholder="เช่น 02-xxx-xxxx"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">เลขภาษี Supplier</label>
+                  <input
+                    type="text"
+                    value={supplierTaxId}
+                    onChange={e => setSupplierTaxId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                    placeholder="เลขผู้เสียภาษี"
+                  />
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">เลขที่ออเดอร์ *</label>
                   <input

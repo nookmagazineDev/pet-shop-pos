@@ -21,7 +21,8 @@ function setup() {
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
     "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
     "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"],
-    "ActivityLog": ["Timestamp", "User", "Role", "Module", "Action", "ReferenceID", "Details"]
+    "ActivityLog": ["Timestamp", "User", "Role", "Module", "Action", "ReferenceID", "Details"],
+    "Suppliers": ["SupplierID", "Name", "ContactPerson", "Phone", "Email", "Address", "TaxID", "CreatedAt"]
   };
 
   for (const sheetName in sheets) {
@@ -228,6 +229,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Returns"));
   } else if (action === "getUsers") {
     return jsonResponse(getUsers());
+  } else if (action === "getSuppliers") {
+    return jsonResponse(readSheetData("Suppliers"));
   }
   
   return jsonResponse({ error: "Invalid action" });
@@ -277,6 +280,8 @@ function doPost(e) {
       return cancelTransaction(data.payload);
     } else if (action === "processReturn") {
       return processReturn(data.payload);
+    } else if (action === "saveSupplier") {
+      return saveSupplier(data.payload);
     }
     
     return jsonResponse({ error: "Invalid POST action" });
@@ -641,16 +646,55 @@ function receiveGoods(payload) {
 
   // Handle InventoryReceipts sheet tracking
   let receiptSheet = ss.getSheetByName("InventoryReceipts");
+  const RECEIPT_HEADERS = ["Timestamp", "Receipt ID", "Company Name", "Order Number", "Barcode", "Product Name", "Quantity", "Location", "Lot Number", "Expiry Date", "Receiving Date", "Unit Cost", "Total Cost", "Order Total Cost", "Supplier Phone", "Supplier Email", "Supplier TaxID"];
   if (!receiptSheet) {
     receiptSheet = ss.insertSheet("InventoryReceipts");
-    receiptSheet.appendRow(["Timestamp", "Receipt ID", "Company Name", "Order Number", "Barcode", "Product Name", "Quantity", "Location", "Lot Number", "Expiry Date", "Receiving Date", "Unit Cost", "Total Cost", "Order Total Cost"]);
+    receiptSheet.appendRow(RECEIPT_HEADERS);
+    receiptSheet.getRange(1, 1, 1, RECEIPT_HEADERS.length).setFontWeight("bold");
   } else {
-    // Auto-ensure header has cost columns
-    const headers = receiptSheet.getRange(1, 1, 1, 14).getValues()[0];
-    if (headers[11] !== "Unit Cost") {
-      receiptSheet.getRange(1, 12).setValue("Unit Cost");
-      receiptSheet.getRange(1, 13).setValue("Total Cost");
-      receiptSheet.getRange(1, 14).setValue("Order Total Cost");
+    // Auto-ensure header has all columns
+    const existingHeaders = receiptSheet.getRange(1, 1, 1, RECEIPT_HEADERS.length).getValues()[0];
+    RECEIPT_HEADERS.forEach((h, i) => {
+      if (!existingHeaders[i] || existingHeaders[i] !== h) {
+        receiptSheet.getRange(1, i + 1).setValue(h);
+      }
+    });
+  }
+
+  // Auto-save supplier if not exists, and get their info
+  let supplierPhone = payload.supplierPhone || "";
+  let supplierEmail = payload.supplierEmail || "";
+  let supplierTaxId = payload.supplierTaxId || "";
+  if (payload.companyName && payload.companyName.trim()) {
+    let suppSheet = ss.getSheetByName("Suppliers");
+    if (!suppSheet) {
+      suppSheet = ss.insertSheet("Suppliers");
+      suppSheet.appendRow(["SupplierID", "Name", "ContactPerson", "Phone", "Email", "Address", "TaxID", "CreatedAt"]);
+      suppSheet.getRange(1, 1, 1, 8).setFontWeight("bold");
+    }
+    const suppData = suppSheet.getDataRange().getValues();
+    const suppHeaders = suppData[0];
+    const nameIdx = suppHeaders.indexOf("Name");
+    const phoneIdx = suppHeaders.indexOf("Phone");
+    const emailIdx = suppHeaders.indexOf("Email");
+    const taxIdx = suppHeaders.indexOf("TaxID");
+    let found = false;
+    for (let i = 1; i < suppData.length; i++) {
+      if (String(suppData[i][nameIdx]).trim().toLowerCase() === payload.companyName.trim().toLowerCase()) {
+        // Update info from payload if provided, get existing info
+        if (payload.supplierPhone) suppSheet.getRange(i + 1, phoneIdx + 1).setValue(payload.supplierPhone);
+        if (payload.supplierEmail) suppSheet.getRange(i + 1, emailIdx + 1).setValue(payload.supplierEmail);
+        if (payload.supplierTaxId) suppSheet.getRange(i + 1, taxIdx + 1).setValue(payload.supplierTaxId);
+        supplierPhone = payload.supplierPhone || String(suppData[i][phoneIdx] || "");
+        supplierEmail = payload.supplierEmail || String(suppData[i][emailIdx] || "");
+        supplierTaxId = payload.supplierTaxId || String(suppData[i][taxIdx] || "");
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      const newId = "SUP-" + new Date().getTime();
+      suppSheet.appendRow([newId, payload.companyName.trim(), payload.contactPerson || "", payload.supplierPhone || "", payload.supplierEmail || "", payload.supplierAddress || "", payload.supplierTaxId || "", new Date().toISOString()]);
     }
   }
 
@@ -684,7 +728,10 @@ function receiveGoods(payload) {
       item.receivingDate || "",
       parseFloat(item.unitCost || 0),
       parseFloat(item.unitCost || 0) * (parseFloat(item.quantity) || 0),
-      orderTotalCost
+      orderTotalCost,
+      supplierPhone,
+      supplierEmail,
+      supplierTaxId
     ]);
 
     let found = false;
@@ -777,6 +824,44 @@ function receiveGoods(payload) {
 
   logActivity("Inventory", "Receive Goods", receiptId, payload._actor);
   return jsonResponse({ success: true, message: `Stock updated: ${updatedCount} items, Added: ${addedCount} items. Logged under Receipt ${receiptId}` });
+}
+
+function saveSupplier(payload) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("Suppliers");
+  if (!sheet) {
+    sheet = ss.insertSheet("Suppliers");
+    sheet.appendRow(["SupplierID", "Name", "ContactPerson", "Phone", "Email", "Address", "TaxID", "CreatedAt"]);
+    sheet.getRange(1, 1, 1, 8).setFontWeight("bold");
+  }
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const nameIdx = headers.indexOf("Name");
+  const phoneIdx = headers.indexOf("Phone");
+  const emailIdx = headers.indexOf("Email");
+  const addressIdx = headers.indexOf("Address");
+  const taxIdx = headers.indexOf("TaxID");
+  const contactIdx = headers.indexOf("ContactPerson");
+
+  const name = String(payload.name || "").trim();
+  if (!name) return jsonResponse({ success: false, error: "กรุณาระบุชื่อบริษัท" });
+
+  // Update if exists
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim().toLowerCase() === name.toLowerCase()) {
+      if (payload.contactPerson !== undefined) sheet.getRange(i + 1, contactIdx + 1).setValue(payload.contactPerson);
+      if (payload.phone !== undefined) sheet.getRange(i + 1, phoneIdx + 1).setValue(payload.phone);
+      if (payload.email !== undefined) sheet.getRange(i + 1, emailIdx + 1).setValue(payload.email);
+      if (payload.address !== undefined) sheet.getRange(i + 1, addressIdx + 1).setValue(payload.address);
+      if (payload.taxId !== undefined) sheet.getRange(i + 1, taxIdx + 1).setValue(payload.taxId);
+      return jsonResponse({ success: true, message: "อัปเดตข้อมูลผู้จำหน่ายเรียบร้อย" });
+    }
+  }
+
+  // New supplier
+  const newId = "SUP-" + new Date().getTime();
+  sheet.appendRow([newId, name, payload.contactPerson || "", payload.phone || "", payload.email || "", payload.address || "", payload.taxId || "", new Date().toISOString()]);
+  return jsonResponse({ success: true, supplierId: newId, message: "บันทึกผู้จำหน่ายใหม่เรียบร้อย" });
 }
 
 function addProduct(payload) {
