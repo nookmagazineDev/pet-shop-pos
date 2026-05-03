@@ -217,8 +217,8 @@ export default function Inventory() {
       const match = products.find(p => String(p.Barcode) === String(text).trim());
       if (match) {
         setProductNameInput(match.Name);
-        setReceiveUnitCostStr(match.CostPrice || "");
-        if (match.Location) setReceiveLocationStr(match.Location);
+        setReceiveUnitCostStr(String(match.CostPrice || ""));
+        setReceiveLocationStr(String(match.Location || ""));
       }
     }
   };
@@ -670,11 +670,12 @@ export default function Inventory() {
                          const match = products.find(p => String(p.Barcode) === String(e.target.value).trim());
                          if (match) {
                            setProductNameInput(match.Name);
-                           setReceiveUnitCostStr(match.CostPrice || "");
-                           if (match.Location) setReceiveLocationStr(match.Location);
+                           setReceiveUnitCostStr(String(match.CostPrice || ""));
+                           setReceiveLocationStr(String(match.Location || ""));
                          } else {
                            setProductNameInput("");
                            setReceiveUnitCostStr("");
+                           setReceiveLocationStr("");
                          }
                       }}
                     />
