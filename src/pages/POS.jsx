@@ -479,18 +479,18 @@ export default function POS() {
           <div className="space-y-3">
             <div className="flex justify-between text-gray-500">
               <span>ราคาสินค้า (ก่อน VAT)</span>
-              <span>฿{preVatDisplay.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span>฿{preVatDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             
             {discountAmount > 0 && (
                <div className="flex justify-between text-fuchsia-600 font-bold bg-fuchsia-50 px-2 py-1 -mx-2 rounded-lg">
                  <span>ส่วนลดโปรโมชั่น</span>
-                 <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                 <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
             <div className="flex justify-between text-gray-500">
               <span>ภาษีมูลค่าเพิ่ม 7% (รวมในราคาแล้ว)</span>
-              <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="border-t border-gray-200 my-2 pt-2"></div>
             <div className="flex justify-between items-end">
