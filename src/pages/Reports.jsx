@@ -917,7 +917,7 @@ export default function Reports() {
           <div className="flex-1 overflow-auto">
             <div className="p-4 bg-emerald-50/50 border-b border-emerald-100 flex items-center justify-between">
               <h3 className="font-semibold text-emerald-800 flex items-center gap-2">
-                <ArrowRightLeft size={18} /> ประวัติการย้ายสต็อกเข้าหน้าร้าน
+                <ArrowRightLeft size={18} /> ประวัติการเคลื่อนไหวสต็อก
               </h3>
               <span className="text-sm text-emerald-600 font-medium">
                 {filteredStockMoves.filter(searchStock).length} รายการ
@@ -931,27 +931,32 @@ export default function Reports() {
                   <th className="py-3 px-6">Barcode / สินค้า</th>
                   <th className="py-3 px-6 text-right">จำนวน</th>
                   <th className="py-3 px-6">จาก → ถึง</th>
+                  <th className="py-3 px-6">เลขที่อ้างอิง</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {filteredStockMoves.filter(searchStock).length === 0 ? (
-                  <tr><td colSpan="4" className="py-8 text-center text-emerald-500/80">ไม่พบประวัติการย้ายสต็อกในช่วงวันที่นี้<br /><span className="text-sm opacity-80">(ระบบจะบันทึกประวัติเฉพาะเวลาที่คุณทำรายการ "ย้ายสินค้าจากคลัง → หน้าร้าน" เท่านั้น)</span></td></tr>
+                  <tr><td colSpan="5" className="py-8 text-center text-emerald-500/80">ไม่พบประวัติการเคลื่อนไหวสต็อกในช่วงวันที่นี้<br /><span className="text-sm opacity-80">(บันทึกเมื่อรับสินค้าจากซัพพลายเออร์, ย้ายสินค้าไปหน้าร้าน, หรือยกเลิกบิล)</span></td></tr>
                 ) : (
-                  filteredStockMoves.filter(searchStock).map((m, idx) => (
-                    <tr key={idx} className="hover:bg-emerald-50/30 text-sm">
-                      <td className="py-4 px-6 text-emerald-900">{new Date(m.Date).toLocaleString("th-TH")}</td>
-                      <td className="py-4 px-6">
-                        <div className="font-semibold text-gray-800">{m.Name}</div>
-                        <div className="text-xs text-gray-500 font-mono">BC: {m.Barcode}</div>
-                      </td>
-                      <td className="py-4 px-6 text-right font-bold text-emerald-700">{m.Quantity} ชิ้น</td>
-                      <td className="py-4 px-6 text-gray-600">
-                        <span className="bg-gray-100 px-2 py-1 rounded text-xs">{m.FromLocation}</span>
-                        <span className="mx-2 text-gray-300">→</span>
-                        <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-semibold">{m.ToLocation}</span>
-                      </td>
-                    </tr>
-                  ))
+                  filteredStockMoves.filter(searchStock).map((m, idx) => {
+                    const isReceive = String(m.FromLocation || "").startsWith("ซัพพลายเออร์");
+                    return (
+                      <tr key={idx} className={`text-sm ${isReceive ? "bg-blue-50/40 hover:bg-blue-50/70" : "hover:bg-emerald-50/30"}`}>
+                        <td className="py-4 px-6 text-emerald-900">{new Date(m.Date).toLocaleString("th-TH")}</td>
+                        <td className="py-4 px-6">
+                          <div className="font-semibold text-gray-800">{m.Name}</div>
+                          <div className="text-xs text-gray-500 font-mono">BC: {m.Barcode}</div>
+                        </td>
+                        <td className="py-4 px-6 text-right font-bold text-emerald-700">+{m.Quantity} ชิ้น</td>
+                        <td className="py-4 px-6 text-gray-600">
+                          <span className={`px-2 py-1 rounded text-xs ${isReceive ? "bg-blue-100 text-blue-800 font-semibold" : "bg-gray-100"}`}>{m.FromLocation}</span>
+                          <span className="mx-2 text-gray-300">→</span>
+                          <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-semibold">{m.ToLocation}</span>
+                        </td>
+                        <td className="py-4 px-6 text-xs text-gray-500 font-mono">{m.ReferenceNo || "-"}</td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
