@@ -305,6 +305,13 @@ export default function POS() {
     if (!selectedCoupon) return 0;
     const base = Math.max(0, subtotal - discountAmount);
     if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
+    if (selectedCoupon.Type === "FREE_ITEM") {
+      const freeBarcode = String(selectedCoupon.FreeItemBarcode || "").trim();
+      if (!freeBarcode) return 0;
+      const prod = products.find(p => String(p.Barcode || "").trim() === freeBarcode);
+      const freePrice = parseFloat(prod?.Price || prod?.price) || 0;
+      return Math.min(freePrice, base);
+    }
     return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
   })();
 
@@ -712,9 +719,14 @@ export default function POS() {
                  <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
-            {couponDiscount > 0 && (
-               <div className="flex justify-between text-primary font-bold bg-primary/5 px-2 py-1 -mx-2 rounded-lg">
-                 <span className="flex items-center gap-1.5"><Ticket size={14} /> คูปอง: {selectedCoupon?.CouponName}</span>
+            {(couponDiscount > 0 || selectedCoupon) && (
+               <div className="flex justify-between text-amber-700 font-bold bg-amber-50 px-2 py-1 -mx-2 rounded-lg">
+                 <span className="flex items-center gap-1.5">
+                   <Ticket size={14} />
+                   {selectedCoupon?.Type === "FREE_ITEM"
+                     ? `🎁 ${selectedCoupon?.FreeItemName || selectedCoupon?.CouponName}`
+                     : `คูปอง: ${selectedCoupon?.CouponName}`}
+                 </span>
                  <span>-฿{couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
@@ -898,7 +910,17 @@ export default function POS() {
                         {activeCoupons.map((c, i) => {
                           const isApplied = selectedCoupon?.ID === c.ID;
                           const minOk = !parseFloat(c.MinOrderAmount) || subtotal >= parseFloat(c.MinOrderAmount);
-                          const discLabel = c.Type === "PERCENT" ? `ลด ${c.Value}%` : `ลด ฿${Number(c.Value).toLocaleString()}`;
+                          let discLabel;
+                          if (c.Type === "PERCENT") {
+                            discLabel = `ลด ${c.Value}%`;
+                          } else if (c.Type === "FREE_ITEM") {
+                            const freeBarcode = String(c.FreeItemBarcode || "").trim();
+                            const freeProd = freeBarcode ? products.find(p => String(p.Barcode || "").trim() === freeBarcode) : null;
+                            const freePrice = parseFloat(freeProd?.Price || freeProd?.price) || 0;
+                            discLabel = `🎁 ${c.FreeItemName || "ของแถม"}${freePrice > 0 ? ` (฿${freePrice.toLocaleString()})` : ""}`;
+                          } else {
+                            discLabel = `ลด ฿${Number(c.Value).toLocaleString()}`;
+                          }
                           return (
                             <button key={i} type="button"
                               disabled={!minOk}
@@ -908,7 +930,7 @@ export default function POS() {
                                 <div className="font-semibold">{c.CouponName}</div>
                                 {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
                               </div>
-                              <span className="text-xs font-bold text-primary ml-2 shrink-0">{discLabel}</span>
+                              <span className={`text-xs font-bold ml-2 shrink-0 ${c.Type === "FREE_ITEM" ? "text-green-600" : "text-primary"}`}>{discLabel}</span>
                             </button>
                           );
                         })}
@@ -918,9 +940,16 @@ export default function POS() {
                 )}
                 {selectedCoupon && (
                   <div className="mt-2 flex items-center justify-between px-4 py-2 bg-green-50 border border-green-100 rounded-xl text-sm">
-                    <span className="flex items-center gap-1.5 text-green-700 font-semibold"><Ticket size={14} /> {selectedCoupon.CouponName}</span>
+                    <span className="flex items-center gap-1.5 text-green-700 font-semibold">
+                      <Ticket size={14} />
+                      {selectedCoupon.Type === "FREE_ITEM"
+                        ? `🎁 ${selectedCoupon.FreeItemName || selectedCoupon.CouponName}`
+                        : selectedCoupon.CouponName}
+                    </span>
                     <span className="text-green-700 font-bold">
-                      -{selectedCoupon.Type === "PERCENT" ? `${selectedCoupon.Value}%` : `฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                      {selectedCoupon.Type === "PERCENT"
+                        ? `-${selectedCoupon.Value}%`
+                        : `-฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                     </span>
                   </div>
                 )}
