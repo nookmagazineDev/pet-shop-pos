@@ -33,6 +33,7 @@ export default function Coupons() {
   const [tab, setTab] = useState("coupons"); // "coupons" | "issue"
   const [templates, setTemplates] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Add/edit modal
@@ -52,13 +53,25 @@ export default function Coupons() {
   // ---- Load data ----
   const loadAll = async () => {
     setIsLoading(true);
-    const [tmpl, custs] = await Promise.all([
+    const [tmpl, custs, prods] = await Promise.all([
       fetchApi("getCoupons"),
       fetchApi("getCustomers"),
+      fetchApi("getProducts"),
     ]);
     setTemplates(Array.isArray(tmpl) ? tmpl : []);
     setCustomers(Array.isArray(custs) ? custs : []);
+    setProducts(Array.isArray(prods) ? prods : []);
     setIsLoading(false);
+  };
+
+  // ---- Barcode lookup ----
+  const lookupBarcode = (barcode) => {
+    const b = barcode.trim();
+    if (!b) return;
+    const found = products.find(p => String(p.Barcode || "").trim() === b);
+    if (found) {
+      setForm(prev => ({ ...prev, freeItemName: found.Name || found.name || "" }));
+    }
   };
 
   useEffect(() => {
@@ -612,8 +625,14 @@ export default function Coupons() {
                     <input
                       type="text"
                       value={form.freeItemBarcode}
-                      onChange={(e) => setForm((p) => ({ ...p, freeItemBarcode: e.target.value }))}
-                      placeholder="เช่น 8850000000001"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setForm((p) => ({ ...p, freeItemBarcode: val }));
+                        lookupBarcode(val);
+                      }}
+                      onBlur={(e) => lookupBarcode(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); lookupBarcode(form.freeItemBarcode); } }}
+                      placeholder="สแกนหรือพิมพ์บาร์โค้ด"
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
                     />
                   </div>
@@ -626,7 +645,9 @@ export default function Coupons() {
                       value={form.freeItemName}
                       onChange={(e) => setForm((p) => ({ ...p, freeItemName: e.target.value }))}
                       placeholder="เช่น อาหารแมว 1 ถุง"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
+                      className={`w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all ${
+                        form.freeItemName ? "bg-green-50 border-green-200 text-green-800 font-semibold" : "bg-gray-50 border-gray-200 focus:bg-white"
+                      }`}
                     />
                   </div>
                 </div>
