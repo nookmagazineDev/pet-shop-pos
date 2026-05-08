@@ -33,6 +33,9 @@ export default function Reports() {
   // Sales Menu Drill-down Modal
   const [selectedMenuItem, setSelectedMenuItem] = useState(null);
 
+  // Void bill expand
+  const [expandedVoidId, setExpandedVoidId] = useState(null);
+
   // Filter States
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
@@ -806,39 +809,99 @@ export default function Reports() {
             <table className="w-full text-left border-collapse">
               <thead className="bg-red-50 sticky top-0">
                 <tr className="border-b border-red-100 text-sm font-medium text-red-700">
-                  <th className="py-3 px-6">No.</th>
-                  <th className="py-3 px-6">วันที่เวลา</th>
-                  <th className="py-3 px-6">เลขที่ใบเสร็จ</th>
-                  <th className="py-3 px-6 text-right">ยอดรวม</th>
-                  <th className="py-3 px-6">ช่องทางชำระ</th>
-                  <th className="py-3 px-6">สาเหตุการยกเลิก</th>
-                  <th className="py-3 px-6">ผู้ทำรายการ</th>
+                  <th className="py-3 px-4 w-8"></th>
+                  <th className="py-3 px-4">No.</th>
+                  <th className="py-3 px-4">วันที่เวลา</th>
+                  <th className="py-3 px-4">เลขที่ใบเสร็จ</th>
+                  <th className="py-3 px-4 text-right">ยอดรวม</th>
+                  <th className="py-3 px-4">ช่องทางชำระ</th>
+                  <th className="py-3 px-4">สาเหตุการยกเลิก</th>
+                  <th className="py-3 px-4">ผู้ทำรายการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-red-50">
                 {filteredVoids.filter(searchVoid).length === 0 ? (
-                  <tr><td colSpan="7" className="py-8 text-center text-red-400/80">ไม่พบรายการยกเลิกบิลในช่วงวันที่นี้</td></tr>
+                  <tr><td colSpan="8" className="py-8 text-center text-red-400/80">ไม่พบรายการยกเลิกบิลในช่วงวันที่นี้</td></tr>
                 ) : (
-                  filteredVoids.filter(searchVoid).map((tx, idx) => (
-                    <tr key={idx} className="hover:bg-red-50/30 text-sm">
-                      <td className="py-4 px-6 text-gray-400 text-xs">{idx + 1}</td>
-                      <td className="py-4 px-6 text-gray-700">{new Date(tx.Date).toLocaleString("th-TH")}</td>
-                      <td className="py-4 px-6 font-mono text-red-700 font-semibold">{tx.ReceiptNo || tx.OrderID}</td>
-                      <td className="py-4 px-6 text-right font-bold text-red-600">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                      <td className="py-4 px-6">
-                        <span className="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">{tx.PaymentMethod || "-"}</span>
-                      </td>
-                      <td className="py-4 px-6 text-gray-600 text-xs max-w-[200px]">{tx.CancelNote || "-"}</td>
-                      <td className="py-4 px-6 text-gray-500 text-xs">{tx.Username || "-"}</td>
-                    </tr>
-                  ))
+                  filteredVoids.filter(searchVoid).map((tx, idx) => {
+                    const isExpanded = expandedVoidId === (tx.OrderID || tx[0]);
+                    let cartItems = [];
+                    try { cartItems = typeof tx.CartDetails === 'string' ? JSON.parse(tx.CartDetails) : (tx.CartDetails || []); } catch (e) {}
+                    return (
+                      <>
+                        <tr
+                          key={tx.OrderID || idx}
+                          onClick={() => setExpandedVoidId(isExpanded ? null : (tx.OrderID || tx[0]))}
+                          className="hover:bg-red-50/50 text-sm cursor-pointer select-none"
+                        >
+                          <td className="py-3 px-4 text-red-400">
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </td>
+                          <td className="py-3 px-4 text-gray-400 text-xs">{idx + 1}</td>
+                          <td className="py-3 px-4 text-gray-700">{new Date(tx.Date).toLocaleString("th-TH")}</td>
+                          <td className="py-3 px-4 font-mono text-red-700 font-semibold">{tx.ReceiptNo || tx.OrderID}</td>
+                          <td className="py-3 px-4 text-right font-bold text-red-600">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">{tx.PaymentMethod || "-"}</span>
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 text-xs max-w-[200px]">{tx.CancelNote || "-"}</td>
+                          <td className="py-3 px-4 text-gray-500 text-xs">{tx.Username || "-"}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`${tx.OrderID}-detail`} className="bg-red-50/40">
+                            <td colSpan="8" className="px-10 py-3">
+                              <div className="text-xs font-semibold text-red-700 mb-2 flex items-center gap-1">
+                                <Receipt size={13} /> รายการสินค้าในบิล
+                              </div>
+                              {cartItems.length === 0 ? (
+                                <p className="text-xs text-gray-400">ไม่พบข้อมูลรายการสินค้า</p>
+                              ) : (
+                                <table className="w-full text-xs border-collapse">
+                                  <thead>
+                                    <tr className="text-red-600 border-b border-red-100">
+                                      <th className="py-1 pr-4 text-left font-medium">สินค้า</th>
+                                      <th className="py-1 pr-4 text-left font-medium">Barcode</th>
+                                      <th className="py-1 pr-4 text-center font-medium">จำนวน</th>
+                                      <th className="py-1 pr-4 text-right font-medium">ราคา/หน่วย</th>
+                                      <th className="py-1 text-right font-medium">รวม</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {cartItems.map((item, i) => {
+                                      const qty = parseFloat(item.qty || 1);
+                                      const price = parseFloat(item.price || item.Price || 0);
+                                      return (
+                                        <tr key={i} className="border-b border-red-50/60 text-gray-700">
+                                          <td className="py-1.5 pr-4">{item.Name || item.name || "-"}</td>
+                                          <td className="py-1.5 pr-4 font-mono text-gray-400">{item.Barcode || item.barcode || "-"}</td>
+                                          <td className="py-1.5 pr-4 text-center font-semibold">{qty}</td>
+                                          <td className="py-1.5 pr-4 text-right">฿{price.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                                          <td className="py-1.5 text-right font-bold text-red-600">฿{(qty * price).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  <tfoot>
+                                    <tr className="border-t border-red-200 font-bold text-red-700">
+                                      <td colSpan="4" className="py-1.5 text-right pr-4">ยอดรวมบิล</td>
+                                      <td className="py-1.5 text-right">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })
                 )}
               </tbody>
               {filteredVoids.filter(searchVoid).length > 0 && (
                 <tfoot>
                   <tr className="bg-red-100 font-bold text-sm border-t-2 border-red-200">
-                    <td className="py-3 px-6 text-red-800" colSpan="3">Grand Total ({filteredVoids.filter(searchVoid).length} รายการ)</td>
-                    <td className="py-3 px-6 text-right text-red-800">
+                    <td className="py-3 px-4 text-red-800" colSpan="4">Grand Total ({filteredVoids.filter(searchVoid).length} รายการ)</td>
+                    <td className="py-3 px-4 text-right text-red-800">
                       ฿{filteredVoids.filter(searchVoid).reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
                     </td>
                     <td colSpan="3"></td>
