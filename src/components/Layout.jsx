@@ -1,6 +1,6 @@
 
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Clock, Globe, LogOut, Wallet, FileText, Tag, ShieldCheck, Printer } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Clock, Globe, LogOut, Wallet, FileText, Tag, ShieldCheck, Printer, Star } from "lucide-react";
 import { useShift } from "../context/ShiftContext";
 import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
@@ -14,6 +14,7 @@ const ALL_MENU = [
   { name: "บัญชี", fullName: "รายรับ-รายจ่าย (Ledger)", path: "/accounting", icon: <Wallet size={20} />, roles: ["admin", "manager", "staff", "cashier"] },
   { name: "รายงาน", fullName: "รายงาน (Reports)", path: "/reports", icon: <FileText size={20} />, roles: ["admin", "manager"] },
   { name: "โปรโมชั่น", fullName: "โปรโมชั่น (Promotions)", path: "/promotions", icon: <Tag size={20} />, roles: ["admin", "manager"] },
+  { name: "แพคเกจ", fullName: "แพคเกจ & พ้อย (Packages)", path: "/packages", icon: <Star size={20} />, roles: ["admin", "manager"] },
   { name: "ปริ้นเตอร์", fullName: "ตั้งค่าปริ้นเตอร์", path: "/settings/printer", icon: <Printer size={20} />, roles: ["admin", "manager"] },
   { name: "พนักงาน", fullName: "จัดการพนักงาน (Admin)", path: "/admin/users", icon: <ShieldCheck size={20} />, roles: ["admin"], adminOnly: true },
 ];

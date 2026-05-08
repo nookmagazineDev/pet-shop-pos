@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle, UserPlus, Users } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle, UserPlus, Users, Star, Gift } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import BarcodeScanner from "../components/BarcodeScanner";
 import CustomerModal from "../components/CustomerModal";
+import PurchasePackageModal from "../components/PurchasePackageModal";
 import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
 import { useNavigate } from "react-router-dom";
@@ -33,6 +34,8 @@ export default function POS() {
   const [manualDiscountType, setManualDiscountType] = useState("baht");
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [isPurchasePkgOpen, setIsPurchasePkgOpen] = useState(false);
+  const [pointsToUse, setPointsToUse] = useState(0);
   const barcodeRef = useRef(null);
 
   // Fetch products on load — wait for ALL data before enabling search
@@ -357,6 +360,7 @@ export default function POS() {
     setCustomerSearch("");
     setManualDiscountValue("");
     setManualDiscountType("baht");
+    setPointsToUse(0);
   };
 
   const openPreview = () => {
@@ -409,7 +413,8 @@ export default function POS() {
         paymentMethod: paymentMethod,
         cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
         receiptType,
-        customerInfo: receiptType === "ใบกำกับภาษี" ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null
+        customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "แต้ม (Points)") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
+        pointsUsed: paymentMethod === "แต้ม (Points)" ? pointsToUse : 0
       }
     };
 
@@ -713,6 +718,14 @@ export default function POS() {
             >
               <UserPlus size={14} /> {customerName ? "เปลี่ยน" : "เพิ่ม/เลือก"}
             </button>
+            <button
+              type="button"
+              onClick={() => setIsPurchasePkgOpen(true)}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-yellow-500 text-white text-xs font-semibold hover:bg-yellow-600 transition-colors shadow-sm"
+              title="ซื้อแพคเกจสะสมแต้ม"
+            >
+              <Gift size={14} />
+            </button>
           </div>
 
           <div className="mb-6 space-y-3">
@@ -840,21 +853,69 @@ export default function POS() {
               <span className="text-xs font-semibold">สแกน QR</span>
             </button>
           </div>
-          {/* Second row: Credit Card */}
-          <div className="mb-6">
-            <button 
+          {/* Second row: Credit Card + Points */}
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <button
               onClick={() => setPaymentMethod("บัตรเครดิต")}
               className={clsx(
-                "w-full flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all",
-                paymentMethod === "บัตรเครดิต" 
-                  ? "border-primary bg-primary/5 text-primary" 
+                "flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all",
+                paymentMethod === "บัตรเครดิต"
+                  ? "border-primary bg-primary/5 text-primary"
                   : "border-gray-100 hover:border-primary/30 text-gray-500 bg-gray-50"
               )}
             >
               <CreditCard size={20} />
               <span className="text-sm font-semibold">บัตรเครดิต</span>
             </button>
+            <button
+              onClick={() => {
+                if (!customerName) { alert("กรุณาเลือกลูกค้าก่อนใช้แต้ม"); return; }
+                setPaymentMethod("แต้ม (Points)");
+                const custObj = customers.find(c => c.Name === customerName);
+                setPointsToUse(Math.min(Number(custObj?.Points || 0), Math.ceil(total)));
+              }}
+              className={clsx(
+                "flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all",
+                paymentMethod === "แต้ม (Points)"
+                  ? "border-yellow-500 bg-yellow-50 text-yellow-700"
+                  : "border-gray-100 hover:border-yellow-300 text-gray-500 bg-gray-50"
+              )}
+            >
+              <Star size={20} />
+              <span className="text-sm font-semibold">แต้ม (Points)</span>
+            </button>
           </div>
+
+          {/* Points payment details */}
+          {paymentMethod === "แต้ม (Points)" && (() => {
+            const custObj = customers.find(c => c.Name === customerName);
+            const available = Number(custObj?.Points || 0);
+            const enough = available >= Math.ceil(total);
+            return (
+              <div className="mb-5 p-4 bg-yellow-50 rounded-xl border border-yellow-100 space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-yellow-800 font-medium">แต้มคงเหลือ ({customerName})</span>
+                  <span className="font-bold text-yellow-700 flex items-center gap-1"><Star size={13} /> {available.toLocaleString()} pts</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-yellow-800">แต้มที่ต้องใช้ (1 แต้ม = ฿1)</span>
+                  <span className="font-bold text-gray-900">{Math.ceil(total).toLocaleString()} pts</span>
+                </div>
+                {!enough && (
+                  <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg font-medium">
+                    แต้มไม่พอ — ขาดอีก {(Math.ceil(total) - available).toLocaleString()} pts
+                  </div>
+                )}
+                {enough && (
+                  <div className="text-xs text-green-600 bg-green-50 px-3 py-2 rounded-lg font-medium flex items-center gap-1">
+                    <CheckCircle size={13} /> แต้มเพียงพอ — หลังชำระเหลือ {(available - Math.ceil(total)).toLocaleString()} pts
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <div className="mb-2" />
 
           {/* Cash: received & change */}
           {paymentMethod === "เงินสด" && (
@@ -923,7 +984,8 @@ export default function POS() {
                 disabled={
                   cart.length === 0 ||
                   isCheckingOut ||
-                  (paymentMethod === "เงินสด" && (cashReceived === "" || parseFloat(cashReceived) < totalForCash))
+                  (paymentMethod === "เงินสด" && (cashReceived === "" || parseFloat(cashReceived) < totalForCash)) ||
+                  (paymentMethod === "แต้ม (Points)" && Number(customers.find(c => c.Name === customerName)?.Points || 0) < Math.ceil(total))
                 }
                 className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
               >
@@ -956,6 +1018,15 @@ export default function POS() {
         customers={customers}
         onSelectCustomer={selectCustomer}
         onCustomerAdded={(newCust) => setCustomers(prev => [...prev, newCust])}
+      />
+
+      <PurchasePackageModal
+        isOpen={isPurchasePkgOpen}
+        onClose={() => setIsPurchasePkgOpen(false)}
+        customers={customers}
+        onPointsUpdated={(name, newBalance) => {
+          setCustomers(prev => prev.map(c => c.Name === name ? { ...c, Points: newBalance } : c));
+        }}
       />
     </div>
   );

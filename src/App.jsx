@@ -9,6 +9,7 @@ import OnlineSales from "./pages/OnlineSales";
 import Accounting from "./pages/Accounting";
 import Reports from "./pages/Reports";
 import Promotions from "./pages/Promotions";
+import Packages from "./pages/Packages";
 import Login from "./pages/Login";
 import AdminUsers from "./pages/AdminUsers";
 import PrinterSettings from "./pages/PrinterSettings";
@@ -39,6 +40,7 @@ function App() {
               <Route path="accounting" element={<ProtectedRoute allowedRoles={STORE_ALL}><Accounting /></ProtectedRoute>} />
               <Route path="reports" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Reports /></ProtectedRoute>} />
               <Route path="promotions" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Promotions /></ProtectedRoute>} />
+              <Route path="packages" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Packages /></ProtectedRoute>} />
               <Route path="admin/users" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsers /></ProtectedRoute>} />
               <Route path="settings/printer" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><PrinterSettings /></ProtectedRoute>} />
             </Route>

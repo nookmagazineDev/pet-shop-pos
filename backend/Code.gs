@@ -17,6 +17,8 @@ function setup() {
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
     "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"],
+    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt"],
+    "PointsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
@@ -220,6 +222,10 @@ function doGet(e) {
     return jsonResponse(readSheetData("Expenses"));
   } else if (action === "getCustomers") {
     return jsonResponse(readSheetData("Customers"));
+  } else if (action === "getPackages") {
+    return jsonResponse(readSheetData("Packages"));
+  } else if (action === "getPointsHistory") {
+    return jsonResponse(readSheetData("PointsHistory"));
   } else if (action === "getStockMovements") {
     return jsonResponse(readSheetData("StockMovements"));
   } else if (action === "getPromotions") {
@@ -265,6 +271,10 @@ function doPost(e) {
       return addExpense(data.payload);
     } else if (action === "saveCustomer") {
       return saveCustomer(data.payload);
+    } else if (action === "savePackage") {
+      return savePackage(data.payload);
+    } else if (action === "purchasePackage") {
+      return purchasePackage(data.payload);
     } else if (action === "savePromotion") {
       return savePromotion(data.payload);
     } else if (action === "togglePromotionStatus") {
@@ -424,6 +434,12 @@ function processCheckout(payload) {
     }
   });
   
+  // Deduct points if customer paid with points
+  const pointsUsed = parseFloat(payload.pointsUsed) || 0;
+  if (pointsUsed > 0 && payload.customerInfo && payload.customerInfo.name) {
+    _adjustCustomerPoints(ss, payload.customerInfo.name, -pointsUsed, "REDEEM", "ชำระบิล " + orderId, orderId, payload._actor ? payload._actor.username : "System");
+  }
+
   logActivity("POS/Online", "Checkout", orderId, payload._actor);
   return jsonResponse({ success: true, orderId: orderId, receiptNo: receiptNo, taxInvoiceNo: generatedTaxInvoiceNo });
 }
@@ -1200,6 +1216,113 @@ function addExpense(payload) {
   ]);
 
   return jsonResponse({ success: true, message: "Expense added successfully", fileUrl: fileUrl });
+}
+
+// ─────────────────────────────────────────────────────
+// POINTS HELPERS
+// ─────────────────────────────────────────────────────
+function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId, actor) {
+  const custSheet = ss.getSheetByName("Customers");
+  if (!custSheet) return 0;
+  const custData = custSheet.getDataRange().getValues();
+  // Name is col index 1 in new schema
+  const nameColIdx = custData[0].indexOf("Name");
+  const pointsColIdx = custData[0].indexOf("Points");
+  const updatedAtColIdx = custData[0].indexOf("UpdatedAt");
+  if (nameColIdx < 0 || pointsColIdx < 0) return 0;
+
+  let newBalance = 0;
+  for (let i = 1; i < custData.length; i++) {
+    if (String(custData[i][nameColIdx]).trim() === String(customerName).trim()) {
+      const current = parseFloat(custData[i][pointsColIdx]) || 0;
+      newBalance = Math.max(0, current + delta);
+      custSheet.getRange(i + 1, pointsColIdx + 1).setValue(newBalance);
+      if (updatedAtColIdx >= 0) custSheet.getRange(i + 1, updatedAtColIdx + 1).setValue(new Date());
+      break;
+    }
+  }
+
+  // Log to PointsHistory
+  let histSheet = ss.getSheetByName("PointsHistory");
+  if (!histSheet) {
+    histSheet = ss.insertSheet("PointsHistory");
+    histSheet.appendRow(["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"]);
+    histSheet.getRange(1, 1, 1, 9).setFontWeight("bold");
+  }
+  histSheet.appendRow([
+    "PH-" + new Date().getTime(),
+    customerName,
+    new Date(),
+    type,
+    Math.abs(delta),
+    newBalance,
+    reference || "",
+    orderId || "",
+    actor || "System"
+  ]);
+
+  return newBalance;
+}
+
+function savePackage(payload) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("Packages");
+  const PKG_HEADERS = ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt"];
+  if (!sheet) {
+    sheet = ss.insertSheet("Packages");
+    sheet.appendRow(PKG_HEADERS);
+    sheet.getRange(1, 1, 1, PKG_HEADERS.length).setFontWeight("bold");
+  }
+  const data = sheet.getDataRange().getValues();
+  const pkgId = String(payload.packageId || "").trim();
+  let found = false;
+
+  if (pkgId) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === pkgId) {
+        sheet.getRange(i + 1, 2).setValue(payload.name || data[i][1]);
+        sheet.getRange(i + 1, 3).setValue(parseFloat(payload.price) || 0);
+        sheet.getRange(i + 1, 4).setValue(parseFloat(payload.points) || 0);
+        sheet.getRange(i + 1, 5).setValue(parseFloat(payload.bonusPoints) || 0);
+        sheet.getRange(i + 1, 6).setValue(payload.description || "");
+        sheet.getRange(i + 1, 7).setValue(payload.status || "ACTIVE");
+        found = true;
+        break;
+      }
+    }
+  }
+
+  if (!found) {
+    const newId = "PKG-" + new Date().getTime();
+    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date()]);
+  }
+  return jsonResponse({ success: true });
+}
+
+function purchasePackage(payload) {
+  const ss = getSpreadsheet();
+  const customerName = String(payload.customerName || "").trim();
+  const packageId = String(payload.packageId || "").trim();
+  if (!customerName) return jsonResponse({ error: "กรุณาระบุชื่อลูกค้า" });
+  if (!packageId) return jsonResponse({ error: "กรุณาเลือกแพคเกจ" });
+
+  // Find package
+  const pkgSheet = ss.getSheetByName("Packages");
+  if (!pkgSheet) return jsonResponse({ error: "ไม่พบชีท Packages" });
+  const pkgData = pkgSheet.getDataRange().getValues();
+  let pkgRow = null;
+  for (let i = 1; i < pkgData.length; i++) {
+    if (String(pkgData[i][0]).trim() === packageId) { pkgRow = pkgData[i]; break; }
+  }
+  if (!pkgRow) return jsonResponse({ error: "ไม่พบแพคเกจ" });
+
+  const earnedPoints = (parseFloat(pkgRow[3]) || 0) + (parseFloat(pkgRow[4]) || 0);
+  const actor = payload._actor ? payload._actor.username : "System";
+  const ref = "ซื้อแพคเกจ: " + pkgRow[1] + " (฿" + pkgRow[2] + ")";
+
+  const newBalance = _adjustCustomerPoints(ss, customerName, earnedPoints, "EARN", ref, packageId, actor);
+  logActivity("Points", "Purchase Package", packageId, payload._actor);
+  return jsonResponse({ success: true, earnedPoints: earnedPoints, newBalance: newBalance });
 }
 
 function saveCustomer(payload) {
