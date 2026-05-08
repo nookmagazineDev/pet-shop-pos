@@ -10,6 +10,8 @@ import Accounting from "./pages/Accounting";
 import Reports from "./pages/Reports";
 import Promotions from "./pages/Promotions";
 import Packages from "./pages/Packages";
+import Members from "./pages/Members";
+import Coupons from "./pages/Coupons";
 import Login from "./pages/Login";
 import AdminUsers from "./pages/AdminUsers";
 import PrinterSettings from "./pages/PrinterSettings";
@@ -41,6 +43,8 @@ function App() {
               <Route path="reports" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Reports /></ProtectedRoute>} />
               <Route path="promotions" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Promotions /></ProtectedRoute>} />
               <Route path="packages" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Packages /></ProtectedRoute>} />
+              <Route path="members" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Members /></ProtectedRoute>} />
+              <Route path="coupons" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Coupons /></ProtectedRoute>} />
               <Route path="admin/users" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsers /></ProtectedRoute>} />
               <Route path="settings/printer" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><PrinterSettings /></ProtectedRoute>} />
             </Route>

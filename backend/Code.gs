@@ -19,6 +19,8 @@ function setup() {
     "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"],
     "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt"],
     "PointsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"],
+    "Coupons": ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt"],
+    "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
@@ -226,6 +228,10 @@ function doGet(e) {
     return jsonResponse(readSheetData("Packages"));
   } else if (action === "getPointsHistory") {
     return jsonResponse(readSheetData("PointsHistory"));
+  } else if (action === "getCoupons") {
+    return jsonResponse(readSheetData("Coupons"));
+  } else if (action === "getCustomerCoupons") {
+    return jsonResponse(readSheetData("CustomerCoupons"));
   } else if (action === "getStockMovements") {
     return jsonResponse(readSheetData("StockMovements"));
   } else if (action === "getPromotions") {
@@ -275,6 +281,12 @@ function doPost(e) {
       return savePackage(data.payload);
     } else if (action === "purchasePackage") {
       return purchasePackage(data.payload);
+    } else if (action === "saveCoupon") {
+      return saveCoupon(data.payload);
+    } else if (action === "issueCoupon") {
+      return issueCoupon(data.payload);
+    } else if (action === "useCoupon") {
+      return useCoupon(data.payload);
     } else if (action === "savePromotion") {
       return savePromotion(data.payload);
     } else if (action === "togglePromotionStatus") {
@@ -1216,6 +1228,98 @@ function addExpense(payload) {
   ]);
 
   return jsonResponse({ success: true, message: "Expense added successfully", fileUrl: fileUrl });
+}
+
+// ─────────────────────────────────────────────────────
+// COUPON FUNCTIONS
+// ─────────────────────────────────────────────────────
+function saveCoupon(payload) {
+  const ss = getSpreadsheet();
+  const HEADERS = ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt"];
+  let sheet = ss.getSheetByName("Coupons");
+  if (!sheet) {
+    sheet = ss.insertSheet("Coupons");
+    sheet.appendRow(HEADERS);
+    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold");
+  }
+  const data = sheet.getDataRange().getValues();
+  const couponId = String(payload.couponId || "").trim();
+  let found = false;
+  if (couponId) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === couponId) {
+        sheet.getRange(i + 1, 2).setValue(payload.name || "");
+        sheet.getRange(i + 1, 3).setValue(payload.type || "FIXED_AMOUNT");
+        sheet.getRange(i + 1, 4).setValue(parseFloat(payload.value) || 0);
+        sheet.getRange(i + 1, 5).setValue(parseFloat(payload.price) || 0);
+        sheet.getRange(i + 1, 6).setValue(parseFloat(payload.minOrderAmount) || 0);
+        sheet.getRange(i + 1, 7).setValue(parseFloat(payload.expiryDays) || 365);
+        sheet.getRange(i + 1, 8).setValue(payload.description || "");
+        sheet.getRange(i + 1, 9).setValue(payload.status || "ACTIVE");
+        found = true; break;
+      }
+    }
+  }
+  if (!found) {
+    const newId = "CPN-" + new Date().getTime();
+    sheet.appendRow([newId, payload.name || "", payload.type || "FIXED_AMOUNT", parseFloat(payload.value) || 0, parseFloat(payload.price) || 0, parseFloat(payload.minOrderAmount) || 0, parseFloat(payload.expiryDays) || 365, payload.description || "", payload.status || "ACTIVE", new Date()]);
+  }
+  return jsonResponse({ success: true });
+}
+
+function issueCoupon(payload) {
+  const ss = getSpreadsheet();
+  const customerName = String(payload.customerName || "").trim();
+  const couponId = String(payload.couponId || "").trim();
+  if (!customerName || !couponId) return jsonResponse({ error: "ข้อมูลไม่ครบ" });
+
+  // Find coupon template
+  const cpnSheet = ss.getSheetByName("Coupons");
+  if (!cpnSheet) return jsonResponse({ error: "ไม่พบชีท Coupons" });
+  const cpnData = cpnSheet.getDataRange().getValues();
+  let cpnRow = null;
+  for (let i = 1; i < cpnData.length; i++) {
+    if (String(cpnData[i][0]).trim() === couponId) { cpnRow = cpnData[i]; break; }
+  }
+  if (!cpnRow) return jsonResponse({ error: "ไม่พบคูปอง" });
+
+  const expiryDays = parseFloat(cpnRow[6]) || 365;
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + expiryDays);
+
+  const HEADERS = ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy"];
+  let ccSheet = ss.getSheetByName("CustomerCoupons");
+  if (!ccSheet) {
+    ccSheet = ss.insertSheet("CustomerCoupons");
+    ccSheet.appendRow(HEADERS);
+    ccSheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold");
+  }
+  const newId = "CC-" + new Date().getTime();
+  ccSheet.appendRow([newId, customerName, couponId, cpnRow[1], cpnRow[2], cpnRow[3], cpnRow[5], parseFloat(payload.price) || 0, "ACTIVE", new Date(), expiryDate, "", "", payload._actor ? payload._actor.username : "System"]);
+  logActivity("Coupon", "Issue Coupon", newId, payload._actor);
+  return jsonResponse({ success: true, couponInstanceId: newId });
+}
+
+function useCoupon(payload) {
+  const ss = getSpreadsheet();
+  const instanceId = String(payload.couponInstanceId || "").trim();
+  const orderId = String(payload.orderId || "").trim();
+  if (!instanceId) return jsonResponse({ error: "ไม่พบรหัสคูปอง" });
+
+  const ccSheet = ss.getSheetByName("CustomerCoupons");
+  if (!ccSheet) return jsonResponse({ error: "ไม่พบชีท CustomerCoupons" });
+  const data = ccSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === instanceId) {
+      // Status col=8, UsedAt col=11, OrderID col=12
+      ccSheet.getRange(i + 1, 9).setValue("USED");
+      ccSheet.getRange(i + 1, 12).setValue(new Date());
+      ccSheet.getRange(i + 1, 13).setValue(orderId);
+      logActivity("Coupon", "Use Coupon", instanceId, payload._actor);
+      return jsonResponse({ success: true });
+    }
+  }
+  return jsonResponse({ error: "ไม่พบคูปองนี้" });
 }
 
 // ─────────────────────────────────────────────────────

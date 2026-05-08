@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle, UserPlus, Users, Star, Gift } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle, UserPlus, Users, Star, Gift, Ticket } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import BarcodeScanner from "../components/BarcodeScanner";
 import CustomerModal from "../components/CustomerModal";
 import PurchasePackageModal from "../components/PurchasePackageModal";
+import BuyCouponModal from "../components/BuyCouponModal";
 import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
 import { useNavigate } from "react-router-dom";
@@ -35,7 +36,11 @@ export default function POS() {
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [isPurchasePkgOpen, setIsPurchasePkgOpen] = useState(false);
+  const [isBuyCouponOpen, setIsBuyCouponOpen] = useState(false);
   const [pointsToUse, setPointsToUse] = useState(0);
+  const [selectedCoupon, setSelectedCoupon] = useState(null);   // coupon applied to this bill
+  const [customerCoupons, setCustomerCoupons] = useState([]);   // all coupons loaded for app
+  const [showCouponPicker, setShowCouponPicker] = useState(false);
   const barcodeRef = useRef(null);
 
   // Fetch products on load — wait for ALL data before enabling search
@@ -44,11 +49,13 @@ export default function POS() {
       fetchApi("getProducts"),
       fetchApi("getPromotions"),
       fetchApi("getCustomers"),
-    ]).then(([prodsData, promosData, custsData]) => {
+      fetchApi("getCustomerCoupons"),
+    ]).then(([prodsData, promosData, custsData, ccData]) => {
       setProducts(Array.isArray(prodsData) ? prodsData : []);
       const allPromos = Array.isArray(promosData) ? promosData : [];
       setPromotions(allPromos.filter(p => p.Status === "ACTIVE"));
       setCustomers(Array.isArray(custsData) ? custsData : []);
+      setCustomerCoupons(Array.isArray(ccData) ? ccData : []);
       setIsLoadingProducts(false);
     });
   }, []);
@@ -292,10 +299,19 @@ export default function POS() {
   });
 
   const discountAmount = calculateDiscounts();
+
+  // Coupon discount (applied on top of promo/manual discounts)
+  const couponDiscount = (() => {
+    if (!selectedCoupon) return 0;
+    const base = Math.max(0, subtotal - discountAmount);
+    if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
+    return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
+  })();
+
   const vatableSubtotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? 0 : (item.price * item.qty)), 0);
   const vatableRatio = subtotal > 0 ? (vatableSubtotal / subtotal) : 0;
-  const vatableSubtotalAfterDiscount = vatableSubtotal - (discountAmount * vatableRatio);
-  const subtotalAfterDiscount = subtotal - discountAmount;
+  const vatableSubtotalAfterDiscount = vatableSubtotal - ((discountAmount + couponDiscount) * vatableRatio);
+  const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount - couponDiscount);
   // ราคาที่ตั้งไว้รวม VAT อยู่แล้ว → ถอด VAT ออก: tax = price × 7/107
   const tax = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * (7 / 107) : 0;
   const total = subtotalAfterDiscount; // ยอดสุทธิ = ราคาที่ตั้งไว้ (ไม่บวก VAT เพิ่ม)
@@ -361,6 +377,8 @@ export default function POS() {
     setManualDiscountValue("");
     setManualDiscountType("baht");
     setPointsToUse(0);
+    setSelectedCoupon(null);
+    setShowCouponPicker(false);
   };
 
   const openPreview = () => {
@@ -414,7 +432,8 @@ export default function POS() {
         cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
         receiptType,
         customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "แต้ม (Points)") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
-        pointsUsed: paymentMethod === "แต้ม (Points)" ? Math.ceil(total) : 0
+        pointsUsed: paymentMethod === "แต้ม (Points)" ? Math.ceil(total) : 0,
+        couponInstanceId: selectedCoupon?.ID || ""
       }
     };
 
@@ -435,6 +454,11 @@ export default function POS() {
         customerInfo: { customerName, customerAddress, customerTaxId },
         taxInvoiceNo: res.taxInvoiceNo || "",
       });
+      // Mark coupon as used
+      if (selectedCoupon?.ID) {
+        postApi({ action: "useCoupon", payload: { couponInstanceId: selectedCoupon.ID, orderId: res.orderId || "" } });
+        setCustomerCoupons(prev => prev.map(c => c.ID === selectedCoupon.ID ? { ...c, Status: "USED" } : c));
+      }
       // Deduct points locally after checkout
       if (paymentMethod === "แต้ม (Points)" && customerName && total > 0) {
         const usedPts = Math.ceil(total);
@@ -684,6 +708,12 @@ export default function POS() {
                  <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
+            {couponDiscount > 0 && (
+               <div className="flex justify-between text-primary font-bold bg-primary/5 px-2 py-1 -mx-2 rounded-lg">
+                 <span className="flex items-center gap-1.5"><Ticket size={14} /> คูปอง: {selectedCoupon?.CouponName}</span>
+                 <span>-฿{couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+               </div>
+            )}
             <div className="flex justify-between text-gray-500">
               <span>ภาษีมูลค่าเพิ่ม 7% (รวมในราคาแล้ว)</span>
               <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -734,6 +764,14 @@ export default function POS() {
               title="ซื้อแพคเกจสะสมแต้ม"
             >
               <Gift size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsBuyCouponOpen(true)}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
+              title="ซื้อคูปองส่วนลด"
+            >
+              <Ticket size={14} />
             </button>
           </div>
 
@@ -821,6 +859,70 @@ export default function POS() {
                 </div>
              )}
           </div>
+
+          {/* Coupon selector — show when customer selected */}
+          {customerName && (() => {
+            const now = new Date();
+            const activeCoupons = customerCoupons.filter(c =>
+              String(c.CustomerName || "").toLowerCase() === customerName.toLowerCase() &&
+              c.Status === "ACTIVE" &&
+              (!c.ExpiryDate || new Date(c.ExpiryDate) >= now)
+            );
+            return (
+              <div className="mb-4">
+                {activeCoupons.length > 0 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowCouponPicker(p => !p)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 bg-primary/5 border border-primary/20 rounded-xl text-sm font-semibold text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Ticket size={16} />
+                        {selectedCoupon ? `ใช้คูปอง: ${selectedCoupon.CouponName}` : `คูปองที่ใช้ได้ (${activeCoupons.length} ใบ)`}
+                      </span>
+                      <span className="text-xs">{showCouponPicker ? "▲" : "▼"}</span>
+                    </button>
+                    {showCouponPicker && (
+                      <div className="mt-2 space-y-1.5 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                        {selectedCoupon && (
+                          <button type="button" onClick={() => setSelectedCoupon(null)}
+                            className="w-full text-left px-3 py-2 rounded-lg text-xs text-red-500 hover:bg-red-50 flex items-center gap-1.5 transition-colors">
+                            <X size={12} /> ยกเลิกการใช้คูปอง
+                          </button>
+                        )}
+                        {activeCoupons.map((c, i) => {
+                          const isApplied = selectedCoupon?.ID === c.ID;
+                          const minOk = !parseFloat(c.MinOrderAmount) || subtotal >= parseFloat(c.MinOrderAmount);
+                          const discLabel = c.Type === "PERCENT" ? `ลด ${c.Value}%` : `ลด ฿${Number(c.Value).toLocaleString()}`;
+                          return (
+                            <button key={i} type="button"
+                              disabled={!minOk}
+                              onClick={() => { setSelectedCoupon(isApplied ? null : c); setShowCouponPicker(false); }}
+                              className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all text-sm flex items-center justify-between ${isApplied ? "border-primary bg-primary/5 text-primary" : minOk ? "border-gray-100 hover:border-primary/30 bg-gray-50" : "border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed"}`}>
+                              <div>
+                                <div className="font-semibold">{c.CouponName}</div>
+                                {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
+                              </div>
+                              <span className="text-xs font-bold text-primary ml-2 shrink-0">{discLabel}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {selectedCoupon && (
+                  <div className="mt-2 flex items-center justify-between px-4 py-2 bg-green-50 border border-green-100 rounded-xl text-sm">
+                    <span className="flex items-center gap-1.5 text-green-700 font-semibold"><Ticket size={14} /> {selectedCoupon.CouponName}</span>
+                    <span className="text-green-700 font-bold">
+                      -{selectedCoupon.Type === "PERCENT" ? `${selectedCoupon.Value}%` : `฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <h4 className="font-medium text-sm text-gray-500 mb-3 tracking-wider">เลือกประเภทการจ่ายเงิน</h4>
           {/* Payment options */}
@@ -1028,6 +1130,18 @@ export default function POS() {
         customers={customers}
         onSelectCustomer={selectCustomer}
         onCustomerAdded={(newCust) => setCustomers(prev => [...prev, newCust])}
+      />
+
+      <BuyCouponModal
+        isOpen={isBuyCouponOpen}
+        onClose={() => setIsBuyCouponOpen(false)}
+        customers={customers}
+        onCouponIssued={(name) => {
+          // Refresh customer coupons after issuing
+          fetchApi("getCustomerCoupons").then(data => {
+            setCustomerCoupons(Array.isArray(data) ? data : []);
+          });
+        }}
       />
 
       <PurchasePackageModal
