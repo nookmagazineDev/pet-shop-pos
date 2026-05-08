@@ -400,7 +400,7 @@ export default function Accounting() {
                   const vatAmt = totalAmt * 7 / 107;
                   const isCancelled = (tx.Status || tx[13]) === "CANCELLED";
                   return (
-                    <tr key={idx} className={`hover:bg-emerald-50/30 transition-colors group ${isCancelled ? "opacity-60 bg-red-50/40" : ""}`}>
+                    <tr key={idx} className={`transition-colors group ${isCancelled ? "bg-red-100 hover:bg-red-100 border-l-4 border-red-500" : "hover:bg-emerald-50/30"}`}>
                       <td className="py-4 px-6 text-sm text-gray-600">
                         {new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH")}
                         {isCancelled && <span className="ml-2 text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">VOID</span>}
