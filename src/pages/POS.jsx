@@ -388,6 +388,8 @@ export default function POS() {
       subtotal,
       discountAmount,
       freeItemLines: freeItemLines.map(f => ({ ...f })),
+      couponDiscount,
+      couponName: selectedCoupon?.CouponName || selectedCoupon?.Name || "",
       tax,
       total,
       receiptType,
@@ -448,6 +450,8 @@ export default function POS() {
         subtotal,
         discountAmount,
         freeItemLines: freeItemLines.map(f => ({ ...f })),
+        couponDiscount,
+        couponName: selectedCoupon?.CouponName || selectedCoupon?.Name || "",
         tax,
         total,
         receiptType,
@@ -1117,6 +1121,8 @@ export default function POS() {
         subtotal={receiptData?.subtotal || 0}
         discountAmount={receiptData?.discountAmount || 0}
         freeItemLines={receiptData?.freeItemLines || []}
+        couponDiscount={receiptData?.couponDiscount || 0}
+        couponName={receiptData?.couponName || ""}
         tax={receiptData?.tax || 0}
         total={receiptData?.total || 0}
         receiptType={receiptData?.receiptType || "ใบเสร็จ"}

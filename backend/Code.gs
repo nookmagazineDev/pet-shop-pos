@@ -19,8 +19,8 @@ function setup() {
     "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"],
     "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt"],
     "PointsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"],
-    "Coupons": ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt"],
-    "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy"],
+    "Coupons": ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt", "FreeItemBarcode", "FreeItemName"],
+    "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy", "FreeItemBarcode", "FreeItemName"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
@@ -1235,15 +1235,21 @@ function addExpense(payload) {
 // ─────────────────────────────────────────────────────
 function saveCoupon(payload) {
   const ss = getSpreadsheet();
-  const HEADERS = ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt"];
+  const HEADERS = ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt", "FreeItemBarcode", "FreeItemName"];
   let sheet = ss.getSheetByName("Coupons");
   if (!sheet) {
     sheet = ss.insertSheet("Coupons");
     sheet.appendRow(HEADERS);
     sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold");
   }
+  // Auto-ensure headers (migration)
+  const headerRow = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  HEADERS.forEach((h, i) => { if (!headerRow[i] || headerRow[i] !== h) sheet.getRange(1, i + 1).setValue(h); });
+
   const data = sheet.getDataRange().getValues();
   const couponId = String(payload.couponId || "").trim();
+  const freeBarcode = String(payload.freeItemBarcode || "").trim();
+  const freeName = String(payload.freeItemName || "").trim();
   let found = false;
   if (couponId) {
     for (let i = 1; i < data.length; i++) {
@@ -1256,13 +1262,15 @@ function saveCoupon(payload) {
         sheet.getRange(i + 1, 7).setValue(parseFloat(payload.expiryDays) || 365);
         sheet.getRange(i + 1, 8).setValue(payload.description || "");
         sheet.getRange(i + 1, 9).setValue(payload.status || "ACTIVE");
+        sheet.getRange(i + 1, 11).setValue(freeBarcode);
+        sheet.getRange(i + 1, 12).setValue(freeName);
         found = true; break;
       }
     }
   }
   if (!found) {
     const newId = "CPN-" + new Date().getTime();
-    sheet.appendRow([newId, payload.name || "", payload.type || "FIXED_AMOUNT", parseFloat(payload.value) || 0, parseFloat(payload.price) || 0, parseFloat(payload.minOrderAmount) || 0, parseFloat(payload.expiryDays) || 365, payload.description || "", payload.status || "ACTIVE", new Date()]);
+    sheet.appendRow([newId, payload.name || "", payload.type || "FIXED_AMOUNT", parseFloat(payload.value) || 0, parseFloat(payload.price) || 0, parseFloat(payload.minOrderAmount) || 0, parseFloat(payload.expiryDays) || 365, payload.description || "", payload.status || "ACTIVE", new Date(), freeBarcode, freeName]);
   }
   return jsonResponse({ success: true });
 }
@@ -1284,20 +1292,36 @@ function issueCoupon(payload) {
   if (!cpnRow) return jsonResponse({ error: "ไม่พบคูปอง" });
 
   const expiryDays = parseFloat(cpnRow[6]) || 365;
-  const expiryDate = new Date();
-  expiryDate.setDate(expiryDate.getDate() + expiryDays);
+  // col index: 0=CouponID, 1=Name, 2=Type, 3=Value, 4=Price, 5=MinOrderAmount, 6=ExpiryDays, 7=Description, 8=Status, 9=CreatedAt, 10=FreeItemBarcode, 11=FreeItemName
+  const freeItemBarcode = String(cpnRow[10] || "").trim();
+  const freeItemName = String(cpnRow[11] || "").trim();
 
-  const HEADERS = ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy"];
+  const HEADERS = ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy", "FreeItemBarcode", "FreeItemName"];
   let ccSheet = ss.getSheetByName("CustomerCoupons");
   if (!ccSheet) {
     ccSheet = ss.insertSheet("CustomerCoupons");
     ccSheet.appendRow(HEADERS);
     ccSheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold");
   }
-  const newId = "CC-" + new Date().getTime();
-  ccSheet.appendRow([newId, customerName, couponId, cpnRow[1], cpnRow[2], cpnRow[3], cpnRow[5], parseFloat(payload.price) || 0, "ACTIVE", new Date(), expiryDate, "", "", payload._actor ? payload._actor.username : "System"]);
-  logActivity("Coupon", "Issue Coupon", newId, payload._actor);
-  return jsonResponse({ success: true, couponInstanceId: newId });
+  // Auto-ensure headers (migration)
+  const ccHeaderRow = ccSheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  HEADERS.forEach((h, i) => { if (!ccHeaderRow[i] || ccHeaderRow[i] !== h) ccSheet.getRange(1, i + 1).setValue(h); });
+
+  const qty = Math.max(1, Math.min(50, parseInt(payload.quantity) || 1));
+  const issuedBy = payload._actor ? payload._actor.username : "System";
+  const lastIds = [];
+
+  for (let q = 0; q < qty; q++) {
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + expiryDays);
+    const newId = "CC-" + new Date().getTime() + "-" + q;
+    ccSheet.appendRow([newId, customerName, couponId, cpnRow[1], cpnRow[2], cpnRow[3], cpnRow[5], parseFloat(payload.price) || 0, "ACTIVE", new Date(), expiryDate, "", "", issuedBy, freeItemBarcode, freeItemName]);
+    lastIds.push(newId);
+    if (q < qty - 1) Utilities.sleep(5); // avoid duplicate timestamp IDs
+  }
+
+  logActivity("Coupon", "Issue Coupon x" + qty, lastIds[0], payload._actor);
+  return jsonResponse({ success: true, couponInstanceId: lastIds[0], issuedCount: qty });
 }
 
 function useCoupon(payload) {

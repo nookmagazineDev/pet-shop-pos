@@ -13,6 +13,8 @@ const EMPTY_FORM = {
   minOrderAmount: "",
   description: "",
   status: "ACTIVE",
+  freeItemBarcode: "",
+  freeItemName: "",
 };
 
 function Badge({ active }) {
@@ -42,6 +44,7 @@ export default function Coupons() {
   // Issue tab
   const [issueCustomer, setIssueCustomer] = useState("");
   const [issueCouponId, setIssueCouponId] = useState("");
+  const [issueQty, setIssueQty] = useState(1);
   const [isIssuing, setIsIssuing] = useState(false);
   const [issueSuccess, setIssueSuccess] = useState("");
   const [issueError, setIssueError] = useState("");
@@ -79,14 +82,24 @@ export default function Coupons() {
       minOrderAmount: String(item.MinOrderAmount || ""),
       description: item.Description || "",
       status: item.Status || "ACTIVE",
+      freeItemBarcode: item.FreeItemBarcode || "",
+      freeItemName: item.FreeItemName || "",
     });
     setShowModal(true);
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.value) {
-      alert("กรุณากรอกชื่อคูปองและมูลค่า");
+    if (!form.name.trim()) {
+      alert("กรุณากรอกชื่อคูปอง");
+      return;
+    }
+    if (form.type !== "FREE_ITEM" && !form.value) {
+      alert("กรุณากรอกมูลค่าส่วนลด");
+      return;
+    }
+    if (form.type === "FREE_ITEM" && !form.freeItemName.trim()) {
+      alert("กรุณากรอกชื่อสินค้าที่ให้ฟรี");
       return;
     }
     setIsSaving(true);
@@ -96,11 +109,13 @@ export default function Coupons() {
         couponId: editItem?.CouponID || "",
         name: form.name.trim(),
         type: form.type,
-        value: parseFloat(form.value) || 0,
+        value: form.type === "FREE_ITEM" ? 0 : (parseFloat(form.value) || 0),
         price: parseFloat(form.price) || 0,
         minOrderAmount: parseFloat(form.minOrderAmount) || 0,
         description: form.description.trim(),
         status: form.status,
+        freeItemBarcode: form.freeItemBarcode.trim(),
+        freeItemName: form.freeItemName.trim(),
       },
     });
     setIsSaving(false);
@@ -129,6 +144,8 @@ export default function Coupons() {
         minOrderAmount: item.MinOrderAmount,
         description: item.Description,
         status: newStatus,
+        freeItemBarcode: item.FreeItemBarcode || "",
+        freeItemName: item.FreeItemName || "",
       },
     });
     loadAll();
@@ -146,12 +163,14 @@ export default function Coupons() {
     setIsIssuing(true);
     setIssueSuccess("");
     setIssueError("");
+    const qty = Math.max(1, Math.min(50, parseInt(issueQty) || 1));
     const res = await postApi({
       action: "issueCoupon",
       payload: {
         customerName: issueCustomer,
         couponId: issueCouponId,
         price: 0,
+        quantity: qty,
       },
     });
     setIsIssuing(false);
@@ -161,11 +180,13 @@ export default function Coupons() {
       const expiry = selectedCouponTemplate?.ExpiryDays
         ? ` (หมดอายุใน ${selectedCouponTemplate.ExpiryDays} วัน)`
         : "";
+      const countLabel = qty > 1 ? ` จำนวน ${qty} ใบ` : "";
       setIssueSuccess(
-        `ออกคูปอง "${couponLabel}" ให้ ${custLabel} สำเร็จ!${expiry}`
+        `ออกคูปอง "${couponLabel}"${countLabel} ให้ ${custLabel} สำเร็จ!${expiry}`
       );
       setIssueCustomer("");
       setIssueCouponId("");
+      setIssueQty(1);
     } else {
       setIssueError("เกิดข้อผิดพลาด: " + (res.error || "ไม่ทราบสาเหตุ"));
     }
@@ -173,7 +194,7 @@ export default function Coupons() {
 
   // ---- Type label helper ----
   const typeLabel = (type) =>
-    type === "PERCENT" ? "ลด%" : type === "FIXED_AMOUNT" ? "ลดเงิน" : type || "-";
+    type === "PERCENT" ? "ลด%" : type === "FIXED_AMOUNT" ? "ลดเงิน" : type === "FREE_ITEM" ? "ของแถม" : type || "-";
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -269,11 +290,15 @@ export default function Coupons() {
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${
                             item.Type === "PERCENT"
                               ? "bg-blue-50 text-blue-700 border-blue-100"
+                              : item.Type === "FREE_ITEM"
+                              ? "bg-green-50 text-green-700 border-green-100"
                               : "bg-violet-50 text-violet-700 border-violet-100"
                           }`}
                         >
                           {item.Type === "PERCENT" ? (
                             <Star size={11} />
+                          ) : item.Type === "FREE_ITEM" ? (
+                            <Gift size={11} />
                           ) : (
                             <Ticket size={11} />
                           )}
@@ -283,6 +308,8 @@ export default function Coupons() {
                       <td className="py-4 px-4 text-right font-bold text-gray-900">
                         {item.Type === "PERCENT"
                           ? `${Number(item.Value || 0).toLocaleString()}%`
+                          : item.Type === "FREE_ITEM"
+                          ? <span className="text-green-700 text-xs">{item.FreeItemName || "-"}</span>
                           : `฿${Number(item.Value || 0).toLocaleString()}`}
                       </td>
                       <td className="py-4 px-4 text-right text-gray-600">
@@ -389,6 +416,8 @@ export default function Coupons() {
                         {t.Name} —{" "}
                         {t.Type === "PERCENT"
                           ? `ลด ${t.Value}%`
+                          : t.Type === "FREE_ITEM"
+                          ? `ของแถม: ${t.FreeItemName || "-"}`
                           : `ลด ฿${Number(t.Value || 0).toLocaleString()}`}
                       </option>
                     ))}
@@ -398,6 +427,25 @@ export default function Coupons() {
                   className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
                 />
               </div>
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+                <Star size={13} /> จำนวนคูปอง (ใบ)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={issueQty}
+                onChange={(e) => {
+                  setIssueQty(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)));
+                  setIssueSuccess(""); setIssueError("");
+                }}
+                className="w-32 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-white"
+              />
+              <span className="ml-2 text-xs text-gray-400">สูงสุด 50 ใบ</span>
             </div>
 
             {/* Preview */}
@@ -416,8 +464,15 @@ export default function Coupons() {
                   {" — "}
                   {selectedCouponTemplate.Type === "PERCENT"
                     ? `ลด ${selectedCouponTemplate.Value}%`
+                    : selectedCouponTemplate.Type === "FREE_ITEM"
+                    ? `ของแถม: ${selectedCouponTemplate.FreeItemName || "-"}`
                     : `ลด ฿${Number(selectedCouponTemplate.Value || 0).toLocaleString()}`}
                 </div>
+                {issueQty > 1 && (
+                  <div className="text-violet-700 text-xs font-semibold">
+                    จำนวน {issueQty} ใบ
+                  </div>
+                )}
                 {selectedCouponTemplate.ExpiryDays && (
                   <div className="text-gray-500 text-xs">
                     หมดอายุใน {selectedCouponTemplate.ExpiryDays} วัน
@@ -520,30 +575,62 @@ export default function Coupons() {
                   </label>
                   <select
                     value={form.type}
-                    onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}
+                    onChange={(e) => setForm((p) => ({ ...p, type: e.target.value, value: "" }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
                   >
                     <option value="FIXED_AMOUNT">ลดเงิน (฿)</option>
                     <option value="PERCENT">ลดเปอร์เซ็นต์ (%)</option>
+                    <option value="FREE_ITEM">สินค้าฟรี (ของแถม)</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    มูลค่า <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    step="0.01"
-                    max={form.type === "PERCENT" ? 100 : undefined}
-                    value={form.value}
-                    onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))}
-                    placeholder={form.type === "PERCENT" ? "เช่น 10" : "เช่น 50"}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
-                  />
-                </div>
+                {form.type !== "FREE_ITEM" && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      มูลค่า <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      max={form.type === "PERCENT" ? 100 : undefined}
+                      value={form.value}
+                      onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))}
+                      placeholder={form.type === "PERCENT" ? "เช่น 10" : "เช่น 50"}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                )}
               </div>
+
+              {/* Free item fields */}
+              {form.type === "FREE_ITEM" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      บาร์โค้ดสินค้าฟรี
+                    </label>
+                    <input
+                      type="text"
+                      value={form.freeItemBarcode}
+                      onChange={(e) => setForm((p) => ({ ...p, freeItemBarcode: e.target.value }))}
+                      placeholder="เช่น 8850000000001"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      ชื่อสินค้าฟรี <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.freeItemName}
+                      onChange={(e) => setForm((p) => ({ ...p, freeItemName: e.target.value }))}
+                      placeholder="เช่น อาหารแมว 1 ถุง"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Price + MinOrderAmount */}
               <div className="grid grid-cols-2 gap-4">

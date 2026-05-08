@@ -2,7 +2,7 @@ import { X, Printer } from "lucide-react";
 import { usePrinter } from "../context/PrinterContext";
 import toast from "react-hot-toast";
 
-export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, discountAmount = 0, freeItemLines = [], tax, total, receiptType, customerInfo, taxInvoiceNo }) {
+export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, discountAmount = 0, freeItemLines = [], couponDiscount = 0, couponName = "", tax, total, receiptType, customerInfo, taxInvoiceNo }) {
   if (!isOpen) return null;
 
   const { settings } = usePrinter();
@@ -49,7 +49,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
             nonVatAdjusted,
             vatableAdjusted,
             discountAmount,
-            freeItemLines
+            freeItemLines,
+            couponDiscount,
+            couponName
           })
         });
         const data = await response.json();
@@ -92,6 +94,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       </tr>
     ` : "";
 
+    // Coupon discount row
+    const couponRow = couponDiscount > 0 ? `
+      <tr style="color:#d97706; font-weight:bold;">
+        <td colspan="3">🎟 คูปอง${couponName ? ` (${couponName})` : ""}</td>
+        <td style="text-align:right">-${couponDiscount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+      </tr>
+    ` : "";
+
     win.document.write(`<!DOCTYPE html><html><head>
       <meta charset="UTF-8">
       <title>ใบเสร็จ</title>
@@ -123,7 +133,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
         </tr></thead>
       </table>
       <div class="hr"></div>
-      <table><tbody>${rows}${freeRows}${billDiscountRow}</tbody></table>
+      <table><tbody>${rows}${freeRows}${billDiscountRow}${couponRow}</tbody></table>
       
       <div class="hr"></div>
       <div class="flex-between">
@@ -238,6 +248,16 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
                 <tr className="border-b border-purple-100 bg-purple-50">
                   <td className="py-2 text-sm text-purple-700 font-semibold" colSpan={3}>ส่วนลดท้ายบิล</td>
                   <td className="py-2 text-right text-sm text-purple-700 font-bold">-{discountAmount.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+                </tr>
+              )}
+
+              {/* Coupon discount */}
+              {couponDiscount > 0 && (
+                <tr className="border-b border-amber-100 bg-amber-50">
+                  <td className="py-2 text-sm text-amber-700 font-semibold" colSpan={3}>
+                    🎟 คูปอง{couponName ? ` (${couponName})` : ""}
+                  </td>
+                  <td className="py-2 text-right text-sm text-amber-700 font-bold">-{couponDiscount.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
                 </tr>
               )}
             </tbody>
