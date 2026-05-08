@@ -1224,8 +1224,18 @@ function addExpense(payload) {
 function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId, actor) {
   const custSheet = ss.getSheetByName("Customers");
   if (!custSheet) return 0;
+
+  // Auto-ensure required headers exist (handles old schema migration)
+  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"];
+  const headerRow = custSheet.getRange(1, 1, 1, CUST_HEADERS.length).getValues()[0];
+  CUST_HEADERS.forEach((h, i) => {
+    if (!headerRow[i] || headerRow[i] !== h) {
+      custSheet.getRange(1, i + 1).setValue(h);
+      headerRow[i] = h; // update local cache too
+    }
+  });
+
   const custData = custSheet.getDataRange().getValues();
-  // Name is col index 1 in new schema
   const nameColIdx = custData[0].indexOf("Name");
   const pointsColIdx = custData[0].indexOf("Points");
   const updatedAtColIdx = custData[0].indexOf("UpdatedAt");
