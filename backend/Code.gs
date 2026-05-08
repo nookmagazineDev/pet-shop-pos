@@ -1242,14 +1242,25 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
   if (nameColIdx < 0 || pointsColIdx < 0) return 0;
 
   let newBalance = 0;
+  let customerFound = false;
   for (let i = 1; i < custData.length; i++) {
-    if (String(custData[i][nameColIdx]).trim() === String(customerName).trim()) {
+    const rowName = String(custData[i][nameColIdx] || "").trim().toLowerCase();
+    const searchName = String(customerName).trim().toLowerCase();
+    if (rowName === searchName) {
       const current = parseFloat(custData[i][pointsColIdx]) || 0;
       newBalance = Math.max(0, current + delta);
       custSheet.getRange(i + 1, pointsColIdx + 1).setValue(newBalance);
       if (updatedAtColIdx >= 0) custSheet.getRange(i + 1, updatedAtColIdx + 1).setValue(new Date());
+      customerFound = true;
       break;
     }
+  }
+
+  // Customer not found — create new row with these points
+  if (!customerFound) {
+    newBalance = Math.max(0, delta);
+    const newId = "CUST-" + new Date().getTime();
+    custSheet.appendRow([newId, customerName, "", "", "", "", newBalance, "", "", new Date(), new Date()]);
   }
 
   // Log to PointsHistory
