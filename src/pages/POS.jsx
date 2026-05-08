@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle, UserPlus, Users } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import BarcodeScanner from "../components/BarcodeScanner";
+import CustomerModal from "../components/CustomerModal";
 import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
 import { useNavigate } from "react-router-dom";
@@ -31,6 +32,7 @@ export default function POS() {
   const [manualDiscountValue, setManualDiscountValue] = useState("");
   const [manualDiscountType, setManualDiscountType] = useState("baht");
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const barcodeRef = useRef(null);
 
   // Fetch products on load — wait for ALL data before enabling search
@@ -50,11 +52,13 @@ export default function POS() {
 
   const selectCustomer = (c) => {
     setCustomerName(c.Name || "");
-    setCustomerAddress(c.Address || "");
+    setCustomerAddress(c.TaxAddress || c.Address || "");
     setCustomerTaxId(c.TaxID || "");
     setCustomerPhone(c.Phone || "");
     setCustomerSearch(c.Name || "");
     setShowCustomerDropdown(false);
+    // Switch to tax invoice when a customer is selected
+    if (c.TaxID || c.TaxAddress) setReceiptType("ใบกำกับภาษี");
   };
 
   const clearCustomer = () => {
@@ -385,11 +389,11 @@ export default function POS() {
             payload: {
               name: customerName.trim(),
               phone: customerPhone.trim(),
-              address: customerAddress.trim(),
+              taxAddress: customerAddress.trim(),
               taxId: customerTaxId.trim()
             }
           });
-          setCustomers(prev => [...prev, { Name: customerName.trim(), Phone: customerPhone.trim(), Address: customerAddress.trim(), TaxID: customerTaxId.trim() }]);
+          setCustomers(prev => [...prev, { Name: customerName.trim(), Phone: customerPhone.trim(), TaxAddress: customerAddress.trim(), TaxID: customerTaxId.trim() }]);
         } catch (error) {
           console.error("Error saving new customer:", error);
         }
@@ -688,6 +692,29 @@ export default function POS() {
         </div>
 
         <div className="p-6 flex-1 flex flex-col">
+          {/* Customer quick-select bar */}
+          <div className="mb-4 flex items-center gap-2">
+            {customerName ? (
+              <div className="flex-1 flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
+                <Users size={15} className="text-primary shrink-0" />
+                <span className="text-sm font-semibold text-primary truncate">{customerName}</span>
+                {customerPhone && <span className="text-xs text-gray-400 truncate hidden sm:block">{customerPhone}</span>}
+                <button onClick={clearCustomer} className="ml-auto text-gray-400 hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
+              </div>
+            ) : (
+              <div className="flex-1 text-sm text-gray-400 flex items-center gap-1.5 px-1">
+                <Users size={14} /> ยังไม่ได้เลือกลูกค้า
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsCustomerModalOpen(true)}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
+            >
+              <UserPlus size={14} /> {customerName ? "เปลี่ยน" : "เพิ่ม/เลือก"}
+            </button>
+          </div>
+
           <div className="mb-6 space-y-3">
              <h4 className="font-medium text-sm text-gray-500 tracking-wider">ประเภทเอกสาร</h4>
              <div className="flex gap-4 mb-2 border-b pb-4">
@@ -921,6 +948,14 @@ export default function POS() {
         receiptType={receiptData?.receiptType || "ใบเสร็จ"}
         customerInfo={receiptData?.customerInfo || {}}
         taxInvoiceNo={receiptData?.taxInvoiceNo || ""}
+      />
+
+      <CustomerModal
+        isOpen={isCustomerModalOpen}
+        onClose={() => setIsCustomerModalOpen(false)}
+        customers={customers}
+        onSelectCustomer={selectCustomer}
+        onCustomerAdded={(newCust) => setCustomers(prev => [...prev, newCust])}
       />
     </div>
   );

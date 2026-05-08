@@ -16,6 +16,7 @@ function setup() {
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
+    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
@@ -1204,36 +1205,53 @@ function addExpense(payload) {
 function saveCustomer(payload) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName("Customers");
+  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"];
   if (!sheet) {
     sheet = ss.insertSheet("Customers");
-    sheet.appendRow(["Name", "Phone", "Address", "TaxID", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"]);
+    sheet.appendRow(CUST_HEADERS);
+    sheet.getRange(1, 1, 1, CUST_HEADERS.length).setFontWeight("bold");
+  } else {
+    // Auto-ensure all columns exist (handles old schema migration)
+    const existingHeaders = sheet.getRange(1, 1, 1, CUST_HEADERS.length).getValues()[0];
+    CUST_HEADERS.forEach((h, i) => {
+      if (!existingHeaders[i] || existingHeaders[i] !== h) {
+        sheet.getRange(1, i + 1).setValue(h);
+      }
+    });
+    sheet.getRange(1, 1, 1, CUST_HEADERS.length).setFontWeight("bold");
   }
 
   const data = sheet.getDataRange().getValues();
+  // col indexes: 0=CustomerID, 1=Name, 2=Phone, 3=TaxID, 4=TaxAddress, 5=Address, 6=Points, 7=LastInvoiceID, 8=LastInvoiceDate, 9=CreatedAt, 10=UpdatedAt
   let found = false;
-  
+
   for (let i = 1; i < data.length; i++) {
-    const rowName = String(data[i][0]).trim();
-    if (rowName === String(payload.name).trim()) {
-      // Update
-      if (payload.name) sheet.getRange(i + 1, 1).setValue(payload.name);
-      if (payload.phone) sheet.getRange(i + 1, 2).setValue(payload.phone);
-      if (payload.address) sheet.getRange(i + 1, 3).setValue(payload.address);
-      if (payload.taxId) sheet.getRange(i + 1, 4).setValue(payload.taxId);
-      if (payload.lastInvoiceId) sheet.getRange(i + 1, 5).setValue(payload.lastInvoiceId);
-      if (payload.lastInvoiceDate) sheet.getRange(i + 1, 6).setValue(payload.lastInvoiceDate);
-      sheet.getRange(i + 1, 8).setValue(new Date()); // UpdatedAt
+    const rowName = String(data[i][1]).trim(); // Name is col index 1
+    if (rowName === String(payload.name || "").trim()) {
+      if (payload.name)       sheet.getRange(i + 1, 2).setValue(payload.name);
+      if (payload.phone !== undefined) sheet.getRange(i + 1, 3).setValue(payload.phone);
+      if (payload.taxId !== undefined) sheet.getRange(i + 1, 4).setValue(payload.taxId);
+      if (payload.taxAddress !== undefined) sheet.getRange(i + 1, 5).setValue(payload.taxAddress);
+      if (payload.address !== undefined) sheet.getRange(i + 1, 6).setValue(payload.address);
+      if (payload.points !== undefined) sheet.getRange(i + 1, 7).setValue(parseFloat(payload.points) || 0);
+      if (payload.lastInvoiceId)   sheet.getRange(i + 1, 8).setValue(payload.lastInvoiceId);
+      if (payload.lastInvoiceDate) sheet.getRange(i + 1, 9).setValue(payload.lastInvoiceDate);
+      sheet.getRange(i + 1, 11).setValue(new Date()); // UpdatedAt
       found = true;
       break;
     }
   }
 
   if (!found) {
+    const newId = "CUST-" + new Date().getTime();
     sheet.appendRow([
+      newId,
       payload.name || "",
       payload.phone || "",
-      payload.address || "",
       payload.taxId || "",
+      payload.taxAddress || "",
+      payload.address || "",
+      parseFloat(payload.points) || 0,
       payload.lastInvoiceId || "",
       payload.lastInvoiceDate || "",
       new Date(),
