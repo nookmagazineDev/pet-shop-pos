@@ -26,7 +26,7 @@ export const exportToExcel = (dataArray, sheetName, fileName) => {
  * @param {string} opts.sheetName
  * @param {string} opts.fileName
  */
-export const exportReportToExcel = ({ title, company, period, headers, rows, totals, sheetName, fileName }) => {
+export const exportReportToExcel = ({ title, company, period, headers, rows, totals, sheetName, fileName, textCols = [] }) => {
   if (!rows || rows.length === 0) {
     alert("ไม่มีข้อมูลที่จะส่งออกดาวน์โหลด");
     return;
@@ -66,10 +66,29 @@ export const exportReportToExcel = ({ title, company, period, headers, rows, tot
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // Column widths (auto)
-  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.label.length * 2, 12) }));
+  // Force text format for specified columns (prevents scientific notation for IDs/codes)
+  if (textCols.length > 0) {
+    const dataStartRow = 6; // rows 0-4 = header block, row 5 = col headers, row 6+ = data
+    const totalDataRows = rows.length + (totals ? 1 : 0);
+    textCols.forEach(key => {
+      const colIdx = headers.findIndex(h => h.key === key);
+      if (colIdx === -1) return;
+      for (let r = dataStartRow; r < dataStartRow + totalDataRows; r++) {
+        const addr = XLSX.utils.encode_cell({ r, c: colIdx });
+        if (ws[addr]) {
+          ws[addr].t = 's';
+          ws[addr].z = '@';
+        } else {
+          ws[addr] = { t: 's', v: '', z: '@' };
+        }
+      }
+    });
+  }
 
-  // Merge title row across all columns
+  // Column widths (auto)
+  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.label.length * 2, 14) }));
+
+  // Merge title rows across all columns
   ws['!merges'] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },

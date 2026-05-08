@@ -400,7 +400,6 @@ export default function Reports() {
       const headers = [
         { key: "no",           label: "No." },
         { key: "date",         label: "Date" },
-        { key: "number",       label: "Number" },
         { key: "taxInvoiceNo", label: "เลขที่ใบกำกับ" },
         { key: "buyer",        label: "Buyer name" },
         { key: "taxId",        label: "Tax id" },
@@ -427,8 +426,7 @@ export default function Reports() {
         return {
           no: i + 1,
           date: new Date(tx.Date).toLocaleString("th-TH"),
-          number: tx.ReceiptNo || tx.OrderID,
-          taxInvoiceNo: taxInv?.TaxInvoiceNo || "-",
+          taxInvoiceNo: taxInv?.TaxInvoiceNo || tx.ReceiptNo || tx.OrderID,
           buyer,
           taxId: buyerTaxId,
           branch: company.branch,
@@ -441,7 +439,7 @@ export default function Reports() {
       });
       const sum = (key) => r2(rows.reduce((s, r) => s + (r[key] || 0), 0));
       const totals = { no: "Grand total", nonVAT: sum("nonVAT"), beforeVAT: sum("beforeVAT"), vat: sum("vat"), rounding: 0, total: sum("total") };
-      exportReportToExcel({ title: "Output tax report", company, period, headers, rows, totals, sheetName: "TaxReport", fileName: "Tax_Report" });
+      exportReportToExcel({ title: "Output tax report", company, period, headers, rows, totals, sheetName: "TaxReport", fileName: "Tax_Report", textCols: ['taxId'] });
 
     } else if (activeTab === "returns") {
       const headers = [
