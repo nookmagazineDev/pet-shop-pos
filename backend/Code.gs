@@ -16,7 +16,7 @@ function setup() {
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
-    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username"],
+    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
     "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
@@ -280,6 +280,8 @@ function doPost(e) {
       return cancelTransaction(data.payload);
     } else if (action === "processReturn") {
       return processReturn(data.payload);
+    } else if (action === "saveTaxInvoice") {
+      return saveTaxInvoice(data.payload);
     } else if (action === "saveSupplier") {
       return saveSupplier(data.payload);
     }
@@ -307,7 +309,7 @@ function processCheckout(payload) {
     
     const yearStr = String(now.getFullYear()).slice(-2);
     const monthStr = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = "in" + yearStr + monthStr;
+    const prefix = "IN" + yearStr + monthStr;
     
     let sequence = 1;
     const taxData = taxSheet.getDataRange().getValues();
@@ -339,6 +341,26 @@ function processCheckout(payload) {
     ]);
   }
 
+  // Generate ReceiptNo: TX + YY + MM + 4-digit running number
+  const rxYY = String(now.getFullYear()).slice(-2);
+  const rxMM = String(now.getMonth() + 1).padStart(2, '0');
+  const rxPrefix = "TX" + rxYY + rxMM;
+  let rxSeq = 1;
+  const existingTxData = txSheet.getDataRange().getValues();
+  const existingTxHeaders = existingTxData[0];
+  const rnoIdx = existingTxHeaders.indexOf("ReceiptNo");
+  const colToSearch = rnoIdx >= 0 ? rnoIdx : 16;
+  if (existingTxData.length > 1) {
+    for (let i = existingTxData.length - 1; i >= 1; i--) {
+      const lastNo = String(existingTxData[i][colToSearch] || "").trim();
+      if (lastNo.startsWith(rxPrefix)) {
+        const lastSeq = parseInt(lastNo.slice(rxPrefix.length), 10);
+        if (!isNaN(lastSeq)) { rxSeq = lastSeq + 1; break; }
+      }
+    }
+  }
+  const receiptNo = rxPrefix + String(rxSeq).padStart(4, '0');
+
   txSheet.appendRow([
     orderId,
     now,
@@ -349,13 +371,14 @@ function processCheckout(payload) {
     payload.cashReceived || 0,
     payload.changeReturn || 0,
     payload.shopPlatform || "Store",
-    payload.receiptType || "ใบเสร็จ", 
+    payload.receiptType || "ใบเสร็จ",
     payload.customerInfo ? JSON.stringify(payload.customerInfo) : "",
     payload.discount || 0,
     payload._actor ? payload._actor.username : "",
     "COMPLETED",
     "",
-    generatedTaxInvoiceNo || ""
+    generatedTaxInvoiceNo || "",
+    receiptNo
   ]);
   
   // Deduct Inventory — StoreStock first, fallback to Products
@@ -407,7 +430,7 @@ function processCheckout(payload) {
   });
   
   logActivity("POS/Online", "Checkout", orderId, payload._actor);
-  return jsonResponse({ success: true, orderId: orderId, taxInvoiceNo: generatedTaxInvoiceNo });
+  return jsonResponse({ success: true, orderId: orderId, receiptNo: receiptNo, taxInvoiceNo: generatedTaxInvoiceNo });
 }
 
 function updateTransactionPayment(payload) {
@@ -590,6 +613,74 @@ function processReturn(payload) {
 
   logActivity("POS", isFullCancel ? "Cancel Order" : "Partial Return", orderId, payload._actor);
   return jsonResponse({ success: true, message: `ทำการคืนสินค้าเรียบร้อยแล้ว (ยอดคืนเงิน ฿${totalRefund})` });
+}
+
+function saveTaxInvoice(payload) {
+  const ss = getSpreadsheet();
+  const txSheet = ss.getSheetByName("Transactions");
+  const orderId = String(payload.orderId || "").trim();
+
+  if (!orderId) return jsonResponse({ error: "Missing orderId" });
+
+  let taxSheet = ss.getSheetByName("TaxInvoices");
+  if (!taxSheet) {
+    taxSheet = ss.insertSheet("TaxInvoices");
+    taxSheet.appendRow(["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"]);
+  }
+
+  // Return existing invoice if already issued for this order
+  const taxData = taxSheet.getDataRange().getValues();
+  for (let i = 1; i < taxData.length; i++) {
+    if (String(taxData[i][2]).trim() === orderId) {
+      return jsonResponse({ success: true, taxInvoiceNo: String(taxData[i][0]), message: "ออกใบกำกับภาษีนี้ไปแล้ว" });
+    }
+  }
+
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const prefix = "IN" + yy + mm;
+
+  let sequence = 1;
+  if (taxData.length > 1) {
+    for (let i = taxData.length - 1; i >= 1; i--) {
+      const lastNo = String(taxData[i][0]).trim().toUpperCase();
+      if (lastNo.startsWith(prefix)) {
+        const lastSeq = parseInt(lastNo.slice(prefix.length), 10);
+        if (!isNaN(lastSeq)) { sequence = lastSeq + 1; break; }
+      }
+    }
+  }
+
+  const taxInvoiceNo = prefix + String(sequence).padStart(4, '0');
+  const cInfo = payload.customerInfo || {};
+
+  taxSheet.appendRow([
+    taxInvoiceNo,
+    now,
+    orderId,
+    cInfo.name || "-",
+    cInfo.address || "-",
+    cInfo.taxId || "-",
+    parseFloat(payload.totalAmount) || 0,
+    parseFloat(payload.taxAmount) || 0
+  ]);
+
+  // Update TaxInvoiceNo column in Transactions sheet
+  if (txSheet) {
+    const txData = txSheet.getDataRange().getValues();
+    const txHeaders = txData[0];
+    const taxInvCol = txHeaders.indexOf("TaxInvoiceNo") + 1 || 16;
+    for (let i = 1; i < txData.length; i++) {
+      if (String(txData[i][0]).trim() === orderId) {
+        txSheet.getRange(i + 1, taxInvCol).setValue(taxInvoiceNo);
+        break;
+      }
+    }
+  }
+
+  logActivity("Accounting", "Issue Tax Invoice", taxInvoiceNo, payload._actor);
+  return jsonResponse({ success: true, taxInvoiceNo, message: "ออกใบกำกับภาษีเรียบร้อยแล้ว" });
 }
 
 function moveToStore(payload) {

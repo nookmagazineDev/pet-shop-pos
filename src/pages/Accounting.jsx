@@ -52,6 +52,7 @@ export default function Accounting() {
   const [invoiceModal, setInvoiceModal] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
   const [customerInfo, setCustomerInfo] = useState({ name: "", address: "", taxId: "", phone: "" });
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
 
   // Expense Items modal
   const [expenseItemsModal, setExpenseItemsModal] = useState(false);
@@ -220,6 +221,32 @@ export default function Accounting() {
     }
   };
 
+  const handleIssueTaxInvoice = async () => {
+    if (!selectedTx) return;
+    setIsSavingInvoice(true);
+    const res = await postApi({
+      action: "saveTaxInvoice",
+      payload: {
+        orderId: selectedTx.OrderID || selectedTx[0],
+        totalAmount: parseFloat(selectedTx.TotalAmount || selectedTx[2]) || 0,
+        taxAmount: parseFloat(selectedTx.Tax || selectedTx[3]) || 0,
+        customerInfo
+      }
+    });
+    setIsSavingInvoice(false);
+    if (res.success) {
+      setTransactions(prev => prev.map(tx =>
+        (tx.OrderID || tx[0]) === (selectedTx.OrderID || selectedTx[0])
+          ? { ...tx, TaxInvoiceNo: res.taxInvoiceNo }
+          : tx
+      ));
+      setSelectedTx(prev => ({ ...prev, TaxInvoiceNo: res.taxInvoiceNo }));
+      alert(`ออกใบกำกับภาษีเลขที่: ${res.taxInvoiceNo}\n${res.message}`);
+    } else {
+      alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
+    }
+  };
+
   const handlePrintTaxInvoice = async () => {
     if (customerInfo.name) {
       postApi({
@@ -326,8 +353,8 @@ export default function Accounting() {
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr className="border-b border-gray-200 text-sm font-medium text-gray-500">
                   <th className="py-3 px-6">วันที่เวลา</th>
-                  <th className="py-3 px-6">รหัสออเดอร์</th>
-                  <th className="py-3 px-6">เลขที่ Invoice</th>
+                  <th className="py-3 px-6">เลขที่ใบเสร็จ</th>
+                  <th className="py-3 px-6">เลขที่ใบกำกับภาษี</th>
                   <th className="py-3 px-6 text-right">ยอดก่อน VAT</th>
                   <th className="py-3 px-6 text-right">ยอด VAT</th>
                   <th className="py-3 px-6 text-right">ยอดรับสุทธิ (บาท)</th>
@@ -347,7 +374,7 @@ export default function Accounting() {
                   return (
                     <tr key={idx} className="hover:bg-emerald-50/30 transition-colors group">
                       <td className="py-4 px-6 text-sm text-gray-600">{new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH")}</td>
-                      <td className="py-4 px-6 text-sm font-medium text-gray-900">{tx.OrderID || tx[0]}</td>
+                      <td className="py-4 px-6 text-sm font-mono font-medium text-gray-900">{tx.ReceiptNo || tx.OrderID || tx[0]}</td>
                       <td className="py-4 px-6 text-sm font-medium text-gray-700">
                         {tx.TaxInvoiceNo || tx[15] ? <span className="uppercase text-primary font-bold">{tx.TaxInvoiceNo || tx[15]}</span> : <span className="text-gray-400">-</span>}
                       </td>
@@ -366,16 +393,15 @@ export default function Accounting() {
                         </span>
                       </td>
                       <td className="py-4 px-6 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button 
+                        <div className="flex flex-col items-center gap-1.5">
+                          <button
                             onClick={() => {
                               try {
                                 const cart = JSON.parse(tx.CartDetails || tx[5] || "[]");
                                 const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
                                 const tax = parseFloat(tx.Tax || tx[3] || 0) || (total * 7 / 107);
                                 const subtotal = cart.reduce((sum, item) => sum + ((item.price || item.Price || 0) * (item.qty || item.quantity || 1)), 0);
-                                const discountAmount = subtotal - total; // Approx discount
-                                
+                                const discountAmount = subtotal - total;
                                 setSlipData({
                                   cart: cart.map(c => ({...c, qty: c.qty || c.quantity, price: c.price || c.Price, name: c.name || c.Name})),
                                   paymentMethod: tx.PaymentMethod || tx[4],
@@ -384,20 +410,20 @@ export default function Accounting() {
                                   tax,
                                   total,
                                   receiptType: tx.ReceiptType || tx[6] || "ใบเสร็จรับเงิน",
-                                  taxInvoiceNo: tx.TaxInvoiceNo || tx[15] || tx.OrderID || tx[0]
+                                  taxInvoiceNo: tx.TaxInvoiceNo || tx[15] || tx.ReceiptNo || tx.OrderID || tx[0]
                                 });
                                 setSlipModalOpen(true);
                               } catch(e) {
                                 alert("ไม่สามารถโหลดข้อมูลสลิปได้");
                               }
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-100 rounded-lg hover:bg-emerald-200 transition-colors"
+                            className="w-full px-3 py-1 text-xs font-semibold text-emerald-700 bg-emerald-100 rounded-lg hover:bg-emerald-200 transition-colors"
                           >
                             ปริ้นสลิป
                           </button>
-                          <button 
-                            onClick={() => { 
-                              setSelectedTx(tx); 
+                          <button
+                            onClick={() => {
+                              setSelectedTx(tx);
                               let cName = "", cAddress = "", cTaxId = "", cPhone = "";
                               if (tx.TaxInvoiceCustomerName && tx.TaxInvoiceCustomerName !== "-") {
                                  cName = tx.TaxInvoiceCustomerName;
@@ -413,12 +439,35 @@ export default function Accounting() {
                                  } catch (e) {}
                               }
                               setCustomerInfo({ name: cName, address: cAddress, taxId: cTaxId, phone: cPhone });
-                              setInvoiceModal(true); 
+                              setInvoiceModal(true);
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
+                            className="w-full px-3 py-1 text-xs font-semibold text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
                           >
                             ใบเสร็จ (A4)
                           </button>
+                          {tx.TaxInvoiceNo || tx[15]
+                            ? <span className="text-[10px] text-purple-600 font-mono font-bold bg-purple-50 px-2 py-0.5 rounded w-full text-center">{tx.TaxInvoiceNo || tx[15]}</span>
+                            : <button
+                                onClick={() => {
+                                  setSelectedTx(tx);
+                                  let cName = "", cAddress = "", cTaxId = "", cPhone = "";
+                                  if (tx.CustomerInfo || tx[10]) {
+                                    try {
+                                      const ci = JSON.parse(tx.CustomerInfo || tx[10]);
+                                      cName = ci.name || ci.customerName || "";
+                                      cAddress = ci.address || ci.customerAddress || "";
+                                      cTaxId = ci.taxId || ci.customerTaxId || "";
+                                      cPhone = ci.phone || ci.customerPhone || "";
+                                    } catch (e) {}
+                                  }
+                                  setCustomerInfo({ name: cName, address: cAddress, taxId: cTaxId, phone: cPhone });
+                                  setInvoiceModal(true);
+                                }}
+                                className="w-full px-3 py-1 text-[10px] font-semibold text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                              >
+                                + ออกใบกำกับภาษี
+                              </button>
+                          }
                         </div>
                       </td>
                     </tr>
@@ -644,7 +693,7 @@ export default function Accounting() {
                     {(selectedTx.TaxInvoiceNo || selectedTx[15]) && (
                       <p><span className="font-semibold">เลขที่ใบกำกับภาษี:</span> <span className="uppercase">{selectedTx.TaxInvoiceNo || selectedTx[15]}</span></p>
                     )}
-                    <p><span className="font-semibold">เลขที่อ้างอิง (Order ID):</span> {selectedTx.OrderID || selectedTx[0]}</p>
+                    <p><span className="font-semibold">เลขที่ใบเสร็จ:</span> {selectedTx.ReceiptNo || selectedTx.OrderID || selectedTx[0]}</p>
                     <p><span className="font-semibold">วันที่:</span> {new Date(selectedTx.Date || selectedTx.Timestamp || selectedTx[1]).toLocaleString("th-TH")}</p>
                     <p><span className="font-semibold">ช่องทางชำระ:</span> {selectedTx.PaymentMethod || selectedTx[4]}</p>
                   </div>
@@ -707,19 +756,36 @@ export default function Accounting() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-100 flex justify-end gap-3 print:hidden shrink-0">
-              <button 
-                onClick={() => { setInvoiceModal(false); setSelectedTx(null); }}
-                className="px-6 py-2.5 rounded-xl border border-gray-200 font-medium text-gray-600 hover:bg-gray-50"
-              >
-                ปิดหน้าต่าง
-              </button>
-              <button 
-                onClick={handlePrintTaxInvoice}
-                className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 flex items-center gap-2"
-              >
-                <Printer size={18} /> ปริ้นต์ / เซฟเป็น PDF
-              </button>
+            <div className="p-6 border-t border-gray-100 flex flex-wrap justify-between items-center gap-3 print:hidden shrink-0">
+              <div className="flex items-center gap-2">
+                {selectedTx?.TaxInvoiceNo || selectedTx?.[15]
+                  ? <span className="text-sm font-bold text-purple-700 bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-200">
+                      ใบกำกับภาษี: {selectedTx.TaxInvoiceNo || selectedTx[15]}
+                    </span>
+                  : <button
+                      onClick={handleIssueTaxInvoice}
+                      disabled={isSavingInvoice}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      {isSavingInvoice ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                      ออกใบกำกับภาษีและบันทึก
+                    </button>
+                }
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setInvoiceModal(false); setSelectedTx(null); }}
+                  className="px-6 py-2.5 rounded-xl border border-gray-200 font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  ปิดหน้าต่าง
+                </button>
+                <button
+                  onClick={handlePrintTaxInvoice}
+                  className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 flex items-center gap-2"
+                >
+                  <Printer size={18} /> ปริ้นต์ / เซฟเป็น PDF
+                </button>
+              </div>
             </div>
           </div>
         </div>

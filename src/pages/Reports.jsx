@@ -105,6 +105,7 @@ export default function Reports() {
     if (!lq) return true;
     return (
       String(tx.OrderID || "").toLowerCase().includes(lq) ||
+      String(tx.ReceiptNo || "").toLowerCase().includes(lq) ||
       txDateStr(tx).includes(lq) ||
       String(tx.Date || "").includes(lq) ||
       txCartContains(tx)
@@ -300,6 +301,7 @@ export default function Reports() {
         byDay[dayKey].bills.push({
           time: dateObj.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
           orderID: tx.OrderID,
+          receiptNo: tx.ReceiptNo || tx.OrderID,
           qty: parseFloat(matchItem.qty || 1),
           status: tx.Status,
           rawDate: tx.Date,
@@ -378,7 +380,7 @@ export default function Reports() {
         return {
           no: i + 1,
           date: new Date(tx.Date).toLocaleString("th-TH"),
-          orderID: tx.OrderID,
+          orderID: tx.ReceiptNo || tx.OrderID,
           taxInvoiceNo: taxInv?.TaxInvoiceNo || "-",
           customer,
           payment: tx.PaymentMethod || "-",
@@ -425,7 +427,7 @@ export default function Reports() {
         return {
           no: i + 1,
           date: new Date(tx.Date).toLocaleString("th-TH"),
-          number: tx.OrderID,
+          number: tx.ReceiptNo || tx.OrderID,
           taxInvoiceNo: taxInv?.TaxInvoiceNo || "-",
           buyer,
           taxId: buyerTaxId,
@@ -673,7 +675,7 @@ export default function Reports() {
                       >
                         <td className="py-3 px-4 text-gray-400 text-xs">{i + 1}</td>
                         <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{new Date(tx.Date).toLocaleString("th-TH")}</td>
-                        <td className="py-3 px-4 font-mono text-gray-700 font-semibold">{tx.OrderID}</td>
+                        <td className="py-3 px-4 font-mono text-gray-700 font-semibold">{tx.ReceiptNo || tx.OrderID}</td>
                         <td className="py-3 px-4">
                           {taxInv?.TaxInvoiceNo
                             ? <span className="font-mono text-purple-700 font-semibold">{taxInv.TaxInvoiceNo}</span>
@@ -752,7 +754,7 @@ export default function Reports() {
                           {tx.ReceiptType || "ใบเสร็จ"}
                         </span>
                       </td>
-                      <td className="p-3 font-mono text-gray-500">{tx.OrderID}</td>
+                      <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
                       <td className="p-3 text-right font-medium">฿{parseFloat(tx.TotalAmount || 0).toLocaleString()}</td>
                       <td className="p-3 text-right text-amber-600 font-bold">฿{parseFloat(tx.Tax || 0).toLocaleString()}</td>
                     </tr>
@@ -974,7 +976,7 @@ export default function Reports() {
                               <span className="text-gray-600">{dayGroup.day}</span>
                               <span className="ml-2 font-semibold text-gray-900">{bill.time} น.</span>
                             </td>
-                            <td className="py-2.5 px-4 font-mono text-blue-700 font-semibold text-sm">{bill.orderID}</td>
+                            <td className="py-2.5 px-4 font-mono text-blue-700 font-semibold text-sm">{bill.receiptNo}</td>
                             <td className="py-2.5 px-4 text-right font-bold text-emerald-700">{bill.qty} ชิ้น</td>
                             <td className="py-2.5 px-4 text-center">
                               {bill.status === "CANCELLED"
@@ -1006,7 +1008,7 @@ export default function Reports() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-              <h3 className="font-semibold text-gray-800 flex items-center gap-2">รายละเอียดบิล <span className="font-mono text-primary text-sm bg-blue-50 px-2 py-0.5 rounded">{selectedTx.OrderID}</span></h3>
+              <h3 className="font-semibold text-gray-800 flex items-center gap-2">รายละเอียดบิล <span className="font-mono text-primary text-sm bg-blue-50 px-2 py-0.5 rounded">{selectedTx.ReceiptNo || selectedTx.OrderID}</span></h3>
               <button onClick={() => setSelectedTx(null)} className="p-1 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors"><X size={20} /></button>
             </div>
 
