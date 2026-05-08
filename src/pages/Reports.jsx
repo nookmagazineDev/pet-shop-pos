@@ -80,6 +80,7 @@ export default function Reports() {
   const filteredStockMoves = stockMovements.filter(m => isBetweenDates(m.Date));
   const filteredTaxInvoices = taxInvoices.filter(t => isBetweenDates(t.Date));
   const filteredReturns = returnsHistory.filter(r => isBetweenDates(r.Timestamp));
+  const filteredVoids = transactions.filter(t => t.Status === "CANCELLED" && isBetweenDates(t.Date));
   const filteredShifts = shiftsHistory.filter(s => isBetweenDates(s.CloseTime || s.OpenTime));
 
   // --- Search helpers ---
@@ -131,6 +132,16 @@ export default function Reports() {
       String(ret.ProductName || "").toLowerCase().includes(lq) ||
       new Date(ret.Timestamp).toLocaleDateString("th-TH").includes(lq) ||
       String(ret.Timestamp || "").includes(lq)
+    );
+  };
+
+  const searchVoid = (tx) => {
+    if (!lq) return true;
+    return (
+      String(tx.OrderID || "").toLowerCase().includes(lq) ||
+      String(tx.ReceiptNo || "").toLowerCase().includes(lq) ||
+      String(tx.CancelNote || "").toLowerCase().includes(lq) ||
+      new Date(tx.Date).toLocaleDateString("th-TH").includes(lq)
     );
   };
 
@@ -443,32 +454,25 @@ export default function Reports() {
 
     } else if (activeTab === "returns") {
       const headers = [
-        { key: "no",        label: "No." },
-        { key: "date",      label: "Date" },
-        { key: "orderID",   label: "Number" },
-        { key: "barcode",   label: "Barcode" },
-        { key: "name",      label: "ชื่อสินค้า" },
-        { key: "qty",       label: "จำนวน" },
-        { key: "nonVAT",    label: "Non VAT" },
-        { key: "beforeVAT", label: "Before VAT" },
-        { key: "vat",       label: "VAT" },
-        { key: "rounding",  label: "Rounding" },
-        { key: "total",     label: "Total" },
-        { key: "note",      label: "เหตุผล" },
-        { key: "by",        label: "ผู้ทำรายการ" },
+        { key: "no",         label: "No." },
+        { key: "date",       label: "วันที่เวลา" },
+        { key: "receiptNo",  label: "เลขที่ใบเสร็จ" },
+        { key: "total",      label: "ยอดรวม (บาท)" },
+        { key: "payment",    label: "ช่องทางชำระ" },
+        { key: "cancelNote", label: "สาเหตุการยกเลิก" },
+        { key: "username",   label: "ผู้ทำรายการ" },
       ];
-      const rows = filteredReturns.map((ret, i) => {
-        const prod = products.find(p => String(p.Barcode) === String(ret.Barcode)) || {};
-        const vatStatus = prod.VatStatus || "VAT";
-        const refund = r2(parseFloat(ret.RefundAmount || 0));
-        let nonVAT = 0, beforeVAT = 0, vat = 0;
-        if (vatStatus === "NON VAT") { nonVAT = refund; }
-        else { beforeVAT = r2(refund / 1.07); vat = r2(refund - beforeVAT); }
-        return { no: i + 1, date: new Date(ret.Timestamp).toLocaleString("th-TH"), orderID: ret.OrderID, barcode: ret.Barcode, name: ret.ProductName, qty: ret.ReturnQty, nonVAT, beforeVAT, vat, rounding: 0, total: refund, note: ret.ReturnNote || "-", by: ret.ActionBy || "-" };
-      });
-      const sum = (key) => r2(rows.reduce((s, r) => s + (r[key] || 0), 0));
-      const totals = { no: "Grand total", qty: sum("qty"), nonVAT: sum("nonVAT"), beforeVAT: sum("beforeVAT"), vat: sum("vat"), rounding: 0, total: sum("total") };
-      exportReportToExcel({ title: "รายงานประวัติการคืนสินค้า", company, period, headers, rows, totals, sheetName: "ReturnsHistory", fileName: "Returns_History" });
+      const rows = filteredVoids.map((tx, i) => ({
+        no: i + 1,
+        date: new Date(tx.Date).toLocaleString("th-TH"),
+        receiptNo: tx.ReceiptNo || tx.OrderID,
+        total: r2(parseFloat(tx.TotalAmount || 0)),
+        payment: tx.PaymentMethod || "-",
+        cancelNote: tx.CancelNote || "-",
+        username: tx.Username || "-",
+      }));
+      const totals = { no: "Grand total", total: r2(rows.reduce((s, r) => s + (r.total || 0), 0)) };
+      exportReportToExcel({ title: "รายงานการยกเลิกบิล VOID", company, period, headers, rows, totals, sheetName: "VoidBills", fileName: "Void_Bills" });
 
     } else if (activeTab === "stock") {
       const headers = [
@@ -498,7 +502,7 @@ export default function Reports() {
             { key: "sales", label: "ยอดขายตามเมนู" },
             { key: "history", label: "ประวัติการขาย (แยกใบเสร็จ/ใบกำกับ)" },
             { key: "tax", label: "รายงานภาษีขาย" },
-            { key: "returns", label: "ประวัติการคืนสินค้า" },
+            { key: "returns", label: "ประวัติการยกเลิกบิล VOID" },
             { key: "stock", label: "รายการย้ายสต็อก" },
             { key: "shifts", label: "รายงานการปิดกะ" },
           ].map(tab => (
@@ -780,50 +784,67 @@ export default function Reports() {
           </div>
         )}
 
-        {/* --- TAB: RETURNS HISTORY --- */}
+        {/* --- TAB: VOID BILLS --- */}
         {!isLoading && activeTab === "returns" && (
           <div className="flex-1 overflow-auto">
-            <div className="p-4 bg-rose-50/50 border-b border-rose-100 flex items-center justify-between">
-              <h3 className="font-semibold text-rose-800 flex items-center gap-2">
-                <RotateCcw size={18} /> ประวัติการคืนสินค้า
+            <div className="p-4 bg-red-50/50 border-b border-red-100 flex items-center justify-between">
+              <h3 className="font-semibold text-red-800 flex items-center gap-2">
+                <X size={18} /> ประวัติการยกเลิกบิล VOID
               </h3>
-              <span className="text-sm text-rose-600 font-medium">
-                {filteredReturns.filter(searchReturn).length} รายการ
-                {lq ? ` / กรองจาก ${filteredReturns.length}` : ""}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-red-600 font-medium">
+                  {filteredVoids.filter(searchVoid).length} รายการ
+                  {lq ? ` / กรองจาก ${filteredVoids.length}` : ""}
+                </span>
+                {filteredVoids.length > 0 && (
+                  <span className="text-sm font-bold text-red-700 bg-red-100 px-3 py-1 rounded-lg">
+                    รวมยอด: ฿{filteredVoids.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
             </div>
             <table className="w-full text-left border-collapse">
-              <thead className="bg-rose-50 sticky top-0">
-                <tr className="border-b border-rose-100 text-sm font-medium text-rose-700">
+              <thead className="bg-red-50 sticky top-0">
+                <tr className="border-b border-red-100 text-sm font-medium text-red-700">
+                  <th className="py-3 px-6">No.</th>
                   <th className="py-3 px-6">วันที่เวลา</th>
-                  <th className="py-3 px-6">เลขที่บิล</th>
-                  <th className="py-3 px-6">Barcode / สินค้า</th>
-                  <th className="py-3 px-6 text-right">จำนวนคืน</th>
-                  <th className="py-3 px-6 text-right">ยอดคืนเงิน</th>
-                  <th className="py-3 px-6">เหตุผล</th>
+                  <th className="py-3 px-6">เลขที่ใบเสร็จ</th>
+                  <th className="py-3 px-6 text-right">ยอดรวม</th>
+                  <th className="py-3 px-6">ช่องทางชำระ</th>
+                  <th className="py-3 px-6">สาเหตุการยกเลิก</th>
                   <th className="py-3 px-6">ผู้ทำรายการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-rose-50">
-                {filteredReturns.filter(searchReturn).length === 0 ? (
-                  <tr><td colSpan="7" className="py-8 text-center text-rose-400/80">ไม่พบประวัติการคืนสินค้าในช่วงวันที่นี้</td></tr>
+              <tbody className="divide-y divide-red-50">
+                {filteredVoids.filter(searchVoid).length === 0 ? (
+                  <tr><td colSpan="7" className="py-8 text-center text-red-400/80">ไม่พบรายการยกเลิกบิลในช่วงวันที่นี้</td></tr>
                 ) : (
-                  filteredReturns.filter(searchReturn).map((ret, idx) => (
-                    <tr key={idx} className="hover:bg-rose-50/30 text-sm">
-                      <td className="py-4 px-6 text-gray-700">{new Date(ret.Timestamp).toLocaleString("th-TH")}</td>
-                      <td className="py-4 px-6 font-mono text-rose-700 font-semibold">{ret.OrderID}</td>
+                  filteredVoids.filter(searchVoid).map((tx, idx) => (
+                    <tr key={idx} className="hover:bg-red-50/30 text-sm">
+                      <td className="py-4 px-6 text-gray-400 text-xs">{idx + 1}</td>
+                      <td className="py-4 px-6 text-gray-700">{new Date(tx.Date).toLocaleString("th-TH")}</td>
+                      <td className="py-4 px-6 font-mono text-red-700 font-semibold">{tx.ReceiptNo || tx.OrderID}</td>
+                      <td className="py-4 px-6 text-right font-bold text-red-600">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                       <td className="py-4 px-6">
-                        <div className="font-semibold text-gray-800">{ret.ProductName}</div>
-                        <div className="text-xs text-gray-500 font-mono">BC: {ret.Barcode}</div>
+                        <span className="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">{tx.PaymentMethod || "-"}</span>
                       </td>
-                      <td className="py-4 px-6 text-right font-bold text-rose-700">{ret.ReturnQty} ชิ้น</td>
-                      <td className="py-4 px-6 text-right font-bold text-rose-600">฿{parseFloat(ret.RefundAmount || 0).toLocaleString()}</td>
-                      <td className="py-4 px-6 text-gray-500 text-xs max-w-[160px] truncate">{ret.ReturnNote || "-"}</td>
-                      <td className="py-4 px-6 text-gray-500">{ret.ActionBy || "-"}</td>
+                      <td className="py-4 px-6 text-gray-600 text-xs max-w-[200px]">{tx.CancelNote || "-"}</td>
+                      <td className="py-4 px-6 text-gray-500 text-xs">{tx.Username || "-"}</td>
                     </tr>
                   ))
                 )}
               </tbody>
+              {filteredVoids.filter(searchVoid).length > 0 && (
+                <tfoot>
+                  <tr className="bg-red-100 font-bold text-sm border-t-2 border-red-200">
+                    <td className="py-3 px-6 text-red-800" colSpan="3">Grand Total ({filteredVoids.filter(searchVoid).length} รายการ)</td>
+                    <td className="py-3 px-6 text-right text-red-800">
+                      ฿{filteredVoids.filter(searchVoid).reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    </td>
+                    <td colSpan="3"></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}

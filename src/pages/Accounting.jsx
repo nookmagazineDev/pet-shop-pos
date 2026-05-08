@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { fetchApi, postApi } from "../api";
-import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, TrendingUp, TrendingDown, DollarSign, Calendar, FileSpreadsheet } from "lucide-react";
+import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, TrendingUp, TrendingDown, DollarSign, Calendar, FileSpreadsheet, Ban } from "lucide-react";
 import clsx from "clsx";
 import * as XLSX from "xlsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
@@ -34,7 +34,7 @@ export default function Accounting() {
     });
   }, [expenses, dateFrom, dateTo]);
 
-  const totalIncome = useMemo(() => filteredTransactions.reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [filteredTransactions]);
+  const totalIncome = useMemo(() => filteredTransactions.filter(tx => (tx.Status || tx[13]) !== "CANCELLED").reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [filteredTransactions]);
   const totalExpenses = useMemo(() => filteredExpenses.reduce((sum, exp) => sum + (parseFloat(exp.Amount || exp[4]) || 0), 0), [filteredExpenses]);
   const netProfit = totalIncome - totalExpenses;
 
@@ -61,6 +61,11 @@ export default function Accounting() {
   // Slip Modal
   const [slipModalOpen, setSlipModalOpen] = useState(false);
   const [slipData, setSlipData] = useState(null);
+
+  // Cancel Bill Modal
+  const [cancelModal, setCancelModal] = useState(null); // tx object or null
+  const [cancelNoteInput, setCancelNoteInput] = useState("");
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -247,6 +252,28 @@ export default function Accounting() {
     }
   };
 
+  const handleCancelBill = async () => {
+    if (!cancelNoteInput.trim()) { alert("กรุณาระบุสาเหตุการยกเลิกบิล"); return; }
+    setIsCancelling(true);
+    const res = await postApi({
+      action: "cancelTransaction",
+      payload: { orderId: cancelModal.OrderID || cancelModal[0], cancelNote: cancelNoteInput.trim() }
+    });
+    setIsCancelling(false);
+    if (res.success) {
+      setTransactions(prev => prev.map(tx =>
+        (tx.OrderID || tx[0]) === (cancelModal.OrderID || cancelModal[0])
+          ? { ...tx, Status: "CANCELLED", CancelNote: cancelNoteInput.trim() }
+          : tx
+      ));
+      setCancelModal(null);
+      setCancelNoteInput("");
+      alert("ยกเลิกบิลสำเร็จแล้ว");
+    } else {
+      alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
+    }
+  };
+
   const handlePrintTaxInvoice = async () => {
     if (customerInfo.name) {
       postApi({
@@ -371,9 +398,13 @@ export default function Accounting() {
                   const totalAmt = parseFloat(tx.TotalAmount || tx[2]) || 0;
                   const preVat = totalAmt * 100 / 107;
                   const vatAmt = totalAmt * 7 / 107;
+                  const isCancelled = (tx.Status || tx[13]) === "CANCELLED";
                   return (
-                    <tr key={idx} className="hover:bg-emerald-50/30 transition-colors group">
-                      <td className="py-4 px-6 text-sm text-gray-600">{new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH")}</td>
+                    <tr key={idx} className={`hover:bg-emerald-50/30 transition-colors group ${isCancelled ? "opacity-60 bg-red-50/40" : ""}`}>
+                      <td className="py-4 px-6 text-sm text-gray-600">
+                        {new Date(tx.Date || tx.Timestamp || tx[1]).toLocaleString("th-TH")}
+                        {isCancelled && <span className="ml-2 text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">VOID</span>}
+                      </td>
                       <td className="py-4 px-6 text-sm font-mono font-medium text-gray-900">{tx.ReceiptNo || tx.OrderID || tx[0]}</td>
                       <td className="py-4 px-6 text-sm font-medium text-gray-700">
                         {tx.TaxInvoiceNo || tx[15] ? <span className="uppercase text-primary font-bold">{tx.TaxInvoiceNo || tx[15]}</span> : <span className="text-gray-400">-</span>}
@@ -466,6 +497,15 @@ export default function Accounting() {
                                 className="w-full px-3 py-1 text-[10px] font-semibold text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
                               >
                                 + ออกใบกำกับภาษี
+                              </button>
+                          }
+                          {isCancelled
+                            ? <span className="text-[10px] text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded w-full text-center border border-red-200">{tx.CancelNote || tx[14] || "VOID"}</span>
+                            : <button
+                                onClick={() => { setCancelModal(tx); setCancelNoteInput(""); }}
+                                className="w-full px-3 py-1 text-[10px] font-semibold text-red-700 bg-red-50 rounded-lg hover:bg-red-100 transition-colors border border-red-200 flex items-center justify-center gap-1"
+                              >
+                                <Ban size={10} /> ยกเลิกบิล
                               </button>
                           }
                         </div>
@@ -858,6 +898,52 @@ export default function Accounting() {
           receiptType={slipData.receiptType}
           taxInvoiceNo={slipData.taxInvoiceNo}
         />
+      )}
+
+      {/* CANCEL BILL MODAL */}
+      {cancelModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h3 className="font-bold text-lg text-red-700 flex items-center gap-2">
+                <Ban size={20} /> ยกเลิกบิล (VOID)
+              </h3>
+              <button onClick={() => setCancelModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+                <p className="text-sm font-semibold text-red-800">เลขที่ใบเสร็จ: {cancelModal.ReceiptNo || cancelModal.OrderID || cancelModal[0]}</p>
+                <p className="text-sm text-red-600 mt-1">ยอด: ฿{parseFloat(cancelModal.TotalAmount || cancelModal[2] || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+                <p className="text-xs text-red-400 mt-2">⚠️ การยกเลิกบิลจะคืนสต็อกสินค้าอัตโนมัติ และไม่สามารถกู้คืนได้</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">สาเหตุการยกเลิก <span className="text-red-500">*</span></label>
+                <textarea
+                  value={cancelNoteInput}
+                  onChange={(e) => setCancelNoteInput(e.target.value)}
+                  placeholder="ระบุสาเหตุการยกเลิกบิล..."
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 p-5 border-t border-gray-100">
+              <button onClick={() => setCancelModal(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold hover:bg-gray-50 transition-colors text-sm">
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleCancelBill}
+                disabled={isCancelling || !cancelNoteInput.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
+              >
+                {isCancelling ? <Loader2 size={16} className="animate-spin" /> : <Ban size={16} />}
+                {isCancelling ? "กำลังยกเลิก..." : "ยืนยันยกเลิกบิล"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
