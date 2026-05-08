@@ -16,7 +16,7 @@ function setup() {
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
-    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"],
+    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"],
     "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt"],
     "PointsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
@@ -1226,7 +1226,7 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
   if (!custSheet) return 0;
 
   // Auto-ensure required headers exist (handles old schema migration)
-  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"];
+  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"];
   const headerRow = custSheet.getRange(1, 1, 1, CUST_HEADERS.length).getValues()[0];
   CUST_HEADERS.forEach((h, i) => {
     if (!headerRow[i] || headerRow[i] !== h) {
@@ -1239,6 +1239,7 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
   const nameColIdx = custData[0].indexOf("Name");
   const pointsColIdx = custData[0].indexOf("Points");
   const updatedAtColIdx = custData[0].indexOf("UpdatedAt");
+  const pointsUpdatedAtColIdx = custData[0].indexOf("PointsUpdatedAt");
   if (nameColIdx < 0 || pointsColIdx < 0) return 0;
 
   let newBalance = 0;
@@ -1250,7 +1251,9 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
       const current = parseFloat(custData[i][pointsColIdx]) || 0;
       newBalance = Math.max(0, current + delta);
       custSheet.getRange(i + 1, pointsColIdx + 1).setValue(newBalance);
-      if (updatedAtColIdx >= 0) custSheet.getRange(i + 1, updatedAtColIdx + 1).setValue(new Date());
+      const now = new Date();
+      if (updatedAtColIdx >= 0) custSheet.getRange(i + 1, updatedAtColIdx + 1).setValue(now);
+      if (pointsUpdatedAtColIdx >= 0) custSheet.getRange(i + 1, pointsUpdatedAtColIdx + 1).setValue(now);
       customerFound = true;
       break;
     }
@@ -1260,7 +1263,8 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
   if (!customerFound) {
     newBalance = Math.max(0, delta);
     const newId = "CUST-" + new Date().getTime();
-    custSheet.appendRow([newId, customerName, "", "", "", "", newBalance, "", "", new Date(), new Date()]);
+    const nowNew = new Date();
+    custSheet.appendRow([newId, customerName, "", "", "", "", newBalance, "", "", nowNew, nowNew, nowNew]);
   }
 
   // Log to PointsHistory
@@ -1349,7 +1353,7 @@ function purchasePackage(payload) {
 function saveCustomer(payload) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName("Customers");
-  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt"];
+  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"];
   if (!sheet) {
     sheet = ss.insertSheet("Customers");
     sheet.appendRow(CUST_HEADERS);
