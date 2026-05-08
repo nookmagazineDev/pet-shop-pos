@@ -414,7 +414,7 @@ export default function POS() {
         cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
         receiptType,
         customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "แต้ม (Points)") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
-        pointsUsed: paymentMethod === "แต้ม (Points)" ? pointsToUse : 0
+        pointsUsed: paymentMethod === "แต้ม (Points)" ? Math.ceil(total) : 0
       }
     };
 
@@ -436,10 +436,11 @@ export default function POS() {
         taxInvoiceNo: res.taxInvoiceNo || "",
       });
       // Deduct points locally after checkout
-      if (paymentMethod === "แต้ม (Points)" && customerName && pointsToUse > 0) {
+      if (paymentMethod === "แต้ม (Points)" && customerName && total > 0) {
+        const usedPts = Math.ceil(total);
         setCustomers(prev => prev.map(c =>
           String(c.Name || "").toLowerCase() === customerName.toLowerCase()
-            ? { ...c, Points: Math.max(0, (parseFloat(c.Points) || 0) - pointsToUse) }
+            ? { ...c, Points: Math.max(0, (parseFloat(c.Points) || 0) - usedPts) }
             : c
         ));
       }
