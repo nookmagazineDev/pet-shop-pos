@@ -12,7 +12,8 @@ export default function Shift() {
   const [initialCash, setInitialCash] = useState("");     // Used for opening shift input
   const [actualCash, setActualCash] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+  const [isPageLoading, setIsPageLoading] = useState(true);
+
   // Real aggregated data
   const [currentInitialCash, setCurrentInitialCash] = useState(0);
   const [cashSales, setCashSales] = useState(0);
@@ -41,28 +42,29 @@ export default function Shift() {
           setShiftState("open");
           setCurrentShiftId(lastShift.ShiftID);
           setCurrentShiftOpenTime(lastShift.OpenTime);
-          
+
           const initial = parseFloat(lastShift.ExpectedCash || lastShift.InitialCash) || 0;
           setCurrentInitialCash(initial);
-          
+
           let cSales = 0;
           let tDirect = 0;
           let tQR = 0;
           let crSales = 0;
           let oPaid = {};
           let oPending = {};
-          
+
           const openTime = new Date(lastShift.OpenTime);
-          
+
           // Aggregate transactions since shift opened
           if (Array.isArray(txData)) {
             txData.forEach(tx => {
+              if (tx.Status === "VOID") return;
               const txTime = new Date(tx.Date);
               // Only sum transactions that occurred during this open shift
               if (txTime >= openTime) {
                 const amt = parseFloat(tx.TotalAmount) || 0;
                 const method = tx.PaymentMethod || "";
-                
+
                 if (method === "เงินสด") cSales += amt;
                 else if (method === "เงินโอน" || method === "โอนเข้าบัญชี") tDirect += amt;
                 else if (method === "สแกน QR") tQR += amt;
@@ -79,7 +81,7 @@ export default function Shift() {
               }
             });
           }
-          
+
           setCashSales(cSales);
           setTransferDirect(tDirect);
           setTransferQR(tQR);
@@ -94,6 +96,10 @@ export default function Shift() {
           setCurrentShiftOpenTime("");
         }
       }
+    }).catch(() => {
+      setShiftState("closed");
+    }).finally(() => {
+      setIsPageLoading(false);
     });
   }, []);
 
@@ -185,6 +191,15 @@ export default function Shift() {
       alert("Error: " + (res.error || "Unknown"));
     }
   };
+
+  if (isPageLoading) {
+    return (
+      <div className="max-w-4xl mx-auto flex flex-col items-center justify-center py-32 gap-4 text-gray-500">
+        <Loader2 size={36} className="animate-spin text-blue-500" />
+        <p className="text-base font-medium">กำลังโหลดข้อมูลกะ...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
