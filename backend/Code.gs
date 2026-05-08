@@ -14,7 +14,7 @@ function setup() {
   const sheets = {
     "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
-    "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy"],
+    "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
@@ -381,49 +381,43 @@ function processCheckout(payload) {
     receiptNo
   ]);
   
-  // Deduct Inventory — StoreStock first, fallback to Products
+  // Deduct Inventory — always deduct from Products (คลังสินค้า) and also sync StoreStock
   const storeSheet = ss.getSheetByName("StoreStock");
   const prodSheet = ss.getSheetByName("Products");
   const cart = payload.cart;
 
   cart.forEach(item => {
-    let qtyToDeduct = item.qty;
+    const qtyToDeduct = parseFloat(item.qty) || 0;
     const itemBarcode = String(item.Barcode || "").trim();
     const itemName = String(item.Name || item.name || "").trim();
 
-    // 1) Try deducting from StoreStock first
-    if (storeSheet && qtyToDeduct > 0) {
-      const storeData = storeSheet.getDataRange().getValues();
-      for (let i = 1; i < storeData.length; i++) {
-        if (qtyToDeduct <= 0) break;
-        const rowBarcode = String(storeData[i][0]).trim();
-        const rowName   = String(storeData[i][1]).trim();
-        if ((itemBarcode && rowBarcode === itemBarcode) || rowName === itemName) {
-          let storeQty = parseFloat(storeData[i][2]) || 0;
-          if (storeQty > 0) {
-            const deduct = Math.min(storeQty, qtyToDeduct);
-            storeSheet.getRange(i + 1, 3).setValue(storeQty - deduct);
-            storeSheet.getRange(i + 1, 5).setValue(new Date());
-            qtyToDeduct -= deduct;
-          }
+    // 1) Always deduct from Products (คลังสินค้า)
+    if (prodSheet && qtyToDeduct > 0) {
+      const prodData = prodSheet.getDataRange().getValues();
+      for (let i = 1; i < prodData.length; i++) {
+        const rowBarcode = String(prodData[i][0]).trim();
+        const rowName   = String(prodData[i][1]).trim();
+        if ((itemBarcode && rowBarcode === itemBarcode) || (!itemBarcode && rowName === itemName)) {
+          const currentStock = parseFloat(prodData[i][10]) || 0;
+          prodSheet.getRange(i + 1, 11).setValue(Math.max(0, currentStock - qtyToDeduct));
+          break;
         }
       }
     }
 
-    // 2) Fallback: deduct remaining from Products (warehouse)
-    if (prodSheet && qtyToDeduct > 0) {
-      const prodData = prodSheet.getDataRange().getValues();
-      for (let i = 1; i < prodData.length; i++) {
-        if (qtyToDeduct <= 0) break;
-        const rowBarcode = String(prodData[i][0]).trim();
-        const rowName   = String(prodData[i][1]).trim();
-        if ((itemBarcode && rowBarcode === itemBarcode) || rowName === itemName) {
-          let currentStock = parseFloat(prodData[i][10]) || 0;
-          if (currentStock > 0) {
-            const deduct = Math.min(currentStock, qtyToDeduct);
-            prodSheet.getRange(i + 1, 11).setValue(currentStock - deduct);
-            qtyToDeduct -= deduct;
+    // 2) Also deduct from StoreStock if item exists there
+    if (storeSheet && qtyToDeduct > 0) {
+      const storeData = storeSheet.getDataRange().getValues();
+      for (let i = 1; i < storeData.length; i++) {
+        const rowBarcode = String(storeData[i][0]).trim();
+        const rowName   = String(storeData[i][1]).trim();
+        if ((itemBarcode && rowBarcode === itemBarcode) || (!itemBarcode && rowName === itemName)) {
+          const storeQty = parseFloat(storeData[i][2]) || 0;
+          if (storeQty > 0) {
+            storeSheet.getRange(i + 1, 3).setValue(Math.max(0, storeQty - qtyToDeduct));
+            storeSheet.getRange(i + 1, 5).setValue(new Date());
           }
+          break;
         }
       }
     }
@@ -837,6 +831,16 @@ function receiveGoods(payload) {
     return sum + (parseFloat(item.unitCost || 0) * parseFloat(item.quantity || 0));
   }, 0);
 
+  // Ensure StockMovements has ReferenceNo column
+  const moveSheet = ss.getSheetByName("StockMovements");
+  if (moveSheet) {
+    const moveHeaders = moveSheet.getRange(1, 1, 1, 8).getValues()[0];
+    if (!moveHeaders.includes("ReferenceNo")) {
+      moveSheet.getRange(1, 8).setValue("ReferenceNo");
+      moveSheet.getRange(1, 1, 1, 8).setFontWeight("bold");
+    }
+  }
+
   let updatedCount = 0;
   let addedCount = 0;
 
@@ -899,12 +903,21 @@ function receiveGoods(payload) {
         if (item.expiryDate) sheet.getRange(i + 1, 14).setValue(item.expiryDate); // ExpiryDate
         if (item.receivingDate) sheet.getRange(i + 1, 15).setValue(item.receivingDate); // ReceivingDate
         
+        // Log to StockMovements
+        if (moveSheet) {
+          const refNo = receiptId
+            + (payload.companyName ? " / " + payload.companyName : "")
+            + (payload.orderNumber ? " / PO:" + payload.orderNumber : "");
+          const actor = payload._actor ? payload._actor.username : "System";
+          moveSheet.appendRow([timestamp, searchBarcode, searchName, parseFloat(item.quantity) || 0, "ซัพพลายเออร์" + (payload.companyName ? ": " + payload.companyName : ""), "คลังสินค้า", actor, refNo]);
+        }
+
         found = true;
         updatedCount++;
         break;
       }
     }
-    
+
     // Not found: return error
     if (!found) {
       return jsonResponse({ success: false, error: `ไม่พบสินค้าบาร์โค้ด ${item.barcode} ในคลัง กรุณาสร้างสินค้าก่อนรับเข้า` });
@@ -1330,13 +1343,23 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
   } else if (sheetName === "Transactions") {
-    const requiredHeaders = ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount"];
-    const currentHeaderRow = sheet.getRange(1, 1, 1, 1).getValues()[0][0];
-    // If the first row is actually a transaction (starts with ORD) or doesn't match our strict header, insert a true header row.
-    if (String(currentHeaderRow).indexOf("ORD-") === 0) {
+    const fullHeaders = ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"];
+    const currentLastCol = Math.max(sheet.getLastColumn(), fullHeaders.length);
+    const headerRow = sheet.getRange(1, 1, 1, currentLastCol).getValues()[0];
+    const firstCell = String(headerRow[0] || "");
+    if (firstCell.indexOf("ORD-") === 0 || /^TX\d{10,}/.test(firstCell)) {
+      // No header row — insert full header
       sheet.insertRowBefore(1);
-      sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
-      sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
+      sheet.getRange(1, 1, 1, fullHeaders.length).setValues([fullHeaders]);
+      sheet.getRange(1, 1, 1, fullHeaders.length).setFontWeight("bold");
+    } else if (firstCell === "OrderID" && !headerRow.includes("Status")) {
+      // Header exists but missing Status/CancelNote/TaxInvoiceNo/ReceiptNo — add them
+      fullHeaders.forEach((h, i) => {
+        if (!headerRow.includes(h)) {
+          sheet.getRange(1, i + 1).setValue(h);
+        }
+      });
+      sheet.getRange(1, 1, 1, fullHeaders.length).setFontWeight("bold");
     }
   } else if (sheetName === "Shifts") {
     const requiredHeaders = ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"];
