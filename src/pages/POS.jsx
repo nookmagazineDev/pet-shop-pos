@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import BarcodeScanner from "../components/BarcodeScanner";
@@ -25,7 +25,7 @@ export default function POS() {
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerTaxId, setCustomerTaxId] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [taxInvoiceNo, setTaxInvoiceNo] = useState("");
+  const [receiptData, setReceiptData] = useState(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [manualDiscountValue, setManualDiscountValue] = useState("");
@@ -340,9 +340,39 @@ export default function POS() {
   };
   const promoHints = getPromoHints();
 
+  const resetAll = () => {
+    setCart([]);
+    setBarcodeInput("");
+    setPaymentMethod("เงินสด");
+    setCashReceived("");
+    setReceiptType("ใบเสร็จ");
+    setCustomerName("");
+    setCustomerAddress("");
+    setCustomerTaxId("");
+    setCustomerPhone("");
+    setCustomerSearch("");
+    setManualDiscountValue("");
+    setManualDiscountType("baht");
+  };
+
+  const openPreview = () => {
+    setReceiptData({
+      cart: cart.map(c => ({ ...c })),
+      paymentMethod,
+      subtotal,
+      discountAmount,
+      freeItemLines: freeItemLines.map(f => ({ ...f })),
+      tax,
+      total,
+      receiptType,
+      customerInfo: { customerName, customerAddress, customerTaxId },
+      taxInvoiceNo: "",
+    });
+    setIsInvoiceModalOpen(true);
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
-    
     setIsCheckingOut(true);
 
     // Save customer if it's a tax invoice and they typed a new customer
@@ -359,7 +389,6 @@ export default function POS() {
               taxId: customerTaxId.trim()
             }
           });
-          // Optimistically add to customers list
           setCustomers(prev => [...prev, { Name: customerName.trim(), Phone: customerPhone.trim(), Address: customerAddress.trim(), TaxID: customerTaxId.trim() }]);
         } catch (error) {
           console.error("Error saving new customer:", error);
@@ -379,20 +408,27 @@ export default function POS() {
         customerInfo: receiptType === "ใบกำกับภาษี" ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null
       }
     };
-    
+
     const res = await postApi(payload);
-    
-    setTaxInvoiceNo("");
-    setManualDiscountValue("");
-    setManualDiscountType("baht");
     setIsCheckingOut(false);
-    
+
     if (res.success) {
-      if (res.taxInvoiceNo) {
-        setTaxInvoiceNo(res.taxInvoiceNo);
-      } else {
-        setTaxInvoiceNo("");
-      }
+      // Save snapshot for printing
+      setReceiptData({
+        cart: cart.map(c => ({ ...c })),
+        paymentMethod,
+        subtotal,
+        discountAmount,
+        freeItemLines: freeItemLines.map(f => ({ ...f })),
+        tax,
+        total,
+        receiptType,
+        customerInfo: { customerName, customerAddress, customerTaxId },
+        taxInvoiceNo: res.taxInvoiceNo || "",
+      });
+      // Reset everything immediately
+      resetAll();
+      // Open print modal with saved snapshot
       setIsInvoiceModalOpen(true);
     } else {
       alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล: " + (res.error || "Unknown"));
@@ -401,8 +437,7 @@ export default function POS() {
 
   const handleInvoiceClose = () => {
     setIsInvoiceModalOpen(false);
-    setCart([]);
-    setTaxInvoiceNo("");
+    setReceiptData(null);
   };
 
   // === SHIFT GUARD ===
@@ -841,41 +876,51 @@ export default function POS() {
           )}
 
           <div className="mt-auto space-y-3">
-            {/* Warn if cash is insufficient */}
             {paymentMethod === "เงินสด" && cashReceived !== "" && parseFloat(cashReceived) < totalForCash && (
               <div className="text-center text-sm text-red-500 font-medium bg-red-50 border border-red-100 rounded-xl py-2">
                 รับเงินมาไม่ครบ ขาดอีก ฿{(totalForCash - parseFloat(cashReceived)).toLocaleString(undefined,{minimumFractionDigits:2})}
               </div>
             )}
-            <button 
-              onClick={handleCheckout}
-              disabled={
-                cart.length === 0 ||
-                isCheckingOut ||
-                (paymentMethod === "เงินสด" && (cashReceived === "" || parseFloat(cashReceived) < totalForCash))
-              }
-              className="w-full py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
-            >
-              {isCheckingOut ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}
-              {isCheckingOut ? "กำลังบันทึก..." : "รับชำระเงิน & พิมพ์ใบเสร็จ"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={openPreview}
+                disabled={cart.length === 0}
+                title="ดูตัวอย่างใบเสร็จ"
+                className="shrink-0 px-4 py-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Printer size={20} />
+              </button>
+              <button
+                onClick={handleCheckout}
+                disabled={
+                  cart.length === 0 ||
+                  isCheckingOut ||
+                  (paymentMethod === "เงินสด" && (cashReceived === "" || parseFloat(cashReceived) < totalForCash))
+                }
+                className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
+              >
+                {isCheckingOut ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle size={20} />}
+                {isCheckingOut ? "กำลังบันทึก..." : "รับชำระเงินสำเร็จ"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <TaxInvoiceModal 
-        isOpen={isInvoiceModalOpen} 
-        onClose={handleInvoiceClose} 
-        cart={cart}
-        paymentMethod={paymentMethod}
-        subtotal={subtotal}
-        discountAmount={discountAmount}
-        freeItemLines={freeItemLines}
-        tax={tax}
-        total={total}
-        receiptType={receiptType}
-        customerInfo={{ customerName, customerAddress, customerTaxId }}
-        taxInvoiceNo={taxInvoiceNo}
+      <TaxInvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={handleInvoiceClose}
+        cart={receiptData?.cart || []}
+        paymentMethod={receiptData?.paymentMethod || ""}
+        subtotal={receiptData?.subtotal || 0}
+        discountAmount={receiptData?.discountAmount || 0}
+        freeItemLines={receiptData?.freeItemLines || []}
+        tax={receiptData?.tax || 0}
+        total={receiptData?.total || 0}
+        receiptType={receiptData?.receiptType || "ใบเสร็จ"}
+        customerInfo={receiptData?.customerInfo || {}}
+        taxInvoiceNo={receiptData?.taxInvoiceNo || ""}
       />
     </div>
   );
