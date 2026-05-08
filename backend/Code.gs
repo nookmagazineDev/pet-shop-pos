@@ -489,39 +489,59 @@ function cancelTransaction(payload) {
   txSheet.getRange(foundRow, statusCol).setValue("CANCELLED");
   txSheet.getRange(foundRow, noteCol).setValue(cancelNote);
 
-  // Return Stock
+  // Return Stock to StoreStock and Products (warehouse)
   let cart = [];
   try { cart = JSON.parse(cartDetailsStr); } catch (e) {}
 
   if (Array.isArray(cart) && cart.length > 0) {
     const storeSheet = ss.getSheetByName("StoreStock");
+    const productsSheet = ss.getSheetByName("Products");
     const stockMoves = ss.getSheetByName("StockMovements");
     const now = new Date();
-    
-    if (storeSheet) {
-      const storeData = storeSheet.getDataRange().getValues();
-      cart.forEach(item => {
-        const itemBarcode = String(item.Barcode || "").trim();
-        const itemName = String(item.Name || item.name || "").trim();
-        const qtyToReturn = parseFloat(item.qty) || 0;
-        
-        if (qtyToReturn > 0) {
-          for (let s = 1; s < storeData.length; s++) {
-            const sBarcode = String(storeData[s][0]).trim();
-            const sName = String(storeData[s][1]).trim();
-            if ((itemBarcode && sBarcode === itemBarcode) || (sName === itemName)) {
-              const existingQty = parseFloat(storeData[s][2]) || 0;
-              storeSheet.getRange(s + 1, 3).setValue(existingQty + qtyToReturn);
-              storeSheet.getRange(s + 1, 5).setValue(now);
-              break;
-            }
-          }
-          if (stockMoves) {
-            stockMoves.appendRow([now, itemBarcode, itemName, qtyToReturn, "Returned (Order)", "Store", payload._actor ? payload._actor.username : "System"]);
+
+    const storeData = storeSheet ? storeSheet.getDataRange().getValues() : [];
+    const prodData = productsSheet ? productsSheet.getDataRange().getValues() : [];
+    const prodHeaders = prodData.length > 0 ? prodData[0] : [];
+    const prodQtyCol = prodHeaders.indexOf("Quantity"); // 0-based index
+
+    cart.forEach(item => {
+      const itemBarcode = String(item.Barcode || item.barcode || "").trim();
+      const itemName = String(item.Name || item.name || "").trim();
+      const qtyToReturn = parseFloat(item.qty) || 0;
+      if (qtyToReturn <= 0) return;
+
+      // Update StoreStock
+      if (storeSheet && storeData.length > 1) {
+        for (let s = 1; s < storeData.length; s++) {
+          const sBarcode = String(storeData[s][0]).trim();
+          const sName = String(storeData[s][1]).trim();
+          if ((itemBarcode && sBarcode === itemBarcode) || (!itemBarcode && sName === itemName)) {
+            const existingQty = parseFloat(storeData[s][2]) || 0;
+            storeSheet.getRange(s + 1, 3).setValue(existingQty + qtyToReturn);
+            storeSheet.getRange(s + 1, 5).setValue(now);
+            break;
           }
         }
-      });
-    }
+      }
+
+      // Update Products (warehouse)
+      if (productsSheet && prodQtyCol >= 0 && prodData.length > 1) {
+        for (let p = 1; p < prodData.length; p++) {
+          const pBarcode = String(prodData[p][0]).trim();
+          const pName = String(prodData[p][1]).trim();
+          if ((itemBarcode && pBarcode === itemBarcode) || (!itemBarcode && pName === itemName)) {
+            const existingQty = parseFloat(prodData[p][prodQtyCol]) || 0;
+            productsSheet.getRange(p + 1, prodQtyCol + 1).setValue(existingQty + qtyToReturn);
+            break;
+          }
+        }
+      }
+
+      // Log stock movement
+      if (stockMoves) {
+        stockMoves.appendRow([now, itemBarcode, itemName, qtyToReturn, "VOID (Order Cancelled)", "คลังสินค้า", payload._actor ? payload._actor.username : "System"]);
+      }
+    });
   }
 
   logActivity("POS", "Cancel Order", orderId, payload._actor);
