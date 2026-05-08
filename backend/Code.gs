@@ -295,7 +295,7 @@ function doPost(e) {
 function processCheckout(payload) {
   const ss = getSpreadsheet();
   const txSheet = ss.getSheetByName("Transactions");
-  const orderId = "ORD-" + new Date().getTime();
+  const orderId = "TX" + new Date().getTime();
   const now = new Date();
   
   let generatedTaxInvoiceNo = null;

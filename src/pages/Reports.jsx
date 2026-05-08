@@ -743,25 +743,39 @@ export default function Reports() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filteredTransactions.filter(t => parseFloat(t.Tax) > 0 && searchTx(t)).map((tx, i) => (
-                    <tr key={i} className="hover:bg-gray-50 text-sm">
-                      <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
-                      <td className="p-3">
-                        <span className={clsx("px-2 py-1 rounded text-xs font-bold",
-                          tx.ReceiptType === "ใบกำกับภาษี" ? "bg-purple-100 text-purple-700" :
-                            (tx.ReceiptType === "online" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")
-                        )}>
-                          {tx.ReceiptType || "ใบเสร็จ"}
-                        </span>
-                      </td>
-                      <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
-                      <td className="p-3 text-right font-medium">฿{parseFloat(tx.TotalAmount || 0).toLocaleString()}</td>
-                      <td className="p-3 text-right text-amber-600 font-bold">฿{parseFloat(tx.Tax || 0).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {filteredTransactions.filter(t => parseFloat(t.Tax) > 0 && searchTx(t)).length === 0 && (
-                    <tr><td colSpan="5" className="p-8 text-center text-gray-400">ไม่มีรายการที่มีภาษีขายในช่วงที่เลือก</td></tr>
-                  )}
+                  {(() => {
+                    const taxRows = filteredTransactions.filter(t => parseFloat(t.Tax) > 0 && searchTx(t));
+                    if (taxRows.length === 0) {
+                      return <tr><td colSpan="5" className="p-8 text-center text-gray-400">ไม่มีรายการที่มีภาษีขายในช่วงที่เลือก</td></tr>;
+                    }
+                    const grandTotal = taxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0);
+                    const grandTax = taxRows.reduce((s, t) => s + (parseFloat(t.Tax) || 0), 0);
+                    return (
+                      <>
+                        {taxRows.map((tx, i) => (
+                          <tr key={i} className="hover:bg-gray-50 text-sm">
+                            <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
+                            <td className="p-3">
+                              <span className={clsx("px-2 py-1 rounded text-xs font-bold",
+                                tx.ReceiptType === "ใบกำกับภาษี" ? "bg-purple-100 text-purple-700" :
+                                  (tx.ReceiptType === "online" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")
+                              )}>
+                                {tx.ReceiptType || "ใบเสร็จ"}
+                              </span>
+                            </td>
+                            <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
+                            <td className="p-3 text-right font-medium">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                            <td className="p-3 text-right text-amber-600 font-bold">฿{parseFloat(tx.Tax || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-gray-100 font-bold text-sm border-t-2 border-gray-300">
+                          <td className="p-3 text-gray-700" colSpan="3">Grand Total ({taxRows.length} รายการ)</td>
+                          <td className="p-3 text-right text-gray-900">฿{grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-right text-amber-700">฿{grandTax.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      </>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
