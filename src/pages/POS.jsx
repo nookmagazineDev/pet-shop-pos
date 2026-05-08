@@ -435,6 +435,14 @@ export default function POS() {
         customerInfo: { customerName, customerAddress, customerTaxId },
         taxInvoiceNo: res.taxInvoiceNo || "",
       });
+      // Deduct points locally after checkout
+      if (paymentMethod === "แต้ม (Points)" && customerName && pointsToUse > 0) {
+        setCustomers(prev => prev.map(c =>
+          String(c.Name || "").toLowerCase() === customerName.toLowerCase()
+            ? { ...c, Points: Math.max(0, (parseFloat(c.Points) || 0) - pointsToUse) }
+            : c
+        ));
+      }
       // Reset everything immediately
       resetAll();
       // Open print modal with saved snapshot
@@ -871,8 +879,9 @@ export default function POS() {
               onClick={() => {
                 if (!customerName) { alert("กรุณาเลือกลูกค้าก่อนใช้แต้ม"); return; }
                 setPaymentMethod("แต้ม (Points)");
-                const custObj = customers.find(c => c.Name === customerName);
-                setPointsToUse(Math.min(Number(custObj?.Points || 0), Math.ceil(total)));
+                const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
+                const pts = parseFloat(custObj?.Points) || 0;
+                setPointsToUse(Math.min(pts, Math.ceil(total)));
               }}
               className={clsx(
                 "flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all",
@@ -888,8 +897,8 @@ export default function POS() {
 
           {/* Points payment details */}
           {paymentMethod === "แต้ม (Points)" && (() => {
-            const custObj = customers.find(c => c.Name === customerName);
-            const available = Number(custObj?.Points || 0);
+            const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
+            const available = parseFloat(custObj?.Points) || 0;
             const enough = available >= Math.ceil(total);
             return (
               <div className="mb-5 p-4 bg-yellow-50 rounded-xl border border-yellow-100 space-y-3">
@@ -985,7 +994,7 @@ export default function POS() {
                   cart.length === 0 ||
                   isCheckingOut ||
                   (paymentMethod === "เงินสด" && (cashReceived === "" || parseFloat(cashReceived) < totalForCash)) ||
-                  (paymentMethod === "แต้ม (Points)" && Number(customers.find(c => c.Name === customerName)?.Points || 0) < Math.ceil(total))
+                  (paymentMethod === "แต้ม (Points)" && (parseFloat(customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase())?.Points) || 0) < Math.ceil(total))
                 }
                 className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
               >
@@ -1025,7 +1034,14 @@ export default function POS() {
         onClose={() => setIsPurchasePkgOpen(false)}
         customers={customers}
         onPointsUpdated={(name, newBalance) => {
-          setCustomers(prev => prev.map(c => c.Name === name ? { ...c, Points: newBalance } : c));
+          setCustomers(prev => {
+            const exists = prev.some(c => String(c.Name || "").toLowerCase() === name.toLowerCase());
+            if (exists) {
+              return prev.map(c => String(c.Name || "").toLowerCase() === name.toLowerCase() ? { ...c, Points: newBalance } : c);
+            }
+            // Customer not in list yet — add them
+            return [...prev, { Name: name, Points: newBalance }];
+          });
         }}
       />
     </div>
