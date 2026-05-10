@@ -8,12 +8,10 @@ import PurchasePackageModal from "../components/PurchasePackageModal";
 import BuyCouponModal from "../components/BuyCouponModal";
 import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
-import { usePrinter } from "../context/PrinterContext";
 import { useNavigate } from "react-router-dom";
 
 export default function POS() {
   const { isShiftOpen, isChecking } = useShift();
-  const { settings: printerSettings } = usePrinter();
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [promotions, setPromotions] = useState([]);
@@ -418,89 +416,25 @@ export default function POS() {
     setIsPurchasePkgOpen(false);
   };
 
-  // Print a popup receipt for package purchase
-  const printPackageReceipt = (pkg, customer, earnedPoints, newBalance, pmMethod) => {
-    const s = printerSettings;
-    const now = new Date();
-    const dateStr = now.toLocaleString("th-TH", {
-      year: "numeric", month: "long", day: "numeric",
-      hour: "2-digit", minute: "2-digit"
-    });
-    const totalPoints = (parseFloat(pkg.Points) || 0) + (parseFloat(pkg.BonusPoints) || 0);
-
-    const html = `<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8"/>
-<title>ใบเสร็จซื้อแพคเกจ</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Courier New', Courier, monospace; font-size: 12px; width: 280px; padding: 10px; }
-  .center { text-align: center; }
-  .bold { font-weight: bold; }
-  .divider { border-top: 1px dashed #000; margin: 6px 0; }
-  .row { display: flex; justify-content: space-between; margin: 2px 0; }
-  .label { color: #555; }
-  .xlarge { font-size: 18px; }
-  .points { font-size: 20px; font-weight: bold; }
-  @media print {
-    @page { margin: 0; size: 80mm auto; }
-    body { width: 100%; }
-  }
-</style>
-</head>
-<body>
-  <div class="center">
-    <div class="bold" style="font-size:15px;">${s.shopName || ""}</div>
-    ${s.shopAddress ? `<div style="font-size:10px; margin-top:2px;">${s.shopAddress}</div>` : ""}
-    ${s.shopPhone ? `<div>โทร: ${s.shopPhone}</div>` : ""}
-    ${s.shopTaxId ? `<div>เลขที่ผู้เสียภาษี: ${s.shopTaxId}</div>` : ""}
-    ${s.shopBranch ? `<div>${s.shopBranch}</div>` : ""}
-  </div>
-  <div class="divider"></div>
-  <div class="center bold" style="font-size:15px;">ใบเสร็จซื้อแพคเกจ</div>
-  <div class="divider"></div>
-  <div class="row"><span class="label">วันที่:</span><span>${dateStr}</span></div>
-  <div class="row"><span class="label">ลูกค้า:</span><span class="bold">${customer.Name || ""}</span></div>
-  ${customer.Phone ? `<div class="row"><span class="label">โทร:</span><span>${customer.Phone}</span></div>` : ""}
-  <div class="row"><span class="label">วิธีชำระ:</span><span>${pmMethod || ""}</span></div>
-  <div class="divider"></div>
-  <div class="row"><span class="label">แพคเกจ:</span><span class="bold">${pkg.Name || ""}</span></div>
-  ${pkg.Description ? `<div style="font-size:10px; color:#555; padding-left:4px;">${pkg.Description}</div>` : ""}
-  <div class="row"><span>แต้มพื้นฐาน</span><span>${Number(pkg.Points || 0).toLocaleString()} pts</span></div>
-  ${parseFloat(pkg.BonusPoints) > 0 ? `<div class="row"><span>โบนัสแต้ม</span><span>+${Number(pkg.BonusPoints).toLocaleString()} pts</span></div>` : ""}
-  <div class="divider"></div>
-  <div class="row xlarge bold">
-    <span>ยอดชำระ</span>
-    <span>฿${Number(pkg.Price).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-  </div>
-  <div class="divider"></div>
-  <div class="center" style="margin: 6px 0;">
-    <div class="label" style="font-size:11px;">แต้มที่ได้รับ</div>
-    <div class="points">★ ${totalPoints.toLocaleString()} แต้ม ★</div>
-  </div>
-  <div class="row" style="margin-top:4px;">
-    <span class="label">แต้มสะสมคงเหลือ</span>
-    <span class="bold">${Number(newBalance).toLocaleString()} pts</span>
-  </div>
-  <div class="divider"></div>
-  <div class="center" style="margin-top:6px; font-size:11px;">${s.footerNote || ""}</div>
-</body>
-</html>`;
-
-    const win = window.open("", "_blank", "width=350,height=600,scrollbars=yes");
-    if (!win) return;
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 300);
-  };
+  // Build package as a NON-VAT line item for the receipt
+  const buildPkgCartItem = () => pendingPackage ? {
+    id: `pkg-${pendingPackage.pkg.PackageID}`,
+    Barcode: "",
+    Name: `🎁 ${pendingPackage.pkg.Name}`,
+    name: `🎁 ${pendingPackage.pkg.Name}`,
+    price: packagePrice,
+    qty: 1,
+    vatStatus: "NON VAT",
+    image: "https://placehold.co/300x300?text=Package",
+  } : null;
 
   const openPreview = () => {
+    const pkgItem = buildPkgCartItem();
+    const previewCart = pkgItem ? [pkgItem, ...cart.map(c => ({ ...c }))] : cart.map(c => ({ ...c }));
     setReceiptData({
-      cart: cart.map(c => ({ ...c })),
+      cart: previewCart,
       paymentMethod,
-      subtotal,
+      subtotal: subtotal + packagePrice,
       discountAmount,
       freeItemLines: freeItemLines.map(f => ({ ...f })),
       couponDiscount,
@@ -518,6 +452,8 @@ export default function POS() {
     if (cart.length === 0 && !pendingPackage) return;
     setIsCheckingOut(true);
 
+    let pkgResult = null;
+
     // ── Package purchase (if pending) ──
     if (pendingPackage) {
       const pkgRes = await postApi({
@@ -532,82 +468,52 @@ export default function POS() {
         alert("เกิดข้อผิดพลาดในการซื้อแพคเกจ: " + (pkgRes.error || "Unknown"));
         return;
       }
-      // Update points in customer list
-      const earned = pkgRes.earnedPoints;
-      const newBal = pkgRes.newBalance;
+      pkgResult = pkgRes;
       setCustomers(prev => prev.map(c =>
         String(c.Name || "").toLowerCase() === pendingPackage.customer.Name.toLowerCase()
-          ? { ...c, Points: newBal }
+          ? { ...c, Points: pkgRes.newBalance }
           : c
       ));
-      // Print package receipt
-      printPackageReceipt(pendingPackage.pkg, pendingPackage.customer, earned, newBal, paymentMethod);
     }
+
+    const pkgItem = buildPkgCartItem();
 
     // ── Normal cart checkout (if cart has items) ──
     if (cart.length > 0) {
-      // Save customer if it's a tax invoice and they typed a new customer
+      // Save customer if tax invoice
       if (receiptType === "ใบกำกับภาษี" && customerName.trim() !== "") {
         const isExisting = customers.some(c => c.Name === customerName.trim());
         if (!isExisting) {
           try {
-            await postApi({
-              action: "saveCustomer",
-              payload: {
-                name: customerName.trim(),
-                phone: customerPhone.trim(),
-                taxAddress: customerAddress.trim(),
-                taxId: customerTaxId.trim()
-              }
-            });
+            await postApi({ action: "saveCustomer", payload: { name: customerName.trim(), phone: customerPhone.trim(), taxAddress: customerAddress.trim(), taxId: customerTaxId.trim() } });
             setCustomers(prev => [...prev, { Name: customerName.trim(), Phone: customerPhone.trim(), TaxAddress: customerAddress.trim(), TaxID: customerTaxId.trim() }]);
-          } catch (error) {
-            console.error("Error saving new customer:", error);
-          }
+          } catch (error) { console.error("Error saving new customer:", error); }
         }
       }
 
-      const cartTotal = subtotalAfterDiscount; // cart total without package
-      const payload = {
+      const cartTotal = subtotalAfterDiscount; // cart-only total (excl. package)
+      const res = await postApi({
         action: "checkout",
         payload: {
           totalAmount: cartTotal,
-          tax: tax,
+          tax,
           discount: discountAmount,
-          paymentMethod: paymentMethod,
+          paymentMethod,
           cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
           receiptType,
           customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "แต้ม (Points)") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
           pointsUsed: paymentMethod === "แต้ม (Points)" ? Math.ceil(cartTotal) : 0,
           couponInstanceId: selectedCoupon?.ID || ""
         }
-      };
+      });
 
-      const res = await postApi(payload);
       setIsCheckingOut(false);
 
       if (res.success) {
-        // Save snapshot for printing
-        setReceiptData({
-          cart: cart.map(c => ({ ...c })),
-          paymentMethod,
-          subtotal,
-          discountAmount,
-          freeItemLines: freeItemLines.map(f => ({ ...f })),
-          couponDiscount,
-          couponName: selectedCoupon?.CouponName || selectedCoupon?.Name || "",
-          tax,
-          total: cartTotal,
-          receiptType,
-          customerInfo: { customerName, customerAddress, customerTaxId },
-          taxInvoiceNo: res.taxInvoiceNo || "",
-        });
-        // Mark coupon as used
         if (selectedCoupon?.ID) {
           postApi({ action: "useCoupon", payload: { couponInstanceId: selectedCoupon.ID, orderId: res.orderId || "" } });
           setCustomerCoupons(prev => prev.map(c => c.ID === selectedCoupon.ID ? { ...c, Status: "USED" } : c));
         }
-        // Deduct points locally after checkout
         if (paymentMethod === "แต้ม (Points)" && customerName && cartTotal > 0) {
           const usedPts = Math.ceil(cartTotal);
           setCustomers(prev => prev.map(c =>
@@ -616,17 +522,46 @@ export default function POS() {
               : c
           ));
         }
-        // Reset everything immediately
+        // Combined receipt: package item (if any) + regular cart
+        const receiptCart = pkgItem ? [pkgItem, ...cart.map(c => ({ ...c }))] : cart.map(c => ({ ...c }));
+        setReceiptData({
+          cart: receiptCart,
+          paymentMethod,
+          subtotal: subtotal + packagePrice,
+          discountAmount,
+          freeItemLines: freeItemLines.map(f => ({ ...f })),
+          couponDiscount,
+          couponName: selectedCoupon?.CouponName || selectedCoupon?.Name || "",
+          tax,
+          total: cartTotal + packagePrice,
+          receiptType,
+          customerInfo: { customerName, customerAddress, customerTaxId },
+          taxInvoiceNo: res.taxInvoiceNo || "",
+        });
         resetAll();
-        // Open print modal with saved snapshot
         setIsInvoiceModalOpen(true);
       } else {
         alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล: " + (res.error || "Unknown"));
       }
     } else {
-      // Package only — no cart items
+      // Package only — open TaxInvoiceModal directly (no checkout API call)
       setIsCheckingOut(false);
+      setReceiptData({
+        cart: [pkgItem],
+        paymentMethod,
+        subtotal: packagePrice,
+        discountAmount: 0,
+        freeItemLines: [],
+        couponDiscount: 0,
+        couponName: "",
+        tax: 0,
+        total: packagePrice,
+        receiptType,
+        customerInfo: { customerName, customerAddress, customerTaxId },
+        taxInvoiceNo: pkgResult?.taxInvoiceNo || "",
+      });
       resetAll();
+      setIsInvoiceModalOpen(true);
     }
   };
 
