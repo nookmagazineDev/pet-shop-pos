@@ -424,11 +424,13 @@ export default function Reports() {
         { key: "rounding",     label: "Rounding" },
         { key: "total",        label: "Total" },
       ];
-      const taxRows = filteredTransactions;
-      const rows = taxRows.map((tx, i) => {
+      const taxRows = filteredTransactions.filter(t => t.Status !== "CANCELLED");
+      const voidRows = filteredVoids;
+      const buildRow = (tx, i, isVoid = false) => {
         const { nonVAT, vatableTotal } = getCartVatSplit(tx.CartDetails, products);
-        const beforeVAT = r2(vatableTotal / 1.07);
-        const vat = r2(parseFloat(tx.Tax || 0));
+        const sign = isVoid ? -1 : 1;
+        const beforeVAT = r2((vatableTotal / 1.07) * sign);
+        const vat = r2(parseFloat(tx.Tax || 0) * sign);
         let buyer = "ลูกค้าทั่วไป", buyerTaxId = "-";
         try {
           const ci = JSON.parse(tx.CustomerInfo || "{}");
@@ -440,17 +442,21 @@ export default function Reports() {
         return {
           no: i + 1,
           date: new Date(tx.Date).toLocaleString("th-TH"),
-          taxInvoiceNo: taxInv?.TaxInvoiceNo || tx.ReceiptNo || tx.OrderID,
+          taxInvoiceNo: (isVoid ? "[VOID] " : "") + (taxInv?.TaxInvoiceNo || tx.ReceiptNo || tx.OrderID),
           buyer,
           taxId: buyerTaxId,
           branch: company.branch,
-          nonVAT: r2(nonVAT),
+          nonVAT: r2(nonVAT * sign),
           beforeVAT,
           vat,
           rounding: 0,
-          total: r2(parseFloat(tx.TotalAmount || 0)),
+          total: r2(parseFloat(tx.TotalAmount || 0) * sign),
         };
-      });
+      };
+      const rows = [
+        ...taxRows.map((tx, i) => buildRow(tx, i, false)),
+        ...voidRows.map((tx, i) => buildRow(tx, taxRows.length + i, true)),
+      ];
       const sum = (key) => r2(rows.reduce((s, r) => s + (r[key] || 0), 0));
       const totals = { no: "Grand total", nonVAT: sum("nonVAT"), beforeVAT: sum("beforeVAT"), vat: sum("vat"), rounding: 0, total: sum("total") };
       exportReportToExcel({ title: "Output tax report", company, period, headers, rows, totals, sheetName: "TaxReport", fileName: "Tax_Report", textCols: ['taxId'] });
@@ -749,16 +755,25 @@ export default function Reports() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {(() => {
-                    const taxRows = filteredTransactions.filter(t => parseFloat(t.Tax) > 0 && searchTx(t));
-                    if (taxRows.length === 0) {
+                    // Normal rows (non-void) with Tax > 0
+                    const taxRows = filteredTransactions.filter(t => t.Status !== "CANCELLED" && parseFloat(t.Tax) > 0 && searchTx(t));
+                    // Void rows that had Tax > 0 (shown as negative reversal)
+                    const voidTaxRows = filteredVoids.filter(t => parseFloat(t.Tax) > 0 && searchTx(t));
+
+                    if (taxRows.length === 0 && voidTaxRows.length === 0) {
                       return <tr><td colSpan="5" className="p-8 text-center text-gray-400">ไม่มีรายการที่มีภาษีขายในช่วงที่เลือก</td></tr>;
                     }
-                    const grandTotal = taxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0);
-                    const grandTax = taxRows.reduce((s, t) => s + (parseFloat(t.Tax) || 0), 0);
+
+                    const grandTotal = taxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0)
+                                     - voidTaxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0);
+                    const grandTax   = taxRows.reduce((s, t) => s + (parseFloat(t.Tax) || 0), 0)
+                                     - voidTaxRows.reduce((s, t) => s + (parseFloat(t.Tax) || 0), 0);
+
                     return (
                       <>
+                        {/* Normal rows */}
                         {taxRows.map((tx, i) => (
-                          <tr key={i} className="hover:bg-gray-50 text-sm">
+                          <tr key={`tx-${i}`} className="hover:bg-gray-50 text-sm">
                             <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
                             <td className="p-3">
                               <span className={clsx("px-2 py-1 rounded text-xs font-bold",
@@ -773,10 +788,36 @@ export default function Reports() {
                             <td className="p-3 text-right text-amber-600 font-bold">฿{parseFloat(tx.Tax || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                           </tr>
                         ))}
+
+                        {/* Void reversal rows */}
+                        {voidTaxRows.map((tx, i) => {
+                          const amt = parseFloat(tx.TotalAmount || 0);
+                          const vat = parseFloat(tx.Tax || 0);
+                          return (
+                            <tr key={`void-${i}`} className="bg-red-50 text-sm border-l-4 border-red-400">
+                              <td className="p-3 text-red-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
+                              <td className="p-3">
+                                <span className="px-2 py-1 rounded text-xs font-bold bg-red-100 text-red-700">
+                                  ยกเลิก (VOID)
+                                </span>
+                              </td>
+                              <td className="p-3 font-mono text-red-500 line-through">{tx.ReceiptNo || tx.OrderID}</td>
+                              <td className="p-3 text-right font-bold text-red-600">-฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                              <td className="p-3 text-right font-bold text-red-600">-฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          );
+                        })}
+
                         <tr className="bg-gray-100 font-bold text-sm border-t-2 border-gray-300">
-                          <td className="p-3 text-gray-700" colSpan="3">Grand Total ({taxRows.length} รายการ)</td>
-                          <td className="p-3 text-right text-gray-900">฿{grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                          <td className="p-3 text-right text-amber-700">฿{grandTax.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-gray-700" colSpan="3">
+                            Grand Total ({taxRows.length} รายการ{voidTaxRows.length > 0 ? `, หักลบ ${voidTaxRows.length} VOID` : ""})
+                          </td>
+                          <td className={clsx("p-3 text-right", grandTotal < 0 ? "text-red-700" : "text-gray-900")}>
+                            ฿{grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className={clsx("p-3 text-right", grandTax < 0 ? "text-red-700" : "text-amber-700")}>
+                            ฿{grandTax.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                          </td>
                         </tr>
                       </>
                     );
