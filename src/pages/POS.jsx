@@ -331,12 +331,13 @@ export default function POS() {
   const vatableSubtotalAfterDiscount = Math.max(0, vatableSubtotal - freeItemVatableDiscount - remainingVatableDiscount);
 
   const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount - couponDiscount);
-  // ราคาที่ตั้งไว้รวม VAT อยู่แล้ว → ถอด VAT ออก: tax = price × 7/107
-  const tax = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * (7 / 107) : 0;
+  // ราคาที่ตั้งไว้รวม VAT อยู่แล้ว → ถอด VAT ออก: preVat = price × 100/107, tax = price - preVat
+  const vatablePreVat = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * (100 / 107) : 0;
+  const tax = vatableSubtotalAfterDiscount - vatablePreVat;
   const total = subtotalAfterDiscount; // ยอดสุทธิ = ราคาที่ตั้งไว้ (ไม่บวก VAT เพิ่ม)
   // สำหรับเงินสด: ปัดขึ้นเป็นจำนวนเต็ม (Math.ceil)
   const totalForCash = Math.ceil(total);
-  // ราคาสินค้าก่อน VAT (สำหรับแสดงผล เช่น ราคา 100 → pre-VAT 93.46, VAT 6.54)
+  // ราคาสินค้าก่อน VAT (สำหรับแสดงผล)
   const preVatDisplay = total - tax;
 
   const getPromoHints = () => {
