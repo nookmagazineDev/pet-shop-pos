@@ -83,7 +83,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
     // Free item rows (only the deduction part, as the item is already in cart)
     const freeRows = freeItemLines.map(fi => `
       <tr style="color:#16a34a;">
-        <td colspan="3">🎁 ของแถม (${fi.promoName})</td>
+        <td colspan="3">🎁 ${fi.name}${fi.promoName ? ` (${fi.promoName})` : ""}</td>
         <td style="text-align:right">-${(fi.price * fi.qty).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
       </tr>
     `).join("");
@@ -138,15 +138,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       <table><tbody>${rows}${freeRows}${billDiscountRow}${couponRow}</tbody></table>
       
       <div class="hr"></div>
-      <div class="flex-between">
-        <span>รวม (ก่อน VAT)</span>
-        <span>${(total - tax).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-      </div>
-      
+      ${nonVatAdjusted > 0 ? `<div class="flex-between"><span>สินค้า Non-VAT</span><span>${nonVatAdjusted.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ""}
+      ${vatableAdjusted > 0 ? `<div class="flex-between"><span>สินค้า VATable (ก่อน VAT)</span><span>${vatableAdjusted.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ""}
+      <div class="flex-between"><span>VAT 7%</span><span>${tax.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
       <div class="hr"></div>
-      <div class="flex-between"><span>NonVAT</span><span>${nonVatAdjusted.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-      <div class="flex-between"><span>VATable</span><span>${vatableAdjusted.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-      <div class="flex-between"><span>VAT 7 %</span><span>${tax.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
       <div class="flex-between bold" style="font-size:1.05em; margin-top:2px;">
         <span>สุทธิ</span><span>${total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
       </div>
@@ -239,7 +234,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
               {freeItemLines.map((fi, idx) => (
                 <tr key={`fi-free-${idx}`} className="border-b border-green-100 bg-green-50">
                   <td className="py-2 text-sm text-green-700 font-semibold pl-2" colSpan={3}>
-                    🎁 ของแถม ({fi.promoName})
+                    🎁 {fi.name}{fi.promoName ? ` (${fi.promoName})` : ""}
                   </td>
                   <td className="py-2 text-right text-sm text-green-700 font-bold">-{(fi.price*fi.qty).toLocaleString(undefined,{minimumFractionDigits:2})}</td>
                 </tr>
@@ -266,10 +261,18 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
           </table>
 
           <div className="flex flex-col items-end space-y-2 mb-8">
-            <div className="w-64 flex justify-between text-sm text-gray-500">
-              <span>ราคาสินค้า (ก่อน VAT)</span>
-              <span>{(total - tax).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
+            {nonVatAdjusted > 0 && (
+              <div className="w-64 flex justify-between text-sm text-gray-500">
+                <span>สินค้า Non-VAT</span>
+                <span>{nonVatAdjusted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            {vatableAdjusted > 0 && (
+              <div className="w-64 flex justify-between text-sm text-gray-500">
+                <span>สินค้า VATable (ก่อน VAT)</span>
+                <span>{vatableAdjusted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
             <div className="w-64 flex justify-between text-sm text-gray-500">
               <span>ภาษีมูลค่าเพิ่ม (VAT 7%)</span>
               <span>{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
