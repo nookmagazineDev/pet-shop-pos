@@ -8,10 +8,12 @@ import PurchasePackageModal from "../components/PurchasePackageModal";
 import BuyCouponModal from "../components/BuyCouponModal";
 import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
+import { usePrinter } from "../context/PrinterContext";
 import { useNavigate } from "react-router-dom";
 
 export default function POS() {
   const { isShiftOpen, isChecking } = useShift();
+  const { settings: printerSettings } = usePrinter();
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [promotions, setPromotions] = useState([]);
@@ -41,6 +43,7 @@ export default function POS() {
   const [selectedCoupon, setSelectedCoupon] = useState(null);   // coupon applied to this bill
   const [customerCoupons, setCustomerCoupons] = useState([]);   // all coupons loaded for app
   const [showCouponPicker, setShowCouponPicker] = useState(false);
+  const [pendingPackage, setPendingPackage] = useState(null);   // { customer, pkg } package pending checkout
   const barcodeRef = useRef(null);
 
   // Fetch products on load — wait for ALL data before enabling search
@@ -196,6 +199,7 @@ export default function POS() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const packagePrice = pendingPackage ? (parseFloat(pendingPackage.pkg.Price) || 0) : 0;
   
   // Promotion Calculation Engine
   const calculateDiscounts = () => {
@@ -334,11 +338,11 @@ export default function POS() {
   // ราคาที่ตั้งไว้รวม VAT อยู่แล้ว → ถอด VAT ออก: preVat = price × 100/107, tax = price - preVat
   const vatablePreVat = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * (100 / 107) : 0;
   const tax = vatableSubtotalAfterDiscount - vatablePreVat;
-  const total = subtotalAfterDiscount; // ยอดสุทธิ = ราคาที่ตั้งไว้ (ไม่บวก VAT เพิ่ม)
+  const total = subtotalAfterDiscount + packagePrice; // รวมราคาแพคเกจ (ถ้ามี)
   // สำหรับเงินสด: ปัดขึ้นเป็นจำนวนเต็ม (Math.ceil)
   const totalForCash = Math.ceil(total);
   // ราคาสินค้าก่อน VAT (สำหรับแสดงผล)
-  const preVatDisplay = total - tax;
+  const preVatDisplay = subtotalAfterDiscount - tax;
 
   const getPromoHints = () => {
     const hints = [];
@@ -399,6 +403,97 @@ export default function POS() {
     setPointsToUse(0);
     setSelectedCoupon(null);
     setShowCouponPicker(false);
+    setPendingPackage(null);
+  };
+
+  // Called from PurchasePackageModal when user confirms package selection
+  const handlePackageAdd = (customer, pkg) => {
+    setPendingPackage({ customer, pkg });
+    // Auto-select the customer
+    setCustomerName(customer.Name || "");
+    setCustomerPhone(customer.Phone || "");
+    setCustomerAddress(customer.TaxAddress || customer.Address || "");
+    setCustomerTaxId(customer.TaxID || "");
+    setCustomerSearch(customer.Name || "");
+    setIsPurchasePkgOpen(false);
+  };
+
+  // Print a popup receipt for package purchase
+  const printPackageReceipt = (pkg, customer, earnedPoints, newBalance, pmMethod) => {
+    const s = printerSettings;
+    const now = new Date();
+    const dateStr = now.toLocaleString("th-TH", {
+      year: "numeric", month: "long", day: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+    const totalPoints = (parseFloat(pkg.Points) || 0) + (parseFloat(pkg.BonusPoints) || 0);
+
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<title>ใบเสร็จซื้อแพคเกจ</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Courier New', Courier, monospace; font-size: 12px; width: 280px; padding: 10px; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .divider { border-top: 1px dashed #000; margin: 6px 0; }
+  .row { display: flex; justify-content: space-between; margin: 2px 0; }
+  .label { color: #555; }
+  .xlarge { font-size: 18px; }
+  .points { font-size: 20px; font-weight: bold; }
+  @media print {
+    @page { margin: 0; size: 80mm auto; }
+    body { width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <div class="center">
+    <div class="bold" style="font-size:15px;">${s.shopName || ""}</div>
+    ${s.shopAddress ? `<div style="font-size:10px; margin-top:2px;">${s.shopAddress}</div>` : ""}
+    ${s.shopPhone ? `<div>โทร: ${s.shopPhone}</div>` : ""}
+    ${s.shopTaxId ? `<div>เลขที่ผู้เสียภาษี: ${s.shopTaxId}</div>` : ""}
+    ${s.shopBranch ? `<div>${s.shopBranch}</div>` : ""}
+  </div>
+  <div class="divider"></div>
+  <div class="center bold" style="font-size:15px;">ใบเสร็จซื้อแพคเกจ</div>
+  <div class="divider"></div>
+  <div class="row"><span class="label">วันที่:</span><span>${dateStr}</span></div>
+  <div class="row"><span class="label">ลูกค้า:</span><span class="bold">${customer.Name || ""}</span></div>
+  ${customer.Phone ? `<div class="row"><span class="label">โทร:</span><span>${customer.Phone}</span></div>` : ""}
+  <div class="row"><span class="label">วิธีชำระ:</span><span>${pmMethod || ""}</span></div>
+  <div class="divider"></div>
+  <div class="row"><span class="label">แพคเกจ:</span><span class="bold">${pkg.Name || ""}</span></div>
+  ${pkg.Description ? `<div style="font-size:10px; color:#555; padding-left:4px;">${pkg.Description}</div>` : ""}
+  <div class="row"><span>แต้มพื้นฐาน</span><span>${Number(pkg.Points || 0).toLocaleString()} pts</span></div>
+  ${parseFloat(pkg.BonusPoints) > 0 ? `<div class="row"><span>โบนัสแต้ม</span><span>+${Number(pkg.BonusPoints).toLocaleString()} pts</span></div>` : ""}
+  <div class="divider"></div>
+  <div class="row xlarge bold">
+    <span>ยอดชำระ</span>
+    <span>฿${Number(pkg.Price).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+  </div>
+  <div class="divider"></div>
+  <div class="center" style="margin: 6px 0;">
+    <div class="label" style="font-size:11px;">แต้มที่ได้รับ</div>
+    <div class="points">★ ${totalPoints.toLocaleString()} แต้ม ★</div>
+  </div>
+  <div class="row" style="margin-top:4px;">
+    <span class="label">แต้มสะสมคงเหลือ</span>
+    <span class="bold">${Number(newBalance).toLocaleString()} pts</span>
+  </div>
+  <div class="divider"></div>
+  <div class="center" style="margin-top:6px; font-size:11px;">${s.footerNote || ""}</div>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=350,height=600,scrollbars=yes");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 300);
   };
 
   const openPreview = () => {
@@ -420,84 +515,118 @@ export default function POS() {
   };
 
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 && !pendingPackage) return;
     setIsCheckingOut(true);
 
-    // Save customer if it's a tax invoice and they typed a new customer
-    if (receiptType === "ใบกำกับภาษี" && customerName.trim() !== "") {
-      const isExisting = customers.some(c => c.Name === customerName.trim());
-      if (!isExisting) {
-        try {
-          await postApi({
-            action: "saveCustomer",
-            payload: {
-              name: customerName.trim(),
-              phone: customerPhone.trim(),
-              taxAddress: customerAddress.trim(),
-              taxId: customerTaxId.trim()
-            }
-          });
-          setCustomers(prev => [...prev, { Name: customerName.trim(), Phone: customerPhone.trim(), TaxAddress: customerAddress.trim(), TaxID: customerTaxId.trim() }]);
-        } catch (error) {
-          console.error("Error saving new customer:", error);
+    // ── Package purchase (if pending) ──
+    if (pendingPackage) {
+      const pkgRes = await postApi({
+        action: "purchasePackage",
+        payload: {
+          customerName: pendingPackage.customer.Name,
+          packageId: pendingPackage.pkg.PackageID,
         }
+      });
+      if (!pkgRes.success) {
+        setIsCheckingOut(false);
+        alert("เกิดข้อผิดพลาดในการซื้อแพคเกจ: " + (pkgRes.error || "Unknown"));
+        return;
       }
+      // Update points in customer list
+      const earned = pkgRes.earnedPoints;
+      const newBal = pkgRes.newBalance;
+      setCustomers(prev => prev.map(c =>
+        String(c.Name || "").toLowerCase() === pendingPackage.customer.Name.toLowerCase()
+          ? { ...c, Points: newBal }
+          : c
+      ));
+      // Print package receipt
+      printPackageReceipt(pendingPackage.pkg, pendingPackage.customer, earned, newBal, paymentMethod);
     }
 
-    const payload = {
-      action: "checkout",
-      payload: {
-        totalAmount: total,
-        tax: tax,
-        discount: discountAmount,
-        paymentMethod: paymentMethod,
-        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
-        receiptType,
-        customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "แต้ม (Points)") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
-        pointsUsed: paymentMethod === "แต้ม (Points)" ? Math.ceil(total) : 0,
-        couponInstanceId: selectedCoupon?.ID || ""
+    // ── Normal cart checkout (if cart has items) ──
+    if (cart.length > 0) {
+      // Save customer if it's a tax invoice and they typed a new customer
+      if (receiptType === "ใบกำกับภาษี" && customerName.trim() !== "") {
+        const isExisting = customers.some(c => c.Name === customerName.trim());
+        if (!isExisting) {
+          try {
+            await postApi({
+              action: "saveCustomer",
+              payload: {
+                name: customerName.trim(),
+                phone: customerPhone.trim(),
+                taxAddress: customerAddress.trim(),
+                taxId: customerTaxId.trim()
+              }
+            });
+            setCustomers(prev => [...prev, { Name: customerName.trim(), Phone: customerPhone.trim(), TaxAddress: customerAddress.trim(), TaxID: customerTaxId.trim() }]);
+          } catch (error) {
+            console.error("Error saving new customer:", error);
+          }
+        }
       }
-    };
 
-    const res = await postApi(payload);
-    setIsCheckingOut(false);
+      const cartTotal = subtotalAfterDiscount; // cart total without package
+      const payload = {
+        action: "checkout",
+        payload: {
+          totalAmount: cartTotal,
+          tax: tax,
+          discount: discountAmount,
+          paymentMethod: paymentMethod,
+          cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
+          receiptType,
+          customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "แต้ม (Points)") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
+          pointsUsed: paymentMethod === "แต้ม (Points)" ? Math.ceil(cartTotal) : 0,
+          couponInstanceId: selectedCoupon?.ID || ""
+        }
+      };
 
-    if (res.success) {
-      // Save snapshot for printing
-      setReceiptData({
-        cart: cart.map(c => ({ ...c })),
-        paymentMethod,
-        subtotal,
-        discountAmount,
-        freeItemLines: freeItemLines.map(f => ({ ...f })),
-        couponDiscount,
-        couponName: selectedCoupon?.CouponName || selectedCoupon?.Name || "",
-        tax,
-        total,
-        receiptType,
-        customerInfo: { customerName, customerAddress, customerTaxId },
-        taxInvoiceNo: res.taxInvoiceNo || "",
-      });
-      // Mark coupon as used
-      if (selectedCoupon?.ID) {
-        postApi({ action: "useCoupon", payload: { couponInstanceId: selectedCoupon.ID, orderId: res.orderId || "" } });
-        setCustomerCoupons(prev => prev.map(c => c.ID === selectedCoupon.ID ? { ...c, Status: "USED" } : c));
+      const res = await postApi(payload);
+      setIsCheckingOut(false);
+
+      if (res.success) {
+        // Save snapshot for printing
+        setReceiptData({
+          cart: cart.map(c => ({ ...c })),
+          paymentMethod,
+          subtotal,
+          discountAmount,
+          freeItemLines: freeItemLines.map(f => ({ ...f })),
+          couponDiscount,
+          couponName: selectedCoupon?.CouponName || selectedCoupon?.Name || "",
+          tax,
+          total: cartTotal,
+          receiptType,
+          customerInfo: { customerName, customerAddress, customerTaxId },
+          taxInvoiceNo: res.taxInvoiceNo || "",
+        });
+        // Mark coupon as used
+        if (selectedCoupon?.ID) {
+          postApi({ action: "useCoupon", payload: { couponInstanceId: selectedCoupon.ID, orderId: res.orderId || "" } });
+          setCustomerCoupons(prev => prev.map(c => c.ID === selectedCoupon.ID ? { ...c, Status: "USED" } : c));
+        }
+        // Deduct points locally after checkout
+        if (paymentMethod === "แต้ม (Points)" && customerName && cartTotal > 0) {
+          const usedPts = Math.ceil(cartTotal);
+          setCustomers(prev => prev.map(c =>
+            String(c.Name || "").toLowerCase() === customerName.toLowerCase()
+              ? { ...c, Points: Math.max(0, (parseFloat(c.Points) || 0) - usedPts) }
+              : c
+          ));
+        }
+        // Reset everything immediately
+        resetAll();
+        // Open print modal with saved snapshot
+        setIsInvoiceModalOpen(true);
+      } else {
+        alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล: " + (res.error || "Unknown"));
       }
-      // Deduct points locally after checkout
-      if (paymentMethod === "แต้ม (Points)" && customerName && total > 0) {
-        const usedPts = Math.ceil(total);
-        setCustomers(prev => prev.map(c =>
-          String(c.Name || "").toLowerCase() === customerName.toLowerCase()
-            ? { ...c, Points: Math.max(0, (parseFloat(c.Points) || 0) - usedPts) }
-            : c
-        ));
-      }
-      // Reset everything immediately
-      resetAll();
-      // Open print modal with saved snapshot
-      setIsInvoiceModalOpen(true);
     } else {
-      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล: " + (res.error || "Unknown"));
+      // Package only — no cart items
+      setIsCheckingOut(false);
+      resetAll();
     }
   };
 
@@ -609,7 +738,7 @@ export default function POS() {
 
         {/* Cart Listing */}
         <div className="flex-1 overflow-auto p-4 flex flex-col">
-          {cart.length === 0 ? (
+          {cart.length === 0 && !pendingPackage ? (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-4 min-h-[300px]">
               <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center">
                 <ShoppingCart size={40} className="opacity-50" />
@@ -618,6 +747,33 @@ export default function POS() {
             </div>
           ) : (
             <div className="flex-1 space-y-3">
+              {/* Pending package row */}
+              {pendingPackage && (() => {
+                const { customer, pkg } = pendingPackage;
+                const totalPts = (parseFloat(pkg.Points) || 0) + (parseFloat(pkg.BonusPoints) || 0);
+                return (
+                  <div className="flex items-center gap-4 p-4 rounded-xl border-2 border-yellow-300 bg-yellow-50">
+                    <div className="w-16 h-16 rounded-lg bg-yellow-100 flex items-center justify-center text-yellow-600 text-2xl shrink-0">🎁</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-bold text-yellow-900">{pkg.Name}</h4>
+                        <span className="text-xs font-bold text-yellow-700 bg-yellow-200 rounded-full px-2 py-0.5">แพคเกจ</span>
+                      </div>
+                      <p className="text-xs text-yellow-700 mt-0.5">ลูกค้า: <span className="font-semibold">{customer.Name}</span></p>
+                      <div className="flex items-center gap-1 mt-0.5 text-xs text-yellow-600 font-semibold">
+                        <Star size={11} /> ได้รับ {totalPts.toLocaleString()} แต้ม
+                        {parseFloat(pkg.BonusPoints) > 0 && <span className="text-green-600">(รวมโบนัส)</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-bold text-yellow-900 text-lg">฿{Number(pkg.Price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    </div>
+                    <button onClick={() => setPendingPackage(null)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1">
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                );
+              })()}
               {cart.map(item => (
                 <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-primary/30 transition-colors group bg-white shadow-sm hover:shadow-md">
                   <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover bg-gray-100" />
@@ -747,6 +903,12 @@ export default function POS() {
               <span>ภาษีมูลค่าเพิ่ม 7% (รวมในราคาแล้ว)</span>
               <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
+            {pendingPackage && (
+              <div className="flex justify-between text-yellow-700 font-bold bg-yellow-50 px-2 py-1 -mx-2 rounded-lg">
+                <span className="flex items-center gap-1.5"><Gift size={14} /> แพคเกจ: {pendingPackage.pkg.Name}</span>
+                <span>฿{Number(pendingPackage.pkg.Price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
             <div className="border-t border-gray-200 my-2 pt-2"></div>
             <div className="flex justify-between items-end">
               <span className="text-gray-900 font-medium pb-1">ยอดรวมทั้งหมด</span>
@@ -1140,7 +1302,7 @@ export default function POS() {
               <button
                 onClick={handleCheckout}
                 disabled={
-                  cart.length === 0 ||
+                  (cart.length === 0 && !pendingPackage) ||
                   isCheckingOut ||
                   (paymentMethod === "เงินสด" && (cashReceived === "" || parseFloat(cashReceived) < totalForCash)) ||
                   (paymentMethod === "แต้ม (Points)" && (parseFloat(customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase())?.Points) || 0) < Math.ceil(total))
@@ -1196,16 +1358,7 @@ export default function POS() {
         isOpen={isPurchasePkgOpen}
         onClose={() => setIsPurchasePkgOpen(false)}
         customers={customers}
-        onPointsUpdated={(name, newBalance) => {
-          setCustomers(prev => {
-            const exists = prev.some(c => String(c.Name || "").toLowerCase() === name.toLowerCase());
-            if (exists) {
-              return prev.map(c => String(c.Name || "").toLowerCase() === name.toLowerCase() ? { ...c, Points: newBalance } : c);
-            }
-            // Customer not in list yet — add them
-            return [...prev, { Name: name, Points: newBalance }];
-          });
-        }}
+        onAddToCart={handlePackageAdd}
       />
     </div>
   );
