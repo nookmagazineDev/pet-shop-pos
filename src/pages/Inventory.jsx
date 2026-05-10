@@ -157,11 +157,14 @@ export default function Inventory() {
     }
   };
 
-  const filteredStock = products.filter(item => 
-    item.Name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    item.Barcode?.toString().includes(searchQuery) ||
-    item.Location?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredStock = products.filter(item => {
+    const q = searchQuery.toLowerCase();
+    return (
+      String(item.Name || "").toLowerCase().includes(q) ||
+      String(item.Barcode || "").includes(searchQuery) ||
+      String(item.Location || "").toLowerCase().includes(q)
+    );
+  });
 
   const handleAddReceiveItem = (e) => {
     e.preventDefault();
@@ -409,11 +412,14 @@ export default function Inventory() {
       }));
       exportToExcel(exportData, "MasterStock", "Master_Stock_Inventory");
     } else if (activeTab === "store") {
-      const exportData = storeStock.filter(item => 
-        item.Name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        item.Barcode?.toString().includes(searchQuery) ||
-        item.StoreLocation?.toLowerCase().includes(searchQuery.toLowerCase())
-      ).map(m => ({
+      const exportData = storeStock.filter(item => {
+        const q = searchQuery.toLowerCase();
+        return (
+          String(item.Name || "").toLowerCase().includes(q) ||
+          String(item.Barcode || "").includes(searchQuery) ||
+          String(item.StoreLocation || "").toLowerCase().includes(q)
+        );
+      }).map(m => ({
         "บาร์โค้ด": m.Barcode,
         "ชื่อสินค้า": m.Name,
         "จำนวนหน้าร้าน": m.Quantity || 0,
