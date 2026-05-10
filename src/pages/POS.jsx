@@ -293,7 +293,7 @@ export default function POS() {
       const freeItem = cart.find(c => String(c.Barcode) === freeBc);
       if (freeItem) {
         const qty = Math.min(freeItem.qty, freeQty);
-        freeItemLines.push({ name: freeItem.name, price: freeItem.price, qty, promoName: promo.Name });
+        freeItemLines.push({ name: freeItem.name, price: freeItem.price, qty, promoName: promo.Name, vatStatus: freeItem.vatStatus || "" });
       }
     }
   });
@@ -316,8 +316,20 @@ export default function POS() {
   })();
 
   const vatableSubtotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? 0 : (item.price * item.qty)), 0);
-  const vatableRatio = subtotal > 0 ? (vatableSubtotal / subtotal) : 0;
-  const vatableSubtotalAfterDiscount = vatableSubtotal - ((discountAmount + couponDiscount) * vatableRatio);
+
+  // ── Precise VAT calculation ──
+  // 1. FREE_ITEM promo discounts: attributed to the specific item's VAT bucket
+  const freeItemVatableDiscount = freeItemLines.reduce((sum, fi) => sum + (fi.vatStatus !== "NON VAT" ? fi.price * fi.qty : 0), 0);
+  const freeItemNonVatableDiscount = freeItemLines.reduce((sum, fi) => sum + (fi.vatStatus === "NON VAT" ? fi.price * fi.qty : 0), 0);
+
+  // 2. Remaining discounts (manual/percent promo + coupon) distributed proportionally
+  const remainingDiscount = (discountAmount - freeItemVatableDiscount - freeItemNonVatableDiscount) + couponDiscount;
+  const vatableRatio = subtotal > 0 ? vatableSubtotal / subtotal : 0;
+  const remainingVatableDiscount = remainingDiscount * vatableRatio;
+
+  // 3. Vatable amount after all discounts (VAT-inclusive)
+  const vatableSubtotalAfterDiscount = Math.max(0, vatableSubtotal - freeItemVatableDiscount - remainingVatableDiscount);
+
   const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount - couponDiscount);
   // ราคาที่ตั้งไว้รวม VAT อยู่แล้ว → ถอด VAT ออก: tax = price × 7/107
   const tax = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * (7 / 107) : 0;

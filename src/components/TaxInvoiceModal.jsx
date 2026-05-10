@@ -19,11 +19,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
   try { userObj = JSON.parse(sessionStorage.getItem("pos_user") || "{}"); } catch (e) {}
   const empName = userObj.displayName || "พนักงาน";
 
-  // ราคา = VAT inclusive → ถอด VAT ออก: discount ที่ proportionate
+  // ราคา = VAT inclusive → ถอด VAT ออก
+  // กระจาย discount ทั้งหมด (discountAmount + couponDiscount) ตามสัดส่วน NON-VAT ของบิล
   const nonVatTotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? (item.price * item.qty) : 0), 0);
-  const nonVatAdjusted = subtotal > 0 ? nonVatTotal - (discountAmount * (nonVatTotal / subtotal)) : 0;
-  // vatableAdjusted = ราคา VAT items หลังหักส่วนลด (ยังรวม VAT 7% อยู่)
-  const vatableIncl = total - nonVatAdjusted;
+  const totalDiscount = discountAmount + couponDiscount;
+  const nonVatAdjusted = subtotal > 0 ? Math.max(0, nonVatTotal - (totalDiscount * (nonVatTotal / subtotal))) : 0;
+  // vatableIncl = ยอด VAT items หลังหักส่วนลด (ยังรวม VAT 7%)
+  const vatableIncl = Math.max(0, total - nonVatAdjusted);
   // ราคาก่อน VAT = vatableIncl × 100/107
   const vatableAdjusted = vatableIncl > 0 ? vatableIncl * (100 / 107) : 0;
   // ---------------------------------------------------------------------------
