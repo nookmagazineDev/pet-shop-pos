@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { X, Star, Gift, Loader2, Check, Users, ChevronRight } from "lucide-react";
+import { X, Star, Gift, Loader2, Check, Users, ChevronRight, Printer } from "lucide-react";
 import { fetchApi, postApi } from "../api";
+import { usePrinter } from "../context/PrinterContext";
 
 export default function PurchasePackageModal({ isOpen, onClose, customers, onPointsUpdated }) {
+  const { settings: printerSettings } = usePrinter();
   const [packages, setPackages] = useState([]);
   const [isLoadingPkgs, setIsLoadingPkgs] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -11,6 +13,7 @@ export default function PurchasePackageModal({ isOpen, onClose, customers, onPoi
   const [selectedPkg, setSelectedPkg] = useState(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
+  const [purchaseResult, setPurchaseResult] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -26,7 +29,92 @@ export default function PurchasePackageModal({ isOpen, onClose, customers, onPoi
     setCustomerSearch("");
     setSelectedPkg(null);
     setSuccessMsg("");
+    setPurchaseResult(null);
     onClose();
+  };
+
+  const printPackageReceipt = () => {
+    if (!purchaseResult) return;
+    const { pkg, customer, earnedPoints, newBalance, purchasedAt } = purchaseResult;
+    const s = printerSettings;
+    const dateStr = new Date(purchasedAt).toLocaleString("th-TH", {
+      year: "numeric", month: "long", day: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+    const totalPoints = (parseFloat(pkg.Points) || 0) + (parseFloat(pkg.BonusPoints) || 0);
+
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<title>ใบเสร็จซื้อแพคเกจ</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Courier New', Courier, monospace; font-size: 12px; width: 280px; padding: 10px; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .divider { border-top: 1px dashed #000; margin: 6px 0; }
+  .row { display: flex; justify-content: space-between; margin: 2px 0; }
+  .label { color: #555; }
+  .large { font-size: 15px; }
+  .xlarge { font-size: 18px; }
+  .points { font-size: 14px; font-weight: bold; }
+  @media print {
+    @page { margin: 0; size: 80mm auto; }
+    body { width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <div class="center">
+    <div class="bold large">${s.shopName || ""}</div>
+    ${s.shopAddress ? `<div style="font-size:10px; margin-top:2px;">${s.shopAddress}</div>` : ""}
+    ${s.shopPhone ? `<div>โทร: ${s.shopPhone}</div>` : ""}
+    ${s.shopTaxId ? `<div>เลขที่ผู้เสียภาษี: ${s.shopTaxId}</div>` : ""}
+    ${s.shopBranch ? `<div>${s.shopBranch}</div>` : ""}
+  </div>
+  <div class="divider"></div>
+  <div class="center bold large">ใบเสร็จซื้อแพคเกจ</div>
+  <div class="divider"></div>
+  <div class="row"><span class="label">วันที่:</span><span>${dateStr}</span></div>
+  <div class="row"><span class="label">ลูกค้า:</span><span class="bold">${customer.Name || ""}</span></div>
+  ${customer.Phone ? `<div class="row"><span class="label">โทร:</span><span>${customer.Phone}</span></div>` : ""}
+  <div class="divider"></div>
+  <div class="row"><span class="label">แพคเกจ:</span><span class="bold">${pkg.Name || ""}</span></div>
+  ${pkg.Description ? `<div style="font-size:10px; color:#555; padding-left:4px;">${pkg.Description}</div>` : ""}
+  <div class="row">
+    <span>แต้มพื้นฐาน</span>
+    <span>${Number(pkg.Points || 0).toLocaleString()} pts</span>
+  </div>
+  ${parseFloat(pkg.BonusPoints) > 0 ? `<div class="row">
+    <span>โบนัสแต้ม</span>
+    <span>+${Number(pkg.BonusPoints).toLocaleString()} pts</span>
+  </div>` : ""}
+  <div class="divider"></div>
+  <div class="row xlarge bold">
+    <span>ยอดชำระ</span>
+    <span>฿${Number(pkg.Price).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+  </div>
+  <div class="divider"></div>
+  <div class="center" style="margin: 6px 0;">
+    <div class="label" style="font-size:11px;">แต้มที่ได้รับ</div>
+    <div class="points" style="font-size:20px;">★ ${totalPoints.toLocaleString()} แต้ม ★</div>
+  </div>
+  <div class="row" style="margin-top:4px;">
+    <span class="label">แต้มสะสมคงเหลือ</span>
+    <span class="bold">${Number(newBalance).toLocaleString()} pts</span>
+  </div>
+  <div class="divider"></div>
+  <div class="center" style="margin-top:6px; font-size:11px;">${s.footerNote || ""}</div>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=350,height=600,scrollbars=yes");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 300);
   };
 
   const handlePurchase = async () => {
@@ -43,6 +131,13 @@ export default function PurchasePackageModal({ isOpen, onClose, customers, onPoi
     if (res.success) {
       const earned = res.earnedPoints;
       const newBal = res.newBalance;
+      setPurchaseResult({
+        pkg: selectedPkg,
+        customer: selectedCustomer,
+        earnedPoints: earned,
+        newBalance: newBal,
+        purchasedAt: new Date().toISOString(),
+      });
       setSuccessMsg(`เพิ่ม ${earned.toLocaleString()} แต้มให้ "${selectedCustomer.Name}" สำเร็จ! ยอดคงเหลือ: ${newBal.toLocaleString()} แต้ม`);
       onPointsUpdated(selectedCustomer.Name, newBal);
     } else {
@@ -79,9 +174,14 @@ export default function PurchasePackageModal({ isOpen, onClose, customers, onPoi
                 <Check size={32} className="text-green-600" />
               </div>
               <p className="text-green-700 font-semibold text-base">{successMsg}</p>
-              <button onClick={handleClose} className="px-6 py-2.5 bg-primary text-white rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity">
-                ปิด
-              </button>
+              <div className="flex gap-3 justify-center">
+                <button onClick={printPackageReceipt} className="px-5 py-2.5 bg-gray-700 text-white rounded-xl font-semibold text-sm hover:bg-gray-800 transition-colors flex items-center gap-2">
+                  <Printer size={15} /> พิมพ์ใบเสร็จ
+                </button>
+                <button onClick={handleClose} className="px-5 py-2.5 bg-primary text-white rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity">
+                  ปิด
+                </button>
+              </div>
             </div>
           ) : (
             <>
