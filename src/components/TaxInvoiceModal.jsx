@@ -19,15 +19,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
   try { userObj = JSON.parse(sessionStorage.getItem("pos_user") || "{}"); } catch (e) {}
   const empName = userObj.displayName || "พนักงาน";
 
-  // ราคา = VAT inclusive → ถอด VAT ออก
-  // กระจาย discount ทั้งหมด (discountAmount + couponDiscount) ตามสัดส่วน NON-VAT ของบิล
-  const nonVatTotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? (item.price * item.qty) : 0), 0);
-  const totalDiscount = discountAmount + couponDiscount;
-  const nonVatAdjusted = subtotal > 0 ? Math.max(0, nonVatTotal - (totalDiscount * (nonVatTotal / subtotal))) : 0;
-  // vatableIncl = ยอด VAT items หลังหักส่วนลด (ยังรวม VAT 7%)
-  const vatableIncl = Math.max(0, total - nonVatAdjusted);
-  // ราคาก่อน VAT = vatableIncl × 100/107
-  const vatableAdjusted = vatableIncl > 0 ? vatableIncl * (100 / 107) : 0;
+  // ดึงค่าจาก tax prop ที่คำนวณถูกต้องแล้วใน POS.jsx
+  // tax = vatableInclAfterDiscount × 7/107  →  vatableIncl = tax × 107/7
+  const vatableInclAfterDiscount = tax > 0 ? tax * (107 / 7) : 0;
+  const vatableAdjusted = tax > 0 ? tax * (100 / 7) : 0;   // ราคา VATable ก่อน VAT
+  const nonVatAdjusted = Math.max(0, total - vatableInclAfterDiscount); // ราคา NON VAT หลังส่วนลด
   // ---------------------------------------------------------------------------
 
   const handlePrint = async () => {
