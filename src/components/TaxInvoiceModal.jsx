@@ -120,7 +120,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       <div class="center bold" style="font-size:1.1em">${settings.shopName}</div>
       <div class="center" style="font-size:0.9em">${settings.shopAddress || "สาขา 00001"}</div>
       <div class="center">TAX# ${settings.shopTaxId} ${settings.shopBranch}</div>
-      <div class="center bold" style="margin-top:2px">ใบกำกับภาษี / ใบเสร็จรับเงิน</div>
+      ${receiptType === "ใบกำกับภาษี"
+        ? `<div class="center bold" style="margin-top:2px">ใบกำกับภาษี / ใบเสร็จรับเงิน</div>`
+        : `<div class="center bold" style="margin-top:2px">ใบเสร็จรับเงินอย่างย่อ</div>
+           <div class="center bold">ใบเสร็จรับเงิน</div>`
+      }
       <div class="hr"></div>
       <table>
         <thead><tr>
@@ -169,7 +173,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
         
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-100 print:hidden">
-          <h2 className="text-xl font-bold">ตัวอย่างใบกำกับภาษี ({settings.paperWidth}mm)</h2>
+          <h2 className="text-xl font-bold">
+            {receiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษี / ใบเสร็จรับเงิน" : "ใบเสร็จรับเงิน"} ({settings.paperWidth}mm)
+          </h2>
           <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
             <X size={24} />
           </button>
@@ -182,14 +188,19 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
             <p className="text-gray-500 mt-1">{settings.shopAddress}</p>
             <p className="text-gray-500">โทร: {settings.shopPhone}</p>
             <p className="text-gray-500">เลขประจำตัวผู้เสียภาษี: {settings.shopTaxId} {settings.shopBranch}</p>
-            <h2 className="text-xl font-bold mt-4">
-              {receiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษีเต็มรูป / Tax Invoice" : "ใบกำกับภาษีอย่างย่อ / ABB Tax Invoice"}
-            </h2>
+            {receiptType === "ใบกำกับภาษี" ? (
+              <h2 className="text-xl font-bold mt-4">ใบกำกับภาษี / ใบเสร็จรับเงิน</h2>
+            ) : (
+              <div className="mt-4">
+                <h2 className="text-xl font-bold leading-tight">ใบเสร็จรับเงินอย่างย่อ</h2>
+                <h2 className="text-xl font-bold leading-tight">ใบเสร็จรับเงิน</h2>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between items-end mb-4 text-sm text-gray-600 border-b border-gray-100 pb-4">
             <div>
-              <p>เลขที่ใบกำกับภาษี: <span className="uppercase font-semibold">{recNo.toUpperCase()}</span></p>
+              <p>{receiptType === "ใบกำกับภาษี" ? "เลขที่ใบกำกับภาษี:" : "เลขที่ใบเสร็จ:"} <span className="uppercase font-semibold">{recNo.toUpperCase()}</span></p>
               <p>วันที่: {new Date().toLocaleDateString('th-TH')} {new Date().toLocaleTimeString('th-TH')}</p>
               <p>ช่องทางชำระ: {paymentMethod}</p>
             </div>
