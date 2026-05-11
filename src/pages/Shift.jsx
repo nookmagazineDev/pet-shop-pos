@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Clock, DollarSign, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Clock, DollarSign, CheckCircle2, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
@@ -31,12 +31,43 @@ export default function Shift() {
   const [currentShiftId, setCurrentShiftId] = useState("");
   const [currentShiftOpenTime, setCurrentShiftOpenTime] = useState("");
 
-  useEffect(() => {
-    // Determine shift state and calculate metrics from Google Sheets
-    Promise.all([
-      fetchApi("getShifts"),
-      fetchApi("getTransactions")
-    ]).then(([shiftsData, txData]) => {
+  // Parse payment method string into { methodName: amount } map.
+  // Supports:
+  //   "เงินสด"                          → single method, full amount
+  //   "เงินสด:1000 + โอนเข้าบัญชี:650"  → split payment with encoded amounts
+  //   "เงินสด + โอนเข้าบัญชี"            → legacy split (equal split fallback)
+  const parsePaymentAmounts = (method, totalAmt) => {
+    const out = {};
+    if (!method) return out;
+    const addTo = (m, a) => { out[m] = (out[m] || 0) + a; };
+    if (method.includes(":")) {
+      // Encoded format: "MethodA:amtA + MethodB:amtB"
+      method.split(" + ").forEach(part => {
+        const ci = part.lastIndexOf(":");
+        if (ci === -1) { addTo(part.trim(), totalAmt); return; }
+        addTo(part.slice(0, ci).trim(), parseFloat(part.slice(ci + 1)) || 0);
+      });
+    } else if (method.includes(" + ")) {
+      // Legacy: split equally
+      const parts = method.split(" + ").map(p => p.trim()).filter(Boolean);
+      const share = totalAmt / parts.length;
+      parts.forEach(m => addTo(m, share));
+    } else {
+      addTo(method.trim(), totalAmt);
+    }
+    return out;
+  };
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadShiftData = useCallback(async (showLoader = false) => {
+    if (showLoader) setIsRefreshing(true);
+    try {
+      const [shiftsData, txData] = await Promise.all([
+        fetchApi("getShifts"),
+        fetchApi("getTransactions")
+      ]);
+
       if (Array.isArray(shiftsData)) {
         const lastShift = shiftsData.length > 0 ? shiftsData[shiftsData.length - 1] : null;
         if (lastShift && lastShift.Status === "OPEN") {
@@ -56,35 +87,6 @@ export default function Shift() {
           let oPending = {};
 
           const openTime = new Date(lastShift.OpenTime);
-
-          // Parse payment method string into { methodName: amount } map.
-          // Supports:
-          //   "เงินสด"                          → single method, full amount
-          //   "เงินสด:1000 + โอนเข้าบัญชี:650"  → split payment with encoded amounts
-          //   "เงินสด + โอนเข้าบัญชี"            → legacy split (equal split fallback)
-          const parsePaymentAmounts = (method, totalAmt) => {
-            const out = {};
-            if (!method) return out;
-            const addTo = (m, a) => { out[m] = (out[m] || 0) + a; };
-            if (method.includes(":")) {
-              // Encoded format: "MethodA:amtA + MethodB:amtB"
-              method.split(" + ").forEach(part => {
-                const ci = part.lastIndexOf(":");
-                if (ci === -1) { addTo(part.trim(), totalAmt); return; }
-                addTo(part.slice(0, ci).trim(), parseFloat(part.slice(ci + 1)) || 0);
-              });
-            } else if (method.includes(" + ")) {
-              // Legacy: split equally
-              const parts = method.split(" + ").map(p => p.trim()).filter(Boolean);
-              const share = totalAmt / parts.length;
-              parts.forEach(m => addTo(m, share));
-            } else {
-              addTo(method.trim(), totalAmt);
-            }
-            return out;
-          };
-
-          const KNOWN_METHODS = new Set(["เงินสด","เงินโอน","โอนเข้าบัญชี","สแกน QR","บัตรเครดิต","เครดิต"]);
 
           // Aggregate transactions since shift opened
           if (Array.isArray(txData)) {
@@ -131,12 +133,17 @@ export default function Shift() {
           setCurrentShiftOpenTime("");
         }
       }
-    }).catch(() => {
+    } catch {
       setShiftState("closed");
-    }).finally(() => {
+    } finally {
       setIsPageLoading(false);
-    });
-  }, []);
+      if (showLoader) setIsRefreshing(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    loadShiftData(false);
+  }, [loadShiftData]);
 
   const handleOpenShift = async (e) => {
     e.preventDefault();
@@ -242,12 +249,24 @@ export default function Shift() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight text-gray-900">จัดการกะ (Shift Management)</h2>
-        <div className={clsx(
-          "flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-sm",
-          shiftState === "open" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-        )}>
-          {shiftState === "open" ? <CheckCircle2 size={18} /> : <Clock size={18} />}
-          {shiftState === "open" ? "กำลังเปิดกะ" : "กะปิดอยู่"}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => loadShiftData(true)}
+            disabled={isRefreshing}
+            title="รีเฟรชข้อมูลกะ"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={15} className={isRefreshing ? "animate-spin" : ""} />
+            รีเฟรช
+          </button>
+          <div className={clsx(
+            "flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-sm",
+            shiftState === "open" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+          )}>
+            {shiftState === "open" ? <CheckCircle2 size={18} /> : <Clock size={18} />}
+            {shiftState === "open" ? "กำลังเปิดกะ" : "กะปิดอยู่"}
+          </div>
         </div>
       </div>
 
