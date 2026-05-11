@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Users, Search, Star, Ticket, ChevronDown, ChevronUp, Phone, MapPin, Hash, Loader2 } from "lucide-react";
+import { Users, Search, Star, Ticket, ChevronDown, ChevronUp, Phone, MapPin, Hash, Loader2, Download, X } from "lucide-react";
 import { fetchApi } from "../api";
+import { exportToExcel } from "../utils/excelExport";
 
 function formatDate(val) {
   if (!val) return "-";
@@ -15,6 +16,7 @@ export default function Members() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState(null);
+  const [sortPoints, setSortPoints] = useState(""); // "" | "asc" | "desc"
 
   useEffect(() => {
     Promise.all([
@@ -27,15 +29,22 @@ export default function Members() {
     });
   }, []);
 
-  const filtered = customers.filter((c) => {
-    const q = search.toLowerCase();
-    if (!q) return true;
-    return (
-      String(c.Name || "").toLowerCase().includes(q) ||
-      String(c.Phone || "").includes(q) ||
-      String(c.CustomerID || "").toLowerCase().includes(q)
-    );
-  });
+  const filtered = customers
+    .filter((c) => {
+      const q = search.toLowerCase();
+      if (!q) return true;
+      return (
+        String(c.Name || "").toLowerCase().includes(q) ||
+        String(c.Phone || "").includes(q) ||
+        String(c.CustomerID || "").toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      if (!sortPoints) return 0;
+      const pa = parseFloat(a.Points) || 0;
+      const pb = parseFloat(b.Points) || 0;
+      return sortPoints === "asc" ? pa - pb : pb - pa;
+    });
 
   const getActiveCoupons = (customerName) =>
     coupons.filter(
@@ -46,6 +55,25 @@ export default function Members() {
 
   const toggleExpand = (id) => {
     setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  const cycleSortPoints = () => {
+    setSortPoints(prev => prev === "" ? "desc" : prev === "desc" ? "asc" : "");
+  };
+
+  const handleExport = () => {
+    if (filtered.length === 0) { alert("ไม่มีข้อมูลที่จะส่งออก"); return; }
+    const rows = filtered.map((c, i) => ({
+      "ลำดับ": i + 1,
+      "รหัสสมาชิก": c.CustomerID || "-",
+      "ชื่อ": c.Name || "-",
+      "เบอร์โทร": c.Phone || "-",
+      "เลขภาษี": c.TaxID || "-",
+      "เครดิตสะสม": parseFloat(c.Points) || 0,
+      "อัพเดทเครดิตล่าสุด": formatDate(c.PointsUpdatedAt),
+      "วันที่สมัคร": formatDate(c.CreatedAt),
+    }));
+    exportToExcel(rows, "Members", "Members_List");
   };
 
   return (
@@ -60,19 +88,47 @@ export default function Members() {
             ดูและจัดการข้อมูลลูกค้าสมาชิกทั้งหมด
           </p>
         </div>
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-colors shadow-sm"
+        >
+          <Download size={16} /> Export Excel
+        </button>
+      </div>
 
+      {/* Filter bar */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
         {/* Search */}
-        <div className="relative w-full sm:w-72">
-          <Search
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-          />
+        <div className="relative flex-1 min-w-[220px]">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ค้นหาชื่อ / เบอร์โทร / รหัสสมาชิก..."
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white shadow-sm"
+            className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
           />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Sort by points */}
+        <button
+          onClick={cycleSortPoints}
+          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
+            sortPoints
+              ? "border-yellow-400 bg-yellow-50 text-yellow-700"
+              : "border-gray-200 bg-gray-50 text-gray-500 hover:border-yellow-300 hover:text-yellow-600"
+          }`}
+        >
+          <Star size={14} />
+          เครดิต{sortPoints === "desc" ? " ↓ มากสุด" : sortPoints === "asc" ? " ↑ น้อยสุด" : " (เรียงลำดับ)"}
+        </button>
+
+        <div className="text-sm text-gray-400 ml-auto">
+          แสดง <span className="font-semibold text-gray-700">{filtered.length}</span> / {customers.length} สมาชิก
         </div>
       </div>
 
@@ -97,7 +153,16 @@ export default function Members() {
                 <tr className="border-b border-indigo-100 text-sm font-semibold text-indigo-800">
                   <th className="py-3 px-6">ชื่อ</th>
                   <th className="py-3 px-4">เบอร์โทร</th>
-                  <th className="py-3 px-4 text-right">เครดิตสะสม</th>
+                  <th
+                    className="py-3 px-4 text-right cursor-pointer select-none hover:bg-indigo-100/60 transition-colors"
+                    onClick={cycleSortPoints}
+                    title="คลิกเพื่อเรียงลำดับ"
+                  >
+                    <span className="flex items-center justify-end gap-1">
+                      เครดิตสะสม
+                      {sortPoints === "desc" ? " ↓" : sortPoints === "asc" ? " ↑" : " ↕"}
+                    </span>
+                  </th>
                   <th className="py-3 px-4">อัพเดทเครดิตล่าสุด</th>
                   <th className="py-3 px-4">วันที่สมัคร</th>
                   <th className="py-3 px-4 text-center w-12"></th>
@@ -119,36 +184,22 @@ export default function Members() {
                       }`}
                     >
                       <td className="py-3.5 px-6">
-                        <div className="font-semibold text-gray-900 text-sm">
-                          {c.Name || "-"}
-                        </div>
+                        <div className="font-semibold text-gray-900 text-sm">{c.Name || "-"}</div>
                         {c.CustomerID && (
-                          <div className="text-[10px] text-gray-400 font-mono mt-0.5">
-                            {c.CustomerID}
-                          </div>
+                          <div className="text-[10px] text-gray-400 font-mono mt-0.5">{c.CustomerID}</div>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-sm text-gray-600">
-                        {c.Phone || "-"}
-                      </td>
+                      <td className="py-3.5 px-4 text-sm text-gray-600">{c.Phone || "-"}</td>
                       <td className="py-3.5 px-4 text-right">
                         <span className="inline-flex items-center gap-1 bg-yellow-50 border border-yellow-100 text-yellow-700 px-2.5 py-1 rounded-full text-xs font-bold">
                           <Star size={11} />
                           {Number(c.Points || 0).toLocaleString()}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-sm text-gray-500">
-                        {formatDate(c.PointsUpdatedAt)}
-                      </td>
-                      <td className="py-3.5 px-4 text-sm text-gray-500">
-                        {formatDate(c.CreatedAt)}
-                      </td>
+                      <td className="py-3.5 px-4 text-sm text-gray-500">{formatDate(c.PointsUpdatedAt)}</td>
+                      <td className="py-3.5 px-4 text-sm text-gray-500">{formatDate(c.CreatedAt)}</td>
                       <td className="py-3.5 px-4 text-center text-gray-400">
-                        {isExpanded ? (
-                          <ChevronUp size={16} />
-                        ) : (
-                          <ChevronDown size={16} />
-                        )}
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </td>
                     </tr>,
 
@@ -163,57 +214,19 @@ export default function Members() {
                                 <Users size={14} /> ข้อมูลสมาชิก
                               </h4>
                               <div className="space-y-2 text-sm">
-                                <InfoRow
-                                  icon={<Hash size={13} />}
-                                  label="รหัสสมาชิก"
-                                  value={c.CustomerID || "-"}
-                                  mono
-                                />
-                                <InfoRow
-                                  icon={<Users size={13} />}
-                                  label="ชื่อ"
-                                  value={c.Name || "-"}
-                                />
-                                <InfoRow
-                                  icon={<Phone size={13} />}
-                                  label="เบอร์โทร"
-                                  value={c.Phone || "-"}
-                                />
-                                <InfoRow
-                                  icon={<Hash size={13} />}
-                                  label="เลขภาษี"
-                                  value={c.TaxID || "-"}
-                                  mono
-                                />
-                                <InfoRow
-                                  icon={<MapPin size={13} />}
-                                  label="ที่อยู่ภาษี"
-                                  value={c.TaxAddress || "-"}
-                                />
-                                <InfoRow
-                                  icon={<MapPin size={13} />}
-                                  label="ที่อยู่"
-                                  value={c.Address || "-"}
-                                />
+                                <InfoRow icon={<Hash size={13} />} label="รหัสสมาชิก" value={c.CustomerID || "-"} mono />
+                                <InfoRow icon={<Users size={13} />} label="ชื่อ" value={c.Name || "-"} />
+                                <InfoRow icon={<Phone size={13} />} label="เบอร์โทร" value={c.Phone || "-"} />
+                                <InfoRow icon={<Hash size={13} />} label="เลขภาษี" value={c.TaxID || "-"} mono />
+                                <InfoRow icon={<MapPin size={13} />} label="ที่อยู่ภาษี" value={c.TaxAddress || "-"} />
+                                <InfoRow icon={<MapPin size={13} />} label="ที่อยู่" value={c.Address || "-"} />
                                 <InfoRow
                                   icon={<Star size={13} />}
                                   label="เครดิตสะสม"
-                                  value={
-                                    <span className="font-bold text-yellow-600">
-                                      {Number(c.Points || 0).toLocaleString()} pts
-                                    </span>
-                                  }
+                                  value={<span className="font-bold text-yellow-600">{Number(c.Points || 0).toLocaleString()} pts</span>}
                                 />
-                                <InfoRow
-                                  icon={<Star size={13} />}
-                                  label="อัพเดทเครดิตล่าสุด"
-                                  value={formatDate(c.PointsUpdatedAt)}
-                                />
-                                <InfoRow
-                                  icon={<Users size={13} />}
-                                  label="วันที่สมัคร"
-                                  value={formatDate(c.CreatedAt)}
-                                />
+                                <InfoRow icon={<Star size={13} />} label="อัพเดทเครดิตล่าสุด" value={formatDate(c.PointsUpdatedAt)} />
+                                <InfoRow icon={<Users size={13} />} label="วันที่สมัคร" value={formatDate(c.CreatedAt)} />
                               </div>
                             </div>
 
@@ -244,14 +257,10 @@ export default function Members() {
                                           {cc.CouponName || cc.CouponID || "คูปอง"}
                                         </div>
                                         {cc.ExpiryDate && (
-                                          <div className="text-[11px] text-gray-400 mt-0.5">
-                                            หมดอายุ: {formatDate(cc.ExpiryDate)}
-                                          </div>
+                                          <div className="text-[11px] text-gray-400 mt-0.5">หมดอายุ: {formatDate(cc.ExpiryDate)}</div>
                                         )}
                                         {cc.CouponID && (
-                                          <div className="text-[10px] text-gray-400 font-mono mt-0.5">
-                                            {cc.CouponID}
-                                          </div>
+                                          <div className="text-[10px] text-gray-400 font-mono mt-0.5">{cc.CouponID}</div>
                                         )}
                                       </div>
                                       <span className="shrink-0 text-[11px] bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full font-semibold">
@@ -272,13 +281,6 @@ export default function Members() {
             </table>
           )}
         </div>
-
-        {/* Footer count */}
-        {!isLoading && (
-          <div className="px-6 py-3 border-t border-gray-100 text-xs text-gray-400">
-            แสดง {filtered.length} จาก {customers.length} สมาชิก
-          </div>
-        )}
       </div>
     </div>
   );
@@ -289,11 +291,7 @@ function InfoRow({ icon, label, value, mono = false }) {
     <div className="flex items-start gap-2">
       <span className="text-indigo-400 mt-0.5 shrink-0">{icon}</span>
       <span className="text-gray-500 w-28 shrink-0">{label}</span>
-      <span
-        className={`text-gray-900 font-medium break-words min-w-0 ${
-          mono ? "font-mono text-xs" : ""
-        }`}
-      >
+      <span className={`text-gray-900 font-medium break-words min-w-0 ${mono ? "font-mono text-xs" : ""}`}>
         {value}
       </span>
     </div>
