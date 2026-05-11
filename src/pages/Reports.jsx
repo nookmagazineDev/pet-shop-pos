@@ -331,6 +331,55 @@ export default function Reports() {
   const drilldownTotalBills = drilldownData.reduce((s, d) => s + d.bills.length, 0);
   const drilldownTotalQty = drilldownData.reduce((s, d) => s + d.total, 0);
 
+  const exportDrilldown = () => {
+    if (!selectedMenuItem || drilldownData.length === 0) return;
+    const company = {
+      name: ps?.shopName || "",
+      branch: ps?.shopBranch || "",
+      taxId: ps?.shopTaxId || "",
+      address: ps?.shopAddress || "",
+    };
+    const period = formatThaiPeriod(startDate, endDate);
+    const headers = [
+      { key: "no",        label: "No." },
+      { key: "date",      label: "วันที่" },
+      { key: "time",      label: "เวลา" },
+      { key: "receiptNo", label: "เลขที่บิล" },
+      { key: "qty",       label: "จำนวน (ชิ้น)" },
+      { key: "status",    label: "สถานะ" },
+    ];
+    const rows = [];
+    let no = 1;
+    drilldownData.forEach(dayGroup => {
+      dayGroup.bills.forEach(bill => {
+        rows.push({
+          no: no++,
+          date: dayGroup.day,
+          time: bill.time + " น.",
+          receiptNo: bill.receiptNo,
+          qty: bill.qty,
+          status: bill.status === "CANCELLED" ? "ยกเลิกแล้ว" : "สมบูรณ์",
+        });
+      });
+    });
+    const totals = {
+      no: "Grand total",
+      qty: drilldownTotalQty,
+      status: `${drilldownTotalBills} บิล`,
+    };
+    const safeBarcode = String(selectedMenuItem.barcode).replace(/[^a-zA-Z0-9]/g, "_");
+    exportReportToExcel({
+      title: `รายละเอียดขาย: ${selectedMenuItem.name}`,
+      company,
+      period,
+      headers,
+      rows,
+      totals,
+      sheetName: "DrillDown",
+      fileName: `SalesDetail_${safeBarcode}`,
+    });
+  };
+
   const handleExportExcel = () => {
     const company = {
       name: ps?.shopName || "",
@@ -1149,7 +1198,14 @@ export default function Reports() {
             </div>
 
             {/* Footer */}
-            <div className="p-3 border-t bg-gray-50 flex justify-end">
+            <div className="p-3 border-t bg-gray-50 flex justify-between items-center">
+              <button
+                onClick={exportDrilldown}
+                disabled={drilldownData.length === 0}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-40"
+              >
+                <Download size={16} /> Export Excel
+              </button>
               <button onClick={() => setSelectedMenuItem(null)} className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-medium transition-colors">
                 ปิด
               </button>
