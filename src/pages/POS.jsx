@@ -501,8 +501,8 @@ export default function POS() {
           paymentMethod,
           cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
           receiptType,
-          customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "แต้ม (Points)") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
-          pointsUsed: paymentMethod === "แต้ม (Points)" ? Math.ceil(cartTotal) : 0,
+          customerInfo: (receiptType === "ใบกำกับภาษี" || paymentMethod === "เครดิต") ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
+          pointsUsed: paymentMethod === "เครดิต" ? Math.ceil(cartTotal) : 0,
           couponInstanceId: selectedCoupon?.ID || ""
         }
       });
@@ -514,7 +514,7 @@ export default function POS() {
           postApi({ action: "useCoupon", payload: { couponInstanceId: selectedCoupon.ID, orderId: res.orderId || "" } });
           setCustomerCoupons(prev => prev.map(c => c.ID === selectedCoupon.ID ? { ...c, Status: "USED" } : c));
         }
-        if (paymentMethod === "แต้ม (Points)" && customerName && cartTotal > 0) {
+        if (paymentMethod === "เครดิต" && customerName && cartTotal > 0) {
           const usedPts = Math.ceil(cartTotal);
           setCustomers(prev => prev.map(c =>
             String(c.Name || "").toLowerCase() === customerName.toLowerCase()
@@ -692,11 +692,11 @@ export default function POS() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-bold text-yellow-900">{pkg.Name}</h4>
-                        <span className="text-xs font-bold text-yellow-700 bg-yellow-200 rounded-full px-2 py-0.5">แพคเกจ</span>
+                        <span className="text-xs font-bold text-yellow-700 bg-yellow-200 rounded-full px-2 py-0.5">เครดิต</span>
                       </div>
                       <p className="text-xs text-yellow-700 mt-0.5">ลูกค้า: <span className="font-semibold">{customer.Name}</span></p>
                       <div className="flex items-center gap-1 mt-0.5 text-xs text-yellow-600 font-semibold">
-                        <Star size={11} /> ได้รับ {totalPts.toLocaleString()} แต้ม
+                        <Star size={11} /> ได้รับ {totalPts.toLocaleString()} เครดิต
                         {parseFloat(pkg.BonusPoints) > 0 && <span className="text-green-600">(รวมโบนัส)</span>}
                       </div>
                     </div>
@@ -840,7 +840,7 @@ export default function POS() {
             </div>
             {pendingPackage && (
               <div className="flex justify-between text-yellow-700 font-bold bg-yellow-50 px-2 py-1 -mx-2 rounded-lg">
-                <span className="flex items-center gap-1.5"><Gift size={14} /> แพคเกจ: {pendingPackage.pkg.Name}</span>
+                <span className="flex items-center gap-1.5"><Gift size={14} /> เครดิต: {pendingPackage.pkg.Name}</span>
                 <span>฿{Number(pendingPackage.pkg.Price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             )}
@@ -887,7 +887,7 @@ export default function POS() {
               type="button"
               onClick={() => setIsPurchasePkgOpen(true)}
               className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-yellow-500 text-white text-xs font-semibold hover:bg-yellow-600 transition-colors shadow-sm"
-              title="ซื้อแพคเกจสะสมแต้ม"
+              title="ซื้อเครดิต"
             >
               <Gift size={14} />
             </button>
@@ -1123,47 +1123,47 @@ export default function POS() {
             </button>
             <button
               onClick={() => {
-                if (!customerName) { alert("กรุณาเลือกลูกค้าก่อนใช้แต้ม"); return; }
-                setPaymentMethod("แต้ม (Points)");
+                if (!customerName) { alert("กรุณาเลือกลูกค้าก่อนใช้เครดิต"); return; }
+                setPaymentMethod("เครดิต");
                 const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
                 const pts = parseFloat(custObj?.Points) || 0;
                 setPointsToUse(Math.min(pts, Math.ceil(total)));
               }}
               className={clsx(
                 "flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all",
-                paymentMethod === "แต้ม (Points)"
+                paymentMethod === "เครดิต"
                   ? "border-yellow-500 bg-yellow-50 text-yellow-700"
                   : "border-gray-100 hover:border-yellow-300 text-gray-500 bg-gray-50"
               )}
             >
               <Star size={20} />
-              <span className="text-sm font-semibold">แต้ม (Points)</span>
+              <span className="text-sm font-semibold">เครดิต</span>
             </button>
           </div>
 
           {/* Points payment details */}
-          {paymentMethod === "แต้ม (Points)" && (() => {
+          {paymentMethod === "เครดิต" && (() => {
             const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
             const available = parseFloat(custObj?.Points) || 0;
             const enough = available >= Math.ceil(total);
             return (
               <div className="mb-5 p-4 bg-yellow-50 rounded-xl border border-yellow-100 space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-yellow-800 font-medium">แต้มคงเหลือ ({customerName})</span>
+                  <span className="text-yellow-800 font-medium">เครดิตคงเหลือ ({customerName})</span>
                   <span className="font-bold text-yellow-700 flex items-center gap-1"><Star size={13} /> {available.toLocaleString()} pts</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-yellow-800">แต้มที่ต้องใช้ (1 แต้ม = ฿1)</span>
+                  <span className="text-yellow-800">เครดิตที่ต้องใช้ (1 เครดิต = ฿1)</span>
                   <span className="font-bold text-gray-900">{Math.ceil(total).toLocaleString()} pts</span>
                 </div>
                 {!enough && (
                   <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg font-medium">
-                    แต้มไม่พอ — ขาดอีก {(Math.ceil(total) - available).toLocaleString()} pts
+                    เครดิตไม่พอ — ขาดอีก {(Math.ceil(total) - available).toLocaleString()} เครดิต
                   </div>
                 )}
                 {enough && (
                   <div className="text-xs text-green-600 bg-green-50 px-3 py-2 rounded-lg font-medium flex items-center gap-1">
-                    <CheckCircle size={13} /> แต้มเพียงพอ — หลังชำระเหลือ {(available - Math.ceil(total)).toLocaleString()} pts
+                    <CheckCircle size={13} /> เครดิตเพียงพอ — หลังชำระเหลือ {(available - Math.ceil(total)).toLocaleString()} เครดิต
                   </div>
                 )}
               </div>
@@ -1240,7 +1240,7 @@ export default function POS() {
                   (cart.length === 0 && !pendingPackage) ||
                   isCheckingOut ||
                   (paymentMethod === "เงินสด" && (cashReceived === "" || parseFloat(cashReceived) < totalForCash)) ||
-                  (paymentMethod === "แต้ม (Points)" && (parseFloat(customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase())?.Points) || 0) < Math.ceil(total))
+                  (paymentMethod === "เครดิต" && (parseFloat(customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase())?.Points) || 0) < Math.ceil(total))
                 }
                 className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
               >

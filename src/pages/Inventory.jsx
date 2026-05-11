@@ -57,6 +57,8 @@ export default function Inventory() {
   // New Product Modal states
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const PAYMENT_METHODS = ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"];
+
   const [newProductData, setNewProductData] = useState({
     barcode: "",
     name: "",
@@ -71,7 +73,8 @@ export default function Inventory() {
     lowStockThreshold: 5,
     packBarcode: "",
     packMultiplier: "",
-    hasExpiry: "YES"
+    hasExpiry: "YES",
+    acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"]
   });
 
   const fetchProducts = () => {
@@ -216,7 +219,11 @@ export default function Inventory() {
     setIsAddingProduct(true);
     const res = await postApi({
       action: "addProduct",
-      payload: { ...newProductData, _actor: currentUser }
+      payload: {
+        ...newProductData,
+        acceptedPayments: (newProductData.acceptedPayments || []).join(","),
+        _actor: currentUser
+      }
     });
     setIsAddingProduct(false);
 
@@ -224,9 +231,10 @@ export default function Inventory() {
       alert(res.message);
       setIsAddProductModalOpen(false);
       setNewProductData({
-        barcode: "", name: "", vatStatus: "VAT", costPrice: "", price: "", 
-        wholesalePrice: "", shopeePrice: "", lazadaPrice: "", linemanPrice: "", 
-        category: "ทั่วไป", lowStockThreshold: 5, packBarcode: "", packMultiplier: "", hasExpiry: "YES"
+        barcode: "", name: "", vatStatus: "VAT", costPrice: "", price: "",
+        wholesalePrice: "", shopeePrice: "", lazadaPrice: "", linemanPrice: "",
+        category: "ทั่วไป", lowStockThreshold: 5, packBarcode: "", packMultiplier: "", hasExpiry: "YES",
+        acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"]
       });
       fetchProducts();
     } else {
@@ -334,7 +342,10 @@ export default function Inventory() {
         lowStockThreshold: editItem.LowStockThreshold || 5,
         packBarcode: editItem.PackBarcode || "",
         packMultiplier: editItem.PackMultiplier || "",
-        hasExpiry: editItem.HasExpiry || "YES"
+        hasExpiry: editItem.HasExpiry || "YES",
+        acceptedPayments: Array.isArray(editItem.AcceptedPayments)
+          ? editItem.AcceptedPayments.join(",")
+          : String(editItem.AcceptedPayments || "")
       }
     });
     setIsEditSaving(false);
@@ -408,7 +419,8 @@ export default function Inventory() {
         "LineMan/Grab": p.LinemanPrice || p.GrabFoodPrice || 0,
         "จำนวนคงเหลือ": p.Quantity || 0,
         "ตำแหน่งจัดเก็บ": p.Location || "-",
-        "วันหมดอายุ": p.ExpiryDate || "-"
+        "วันหมดอายุ": p.ExpiryDate || "-",
+        "วิธีชำระที่รับได้": p.AcceptedPayments || "ทั้งหมด"
       }));
       exportToExcel(exportData, "MasterStock", "Master_Stock_Inventory");
     } else if (activeTab === "store") {
@@ -543,6 +555,13 @@ export default function Inventory() {
                       <div className="text-[10px] text-gray-400 mt-1 uppercase">
                          {item.Category || "ทั่วไป"} • {item.VatStatus || "VAT"}
                       </div>
+                      {item.AcceptedPayments && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {String(item.AcceptedPayments).split(",").filter(Boolean).map(pm => (
+                            <span key={pm} className="text-[10px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded font-medium">{pm.trim()}</span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="py-4 px-6 text-sm text-right whitespace-nowrap">
                       <div className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-xs items-center justify-end">
@@ -1224,6 +1243,31 @@ export default function Inventory() {
                   </select>
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">วิธีชำระเงินที่รับได้</label>
+                <div className="flex flex-wrap gap-2">
+                  {PAYMENT_METHODS.map(pm => {
+                    const current = String(editItem.AcceptedPayments || "").split(",").map(s => s.trim()).filter(Boolean);
+                    const checked = current.length === 0 ? true : current.includes(pm);
+                    return (
+                      <label key={pm} className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={e => {
+                            const prev = String(editItem.AcceptedPayments || "").split(",").map(s => s.trim()).filter(Boolean);
+                            const base = prev.length === 0 ? [...PAYMENT_METHODS] : prev;
+                            const next = e.target.checked ? [...new Set([...base, pm])] : base.filter(p => p !== pm);
+                            setEditItem(p => ({ ...p, AcceptedPayments: next.join(",") }));
+                          }}
+                          className="rounded"
+                        />
+                        <span className="text-sm text-gray-700">{pm}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">ต้นทุน (Cost)</label>
@@ -1470,12 +1514,33 @@ export default function Inventory() {
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">จุดสั่งซื้อ (Low Stock) *</label>
-                    <input 
+                    <input
                       type="number" min="0" required
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                       value={newProductData.lowStockThreshold}
                       onChange={(e) => setNewProductData({...newProductData, lowStockThreshold: e.target.value})}
                     />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">วิธีชำระเงินที่รับได้</label>
+                    <div className="flex flex-wrap gap-2">
+                      {PAYMENT_METHODS.map(pm => (
+                        <label key={pm} className="flex items-center gap-1.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={(newProductData.acceptedPayments || []).includes(pm)}
+                            onChange={e => {
+                              const prev = newProductData.acceptedPayments || [];
+                              const next = e.target.checked ? [...new Set([...prev, pm])] : prev.filter(p => p !== pm);
+                              setNewProductData({...newProductData, acceptedPayments: next});
+                            }}
+                            className="rounded"
+                          />
+                          <span className="text-sm text-gray-700">{pm}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="col-span-2 grid grid-cols-2 gap-4 border-t pt-4 mt-2">

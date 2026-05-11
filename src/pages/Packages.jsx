@@ -43,7 +43,7 @@ export default function Packages() {
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.price || !form.points) {
-      alert("กรุณากรอกชื่อ, ราคา และจำนวนแต้ม"); return;
+      alert("กรุณากรอกชื่อ, ราคา และจำนวนเครดิต"); return;
     }
     setIsSaving(true);
     const res = await postApi({
@@ -86,17 +86,17 @@ export default function Packages() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">ระบบแพคเกจ & พ้อย</h2>
-          <p className="text-sm text-gray-500 mt-0.5">จัดการแพคเกจสะสมแต้มและประวัติการใช้พ้อย</p>
+          <h2 className="text-2xl font-bold text-gray-900">ระบบเครดิต</h2>
+          <p className="text-sm text-gray-500 mt-0.5">จัดการแพคเกจเครดิตและประวัติการใช้เครดิต</p>
         </div>
         <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity shadow-sm">
-          <Plus size={16} /> เพิ่มแพคเกจ
+          <Plus size={16} /> เพิ่มแพคเกจเครดิต
         </button>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {[{ key: "packages", label: "แพคเกจ" }, { key: "history", label: "ประวัติแต้ม" }].map(t => (
+        {[{ key: "packages", label: "แพคเกจเครดิต" }, { key: "history", label: "ประวัติเครดิต" }].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === t.key ? "bg-white shadow text-primary" : "text-gray-500 hover:text-gray-700"}`}>
             {t.label}
@@ -118,9 +118,9 @@ export default function Packages() {
                 <tr>
                   <th className="py-3 px-6">ชื่อแพคเกจ</th>
                   <th className="py-3 px-4 text-right">ราคา (฿)</th>
-                  <th className="py-3 px-4 text-right">แต้มฐาน</th>
-                  <th className="py-3 px-4 text-right">โบนัสแต้ม</th>
-                  <th className="py-3 px-4 text-right">รวมแต้ม</th>
+                  <th className="py-3 px-4 text-right">เครดิตฐาน</th>
+                  <th className="py-3 px-4 text-right">โบนัสเครดิต</th>
+                  <th className="py-3 px-4 text-right">รวมเครดิต</th>
                   <th className="py-3 px-4 text-center">สถานะ</th>
                   <th className="py-3 px-4 text-center">จัดการ</th>
                 </tr>
@@ -170,7 +170,7 @@ export default function Packages() {
           {history.length === 0 ? (
             <div className="py-16 text-center text-gray-400">
               <Star size={40} className="mx-auto mb-3 opacity-30" />
-              <p>ยังไม่มีประวัติการใช้แต้ม</p>
+              <p>ยังไม่มีประวัติเครดิต</p>
             </div>
           ) : (
             <table className="w-full text-left text-sm">
@@ -179,7 +179,7 @@ export default function Packages() {
                   <th className="py-3 px-6">วันที่</th>
                   <th className="py-3 px-4">ลูกค้า</th>
                   <th className="py-3 px-4 text-center">ประเภท</th>
-                  <th className="py-3 px-4 text-right">แต้ม</th>
+                  <th className="py-3 px-4 text-right">เครดิต</th>
                   <th className="py-3 px-4 text-right">คงเหลือ</th>
                   <th className="py-3 px-4">หมายเหตุ</th>
                 </tr>
@@ -194,7 +194,7 @@ export default function Packages() {
                       <td className="py-3 px-4 text-center">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${isEarn ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
                           {isEarn ? <Check size={11} /> : <X size={11} />}
-                          {isEarn ? "รับแต้ม" : "ใช้แต้ม"}
+                          {isEarn ? "รับเครดิต" : "ใช้เครดิต"}
                         </span>
                       </td>
                       <td className={`py-3 px-4 text-right font-bold ${isEarn ? "text-green-600" : "text-red-500"}`}>
@@ -216,7 +216,7 @@ export default function Packages() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="text-lg font-bold text-gray-900">{editPkg ? "แก้ไขแพคเกจ" : "เพิ่มแพคเกจใหม่"}</h3>
+              <h3 className="text-lg font-bold text-gray-900">{editPkg ? "แก้ไขแพคเกจเครดิต" : "เพิ่มแพคเกจเครดิตใหม่"}</h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700 transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 space-y-4">
@@ -230,16 +230,16 @@ export default function Packages() {
                   <input type="number" value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value, points: e.target.value }))} placeholder="1000" min="0" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">แต้มฐาน <span className="text-red-500">*</span></label>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">เครดิตฐาน <span className="text-red-500">*</span></label>
                   <input type="number" value={form.points} onChange={e => setForm(p => ({ ...p, points: e.target.value }))} placeholder="1000" min="0" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">โบนัสแต้ม (ฟรีเพิ่ม)</label>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">โบนัสเครดิต (ฟรีเพิ่ม)</label>
                 <input type="number" value={form.bonusPoints} onChange={e => setForm(p => ({ ...p, bonusPoints: e.target.value }))} placeholder="0" min="0" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
                 {(parseFloat(form.points) || 0) > 0 && (
                   <p className="text-xs text-yellow-600 mt-1.5 flex items-center gap-1">
-                    <Star size={11} /> รวมแต้มที่ได้: {((parseFloat(form.points) || 0) + (parseFloat(form.bonusPoints) || 0)).toLocaleString()} pts
+                    <Star size={11} /> รวมเครดิตที่ได้: {((parseFloat(form.points) || 0) + (parseFloat(form.bonusPoints) || 0)).toLocaleString()} pts
                   </p>
                 )}
               </div>

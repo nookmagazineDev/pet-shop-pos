@@ -47,7 +47,7 @@ export default function PurchasePackageModal({ isOpen, onClose, customers, onAdd
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-2">
             <Gift size={20} className="text-yellow-500" />
-            <h3 className="text-lg font-bold text-gray-900">เลือกแพคเกจสะสมแต้ม</h3>
+            <h3 className="text-lg font-bold text-gray-900">ซื้อเครดิต</h3>
           </div>
           <button onClick={handleClose} className="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded-lg"><X size={20} /></button>
         </div>
@@ -64,7 +64,7 @@ export default function PurchasePackageModal({ isOpen, onClose, customers, onAdd
                 <Users size={18} className="text-primary shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 text-sm">{selectedCustomer.Name}</div>
-                  <div className="text-xs text-gray-400">{selectedCustomer.Phone} · แต้มปัจจุบัน: <span className="text-yellow-600 font-bold">{Number(selectedCustomer.Points || 0).toLocaleString()} pts</span></div>
+                  <div className="text-xs text-gray-400">{selectedCustomer.Phone} · เครดิตคงเหลือ: <span className="text-yellow-600 font-bold">{Number(selectedCustomer.Points || 0).toLocaleString()} pts</span></div>
                 </div>
                 <button onClick={() => { setSelectedCustomer(null); setCustomerSearch(""); }} className="text-gray-400 hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
               </div>
@@ -140,16 +140,16 @@ export default function PurchasePackageModal({ isOpen, onClose, customers, onAdd
           {/* Summary */}
           {selectedCustomer && selectedPkg && (
             <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-4 space-y-1">
-              <div className="text-xs font-semibold text-yellow-800 mb-2">สรุปการซื้อแพคเกจ</div>
+              <div className="text-xs font-semibold text-yellow-800 mb-2">สรุปการซื้อเครดิต</div>
               <div className="flex justify-between text-sm"><span className="text-gray-600">ลูกค้า</span><span className="font-semibold">{selectedCustomer.Name}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-600">แพคเกจ</span><span className="font-semibold">{selectedPkg.Name}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-600">ราคา</span><span className="font-bold text-gray-900">฿{Number(selectedPkg.Price).toLocaleString()}</span></div>
               <div className="border-t border-yellow-200 my-2 pt-2 flex justify-between text-sm">
-                <span className="text-yellow-700 font-semibold">แต้มที่จะได้รับ</span>
+                <span className="text-yellow-700 font-semibold">เครดิตที่จะได้รับ</span>
                 <span className="font-bold text-yellow-700 flex items-center gap-1"><Star size={13} /> {((parseFloat(selectedPkg.Points) || 0) + (parseFloat(selectedPkg.BonusPoints) || 0)).toLocaleString()} pts</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500">
-                <span>แต้มหลังซื้อ</span>
+                <span>เครดิตหลังซื้อ</span>
                 <span className="font-semibold">{(Number(selectedCustomer.Points || 0) + (parseFloat(selectedPkg.Points) || 0) + (parseFloat(selectedPkg.BonusPoints) || 0)).toLocaleString()} pts</span>
               </div>
             </div>

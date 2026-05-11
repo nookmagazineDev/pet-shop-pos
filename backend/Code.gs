@@ -12,7 +12,7 @@ function getSpreadsheet() {
 function setup() {
   const ss = getSpreadsheet();
   const sheets = {
-    "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry"],
+    "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
@@ -1074,7 +1074,8 @@ function addProduct(payload) {
     parseFloat(payload.lowStockThreshold) || 5,
     payload.packBarcode || "",
     parseFloat(payload.packMultiplier) || 0,
-    payload.hasExpiry !== undefined ? String(payload.hasExpiry).toUpperCase() : "YES"
+    payload.hasExpiry !== undefined ? String(payload.hasExpiry).toUpperCase() : "YES",
+    payload.acceptedPayments || ""
   ]);
 
   logActivity("Inventory", "Add Product", payload.barcode, payload._actor);
@@ -1105,6 +1106,7 @@ function updateProduct(payload) {
       if (payload.packBarcode !== undefined) sheet.getRange(i + 1, 18).setValue(payload.packBarcode || "");
       if (payload.packMultiplier !== undefined) sheet.getRange(i + 1, 19).setValue(parseFloat(payload.packMultiplier) || 0);
       if (payload.hasExpiry !== undefined) sheet.getRange(i + 1, 20).setValue(String(payload.hasExpiry).toUpperCase());
+      if (payload.acceptedPayments !== undefined) sheet.getRange(i + 1, 21).setValue(payload.acceptedPayments || "");
       logActivity("Inventory", "Edit Product", searchBarcode, payload._actor);
       return jsonResponse({ success: true, message: "Product updated" });
     }
@@ -1623,11 +1625,14 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
   } else if (sheetName === "Products") {
-    const requiredHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry"];
+    const requiredHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
     if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[10] !== "Quantity" || currentHeaderRow[16] !== "LowStockThreshold" || currentHeaderRow[17] !== "PackBarcode" || currentHeaderRow[19] !== "HasExpiry") {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
+    } else if (!currentHeaderRow[20] || currentHeaderRow[20] !== "AcceptedPayments") {
+      sheet.getRange(1, 21).setValue("AcceptedPayments");
+      sheet.getRange(1, 21).setFontWeight("bold");
     }
   } else if (sheetName === "StoreStock") {
     const requiredHeaders = ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"];

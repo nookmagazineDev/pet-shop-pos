@@ -97,8 +97,8 @@ export default function Members() {
                 <tr className="border-b border-indigo-100 text-sm font-semibold text-indigo-800">
                   <th className="py-3 px-6">ชื่อ</th>
                   <th className="py-3 px-4">เบอร์โทร</th>
-                  <th className="py-3 px-4 text-right">แต้มสะสม</th>
-                  <th className="py-3 px-4">อัพเดทแต้มล่าสุด</th>
+                  <th className="py-3 px-4 text-right">เครดิตสะสม</th>
+                  <th className="py-3 px-4">อัพเดทเครดิตล่าสุด</th>
                   <th className="py-3 px-4">วันที่สมัคร</th>
                   <th className="py-3 px-4 text-center w-12"></th>
                 </tr>
@@ -197,7 +197,7 @@ export default function Members() {
                                 />
                                 <InfoRow
                                   icon={<Star size={13} />}
-                                  label="แต้มสะสม"
+                                  label="เครดิตสะสม"
                                   value={
                                     <span className="font-bold text-yellow-600">
                                       {Number(c.Points || 0).toLocaleString()} pts
@@ -206,7 +206,7 @@ export default function Members() {
                                 />
                                 <InfoRow
                                   icon={<Star size={13} />}
-                                  label="อัพเดทแต้มล่าสุด"
+                                  label="อัพเดทเครดิตล่าสุด"
                                   value={formatDate(c.PointsUpdatedAt)}
                                 />
                                 <InfoRow
