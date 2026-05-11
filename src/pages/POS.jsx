@@ -348,11 +348,14 @@ export default function POS() {
   const creditPaid = splitPayments.filter(p => p.method === "เครดิต").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const remaining  = Math.max(0, total - totalPaid);
   const cashChange = (hasCashSplit && totalPaid >= total) ? Math.max(0, totalPaid - total) : 0;
-  // Payment method string for receipt/backend (skip entries with no amount unless it's the only entry)
+  // Payment method string for receipt/backend
+  // Single method  → plain name e.g. "เงินสด"
+  // Multi method   → encoded amounts e.g. "เงินสด:1000 + โอนเข้าบัญชี:650"  (parsed by Shift.jsx)
   const paymentMethodStr = (() => {
     const active = splitPayments.filter(p => parseFloat(p.amount) > 0);
     if (active.length === 0) return splitPayments[0]?.method || "เงินสด";
-    return active.map(p => p.method).join(" + ");
+    if (active.length === 1) return active[0].method;
+    return active.map(p => `${p.method}:${parseFloat(p.amount)}`).join(" + ");
   })();
   // Credits: if single เครดิต with blank amount, treat as full total
   const effectiveCreditPaid = (hasCreditSplit && splitPayments.length === 1 && !splitPayments[0].amount)

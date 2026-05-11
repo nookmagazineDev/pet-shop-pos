@@ -19,7 +19,8 @@ export default function Shift() {
   const [cashSales, setCashSales] = useState(0);
   const [transferDirect, setTransferDirect] = useState(0);
   const [transferQR, setTransferQR] = useState(0);
-  const [creditSales, setCreditSales] = useState(0);
+  const [creditSales, setCreditSales] = useState(0);  // บัตรเครดิต
+  const [creditPts, setCreditPts] = useState(0);       // เครดิต (credit balance)
   const [onlinePaid, setOnlinePaid] = useState({});
   const [onlinePending, setOnlinePending] = useState({});
   const [expectedCash, setExpectedCash] = useState(0); 
@@ -50,35 +51,68 @@ export default function Shift() {
           let tDirect = 0;
           let tQR = 0;
           let crSales = 0;
+          let crPts = 0;
           let oPaid = {};
           let oPending = {};
 
           const openTime = new Date(lastShift.OpenTime);
+
+          // Parse payment method string into { methodName: amount } map.
+          // Supports:
+          //   "เงินสด"                          → single method, full amount
+          //   "เงินสด:1000 + โอนเข้าบัญชี:650"  → split payment with encoded amounts
+          //   "เงินสด + โอนเข้าบัญชี"            → legacy split (equal split fallback)
+          const parsePaymentAmounts = (method, totalAmt) => {
+            const out = {};
+            if (!method) return out;
+            const addTo = (m, a) => { out[m] = (out[m] || 0) + a; };
+            if (method.includes(":")) {
+              // Encoded format: "MethodA:amtA + MethodB:amtB"
+              method.split(" + ").forEach(part => {
+                const ci = part.lastIndexOf(":");
+                if (ci === -1) { addTo(part.trim(), totalAmt); return; }
+                addTo(part.slice(0, ci).trim(), parseFloat(part.slice(ci + 1)) || 0);
+              });
+            } else if (method.includes(" + ")) {
+              // Legacy: split equally
+              const parts = method.split(" + ").map(p => p.trim()).filter(Boolean);
+              const share = totalAmt / parts.length;
+              parts.forEach(m => addTo(m, share));
+            } else {
+              addTo(method.trim(), totalAmt);
+            }
+            return out;
+          };
+
+          const KNOWN_METHODS = new Set(["เงินสด","เงินโอน","โอนเข้าบัญชี","สแกน QR","บัตรเครดิต","เครดิต"]);
 
           // Aggregate transactions since shift opened
           if (Array.isArray(txData)) {
             txData.forEach(tx => {
               if (tx.Status === "VOID") return;
               const txTime = new Date(tx.Date);
-              // Only sum transactions that occurred during this open shift
-              if (txTime >= openTime) {
-                const amt = parseFloat(tx.TotalAmount) || 0;
-                const method = tx.PaymentMethod || "";
+              if (txTime < openTime) return;
 
-                if (method === "เงินสด") cSales += amt;
-                else if (method === "เงินโอน" || method === "โอนเข้าบัญชี") tDirect += amt;
-                else if (method === "สแกน QR") tQR += amt;
-                else if (method === "บัตรเครดิต") crSales += amt;
-                else {
-                  // Assume other methods are online platforms
-                  if (method.includes("รอชำระ")) {
-                    const platform = method.replace("รอชำระ", "").trim() || "ออนไลน์";
-                    oPending[platform] = (oPending[platform] || 0) + amt;
-                  } else if (method !== "") {
-                    oPaid[method] = (oPaid[method] || 0) + amt;
+              const totalAmt = parseFloat(tx.TotalAmount) || 0;
+              const method = tx.PaymentMethod || "";
+              const amounts = parsePaymentAmounts(method, totalAmt);
+
+              Object.entries(amounts).forEach(([m, a]) => {
+                if (m === "เงินสด")                              cSales  += a;
+                else if (m === "เงินโอน" || m === "โอนเข้าบัญชี") tDirect += a;
+                else if (m === "สแกน QR")                        tQR     += a;
+                else if (m === "บัตรเครดิต")                     crSales += a;
+                else if (m === "เครดิต")                         crPts   += a;
+                else if (m !== "") {
+                  // Online / other platforms
+                  if (m.includes("รอชำระ")) {
+                    const platform = m.replace("รอชำระ", "").trim() || "ออนไลน์";
+                    oPending[platform] = (oPending[platform] || 0) + a;
+                  } else {
+                    oPaid[m] = (oPaid[m] || 0) + a;
                   }
                 }
-              }
+              });
             });
           }
 
@@ -86,6 +120,7 @@ export default function Shift() {
           setTransferDirect(tDirect);
           setTransferQR(tQR);
           setCreditSales(crSales);
+          setCreditPts(crPts);
           setOnlinePaid(oPaid);
           setOnlinePending(oPending);
           setExpectedCash(initial + cSales);
@@ -124,6 +159,7 @@ export default function Shift() {
       setTransferDirect(0);
       setTransferQR(0);
       setCreditSales(0);
+      setCreditPts(0);
       setExpectedCash(initial);
       setInitialCash(""); 
       setCurrentShiftId(res.shiftId || "");
@@ -148,6 +184,7 @@ export default function Shift() {
       transferDirect,
       transferQR,
       creditSales,
+      creditPts,
       onlinePaid,
       onlinePending,
       expectedCash,
@@ -286,7 +323,7 @@ export default function Shift() {
                       closeTime: null,
                       actor: userObj.displayName || userObj.username || "พนักงาน",
                       initialCash: currentInitialCash,
-                      cashSales, transferDirect, transferQR, creditSales,
+                      cashSales, transferDirect, transferQR, creditSales, creditPts,
                       onlinePaid, onlinePending, expectedCash, actualCash: 0, discrepancy: 0
                     });
                     setIsSlipModalOpen(true);
@@ -321,9 +358,13 @@ export default function Shift() {
               <span>ยอดขายสแกน QR (QR Code)</span>
               <span>฿{transferQR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
-            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75 pb-1">
-              <span>ยอดขายบัตรเครดิต (Credit)</span>
+            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75">
+              <span>ยอดขายบัตรเครดิต (Credit Card)</span>
               <span>฿{creditSales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600 pl-2 opacity-75 pb-1">
+              <span>ยอดขายเครดิต (Credit Balance)</span>
+              <span>฿{creditPts.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
 
             {/* Online Breakdown */}

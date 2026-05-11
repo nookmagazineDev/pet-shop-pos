@@ -103,8 +103,12 @@ export default function ShiftSlipModal({ isOpen, onClose, shiftData }) {
           <td style="text-align:right;">${shiftData.transferQR.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
         </tr>
         <tr>
-          <td style="text-align:left;">บัตรเครดิต (Credit)</td>
+          <td style="text-align:left;">บัตรเครดิต (Credit Card)</td>
           <td style="text-align:right;">${shiftData.creditSales.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;">เครดิต (Credit Balance)</td>
+          <td style="text-align:right;">${(shiftData.creditPts || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
         </tr>
         ${onlinePaidHtml}
         ${onlinePendingHtml}
@@ -194,8 +198,12 @@ export default function ShiftSlipModal({ isOpen, onClose, shiftData }) {
                 <span>{shiftData.transferQR.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between">
-                <span>บัตรเครดิต</span>
+                <span>บัตรเครดิต (Credit Card)</span>
                 <span>{shiftData.creditSales.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>เครดิต (Credit Balance)</span>
+                <span>{(shiftData.creditPts || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
               </div>
               
               {shiftData.onlinePaid && Object.entries(shiftData.onlinePaid).map(([platform, amt]) => (
