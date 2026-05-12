@@ -347,9 +347,13 @@ export default function Reports() {
   const totalRefundAmount = filteredReturns.reduce((acc, ret) => acc + (parseFloat(ret.RefundAmount) || 0), 0);
   const grossSalesRevenue = filteredTransactions.reduce((acc, tx) => acc + (parseFloat(tx.TotalAmount) || 0), 0);
   const totalSalesRevenue = grossSalesRevenue - totalRefundAmount;
-  const grossTaxCollected = filteredTransactions.reduce((acc, tx) => acc + (parseFloat(tx.Tax) || 0), 0);
+  // Compute gross tax from cart details (more accurate than stored Tax field which may be 0/null)
+  const grossTaxCollected = filteredTransactions.reduce((acc, tx) => {
+    const { vatableTotal } = getCartVatSplit(tx.CartDetails, products);
+    return acc + r2(vatableTotal / 107 * 7);
+  }, 0);
   const taxRefundRatio = grossSalesRevenue > 0 ? totalSalesRevenue / grossSalesRevenue : 1;
-  const totalTaxCollected = grossTaxCollected * taxRefundRatio;
+  const totalTaxCollected = r2(grossTaxCollected * taxRefundRatio);
 
   // --- Drill-down data for selected menu item ---
   const buildMenuDrilldown = (barcode) => {
@@ -860,45 +864,58 @@ export default function Reports() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {(() => {
-                    // Normal rows (non-void) with Tax > 0
-                    const taxRows = filteredTransactions.filter(t => t.Status !== "CANCELLED" && parseFloat(t.Tax) > 0 && searchTx(t));
-                    // Void rows that had Tax > 0 (shown as negative reversal)
-                    const voidTaxRows = filteredVoids.filter(t => parseFloat(t.Tax) > 0 && searchTx(t));
+                    // Show ALL non-cancelled transactions (not filtered by Tax field — compute VAT from cart)
+                    const taxRows = filteredTransactions.filter(t => t.Status !== "CANCELLED" && searchTx(t));
+                    // Void rows (all voided transactions, compute VAT from cart)
+                    const voidTaxRows = filteredVoids.filter(t => searchTx(t));
 
                     if (taxRows.length === 0 && voidTaxRows.length === 0) {
-                      return <tr><td colSpan="5" className="p-8 text-center text-gray-400">ไม่มีรายการที่มีภาษีขายในช่วงที่เลือก</td></tr>;
+                      return <tr><td colSpan="6" className="p-8 text-center text-gray-400">ไม่มีรายการในช่วงที่เลือก</td></tr>;
                     }
+
+                    // Compute VAT from cart details for accuracy (stored Tax field may be 0/null)
+                    const computeVat = (tx) => {
+                      const { vatableTotal } = getCartVatSplit(tx.CartDetails, products);
+                      return r2(vatableTotal / 107 * 7);
+                    };
 
                     const grandTotal = taxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0)
                                      - voidTaxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0);
-                    const grandTax   = taxRows.reduce((s, t) => s + (parseFloat(t.Tax) || 0), 0)
-                                     - voidTaxRows.reduce((s, t) => s + (parseFloat(t.Tax) || 0), 0);
+                    const grandTax   = taxRows.reduce((s, t) => s + computeVat(t), 0)
+                                     - voidTaxRows.reduce((s, t) => s + computeVat(t), 0);
 
                     return (
                       <>
                         {/* Normal rows */}
-                        {taxRows.map((tx, i) => (
-                          <tr key={`tx-${i}`} className="hover:bg-gray-50 text-sm">
-                            <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
-                            <td className="p-3">
-                              <span className={clsx("px-2 py-1 rounded text-xs font-bold",
-                                tx.ReceiptType === "ใบกำกับภาษี" ? "bg-purple-100 text-purple-700" :
-                                  (tx.ReceiptType === "online" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")
-                              )}>
-                                {tx.ReceiptType || "ใบเสร็จ"}
-                              </span>
-                            </td>
-                            <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
-                            <td className="p-3 text-right font-medium">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                            <td className="p-3 text-right text-amber-600 font-bold">฿{parseFloat(tx.Tax || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                            <td className="p-3"></td>
-                          </tr>
-                        ))}
+                        {taxRows.map((tx, i) => {
+                          const computedVat = computeVat(tx);
+                          return (
+                            <tr key={`tx-${i}`} className="hover:bg-gray-50 text-sm">
+                              <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
+                              <td className="p-3">
+                                <span className={clsx("px-2 py-1 rounded text-xs font-bold",
+                                  tx.ReceiptType === "ใบกำกับภาษี" ? "bg-purple-100 text-purple-700" :
+                                    (tx.ReceiptType === "online" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")
+                                )}>
+                                  {tx.ReceiptType || "ใบเสร็จ"}
+                                </span>
+                              </td>
+                              <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
+                              <td className="p-3 text-right font-medium">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                              <td className="p-3 text-right text-amber-600 font-bold">
+                                {computedVat > 0
+                                  ? `฿${computedVat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
+                                  : <span className="text-gray-300">-</span>}
+                              </td>
+                              <td className="p-3"></td>
+                            </tr>
+                          );
+                        })}
 
-                        {/* Void reversal rows — copied from original bill data, negated */}
+                        {/* Void reversal rows — negated */}
                         {voidTaxRows.map((tx, i) => {
                           const amt = parseFloat(tx.TotalAmount || 0);
-                          const vat = parseFloat(tx.Tax || 0);
+                          const vat = computeVat(tx);
                           return (
                             <tr key={`void-${i}`} className="bg-red-50 text-sm border-l-4 border-red-400">
                               <td className="p-3 text-red-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
@@ -912,7 +929,9 @@ export default function Reports() {
                               </td>
                               <td className="p-3 font-mono text-red-500">{tx.ReceiptNo || tx.OrderID}</td>
                               <td className="p-3 text-right font-bold text-red-600">-฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                              <td className="p-3 text-right font-bold text-red-600">-฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                              <td className="p-3 text-right font-bold text-red-600">
+                                {vat > 0 ? `-฿${vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : <span className="text-gray-300">-</span>}
+                              </td>
                               <td className="p-3 text-center">
                                 <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">VOID</span>
                               </td>
