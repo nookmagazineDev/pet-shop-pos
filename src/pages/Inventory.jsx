@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye, Download, FileSpreadsheet, Upload, AlertTriangle, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
@@ -30,6 +30,9 @@ export default function Inventory() {
   const [poFile, setPoFile] = useState(null); // PO Document file
   const [showImportModal, setShowImportModal] = useState(false);
   const [importPreviewItems, setImportPreviewItems] = useState([]);
+  const [packMultiplierDetected, setPackMultiplierDetected] = useState(1);
+  const [packLabelDetected, setPackLabelDetected] = useState("");
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [products, setProducts] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [isEditSaving, setIsEditSaving] = useState(false);
@@ -117,6 +120,11 @@ export default function Inventory() {
     if (activeTab === "receive") { fetchProducts(); fetchSuppliers(); }
   }, [activeTab]);
 
+  // Unique locations from products for dropdown
+  const uniqueLocations = useMemo(() =>
+    [...new Set(products.map(p => p.Location).filter(Boolean))].sort()
+  , [products]);
+
   const selectSupplier = (s) => {
     setCompanyNameStr(s.Name || "");
     setSupplierSearch(s.Name || "");
@@ -187,17 +195,25 @@ export default function Inventory() {
       return;
     }
     
-    // VALIDATION: Check if product exists in system
-    const productExists = products.find(p => String(p.Barcode) === String(barcodeInput).trim());
+    // VALIDATION: Check if product exists (direct barcode or pack barcode)
+    const barcodeVal = String(barcodeInput).trim();
+    const productExists = products.find(p =>
+      String(p.Barcode) === barcodeVal ||
+      (p.PackBarcode && String(p.PackBarcode) === barcodeVal) ||
+      (p.PackBarcode2 && String(p.PackBarcode2) === barcodeVal) ||
+      (p.PackBarcode3 && String(p.PackBarcode3) === barcodeVal)
+    );
     if (!productExists) {
       alert(`ไม่พบสินค้าบาร์โค้ด "${barcodeInput}" ในระบบ กรุณาไปที่แท็บ "รายการสต็อกสินค้า" เพื่อเพิ่มสินค้าใหม่ก่อนนำเข้าคลัง`);
       return;
     }
+    const actualQty = Number(receiveQtyStr) * packMultiplierDetected;
     const newItem = {
       id: Date.now().toString(),
-      barcode: barcodeInput,
+      barcode: String(productExists.Barcode), // always store actual product barcode
       productName: productNameInput,
-      quantity: receiveQtyStr,
+      quantity: String(actualQty),
+      packLabel: packLabelDetected ? `${packLabelDetected} ×${packMultiplierDetected}` : "",
       unitCost: receiveUnitCostStr,
       vatStatus: "VAT",
       category: "ทั่วไป",
@@ -207,7 +223,7 @@ export default function Inventory() {
       receivingDate: new Date().toISOString().split('T')[0]
     };
     setReceiveCart([...receiveCart, newItem]);
-    
+
     // Reset specific fields for next item
     setBarcodeInput("");
     setProductNameInput("");
@@ -215,6 +231,8 @@ export default function Inventory() {
     setReceiveExpiryStr("");
     setReceiveLocationStr("");
     setReceiveUnitCostStr("");
+    setPackMultiplierDetected(1);
+    setPackLabelDetected("");
   };
 
   const handleAddProduct = async (e) => {
@@ -291,17 +309,34 @@ export default function Inventory() {
       const wb = XLSX.read(evt.target.result, { type: "array" });
       const ws = wb.Sheets["ข้อมูลสินค้า"] || wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      const packDefs = [
+        { bKey: "PackBarcode",  mKey: "PackMultiplier",  label: "แพ็ค 1" },
+        { bKey: "PackBarcode2", mKey: "PackMultiplier2", label: "แพ็ค 2" },
+        { bKey: "PackBarcode3", mKey: "PackMultiplier3", label: "แพ็ค 3" },
+      ];
       const items = [];
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         const barcode = String(row[0] || "").trim();
         if (!barcode) continue;
-        const product = products.find(p => String(p.Barcode) === barcode);
+        // Try direct match first, then pack barcodes
+        let product = products.find(p => String(p.Barcode) === barcode);
+        let multiplier = 1;
+        let packLabel = "";
+        if (!product) {
+          for (const { bKey, mKey, label } of packDefs) {
+            const pm = products.find(p => p[bKey] && String(p[bKey]) === barcode);
+            if (pm) { product = pm; multiplier = Number(pm[mKey]) || 1; packLabel = label; break; }
+          }
+        }
+        const inputQty = Number(row[2] || 0);
+        const actualQty = inputQty * multiplier;
         items.push({
           id: `imp_${Date.now()}_${i}`,
-          barcode,
+          barcode: product ? String(product.Barcode) : barcode,
           productName: product ? product.Name : (String(row[1] || "").trim() || "ไม่พบในระบบ"),
-          quantity: String(row[2] || ""),
+          quantity: actualQty > 0 ? String(actualQty) : String(inputQty),
+          packLabel: packLabel ? `${packLabel} ×${multiplier}` : "",
           unitCost: String(row[3] || (product?.CostPrice || "")),
           location: String(row[4] || (product?.Location || "")),
           expiryDate: String(row[5] || ""),
@@ -947,19 +982,45 @@ export default function Inventory() {
                       placeholder="สแกน หรือพิมพ์บาร์โค้ด..."
                       value={barcodeInput}
                       onChange={(e) => {
-                         setBarcodeInput(e.target.value);
-                       const match = products.find(p => String(p.Barcode) === String(e.target.value).trim());
-                         if (match) {
-                           setProductNameInput(match.Name);
-                           setReceiveUnitCostStr(String(match.CostPrice || ""));
-                           setReceiveLocationStr(String(match.Location || ""));
-                           setReceiveRequiresExpiry(match.HasExpiry !== "NO");
-                         } else {
-                           setProductNameInput("");
-                           setReceiveUnitCostStr("");
-                           setReceiveLocationStr("");
-                           setReceiveRequiresExpiry(true);
-                         }
+                        const val = e.target.value;
+                        setBarcodeInput(val);
+                        const b = val.trim();
+                        // 1. Try direct barcode match
+                        const directMatch = products.find(p => String(p.Barcode) === b);
+                        if (directMatch) {
+                          setProductNameInput(directMatch.Name);
+                          setReceiveUnitCostStr(String(directMatch.CostPrice || ""));
+                          setReceiveLocationStr(String(directMatch.Location || ""));
+                          setReceiveRequiresExpiry(directMatch.HasExpiry !== "NO");
+                          setPackMultiplierDetected(1);
+                          setPackLabelDetected("");
+                          return;
+                        }
+                        // 2. Try pack barcodes (1, 2, 3)
+                        const packDefs = [
+                          { bKey: "PackBarcode",  mKey: "PackMultiplier",  label: "แพ็ค 1" },
+                          { bKey: "PackBarcode2", mKey: "PackMultiplier2", label: "แพ็ค 2" },
+                          { bKey: "PackBarcode3", mKey: "PackMultiplier3", label: "แพ็ค 3" },
+                        ];
+                        for (const { bKey, mKey, label } of packDefs) {
+                          const packMatch = products.find(p => p[bKey] && String(p[bKey]) === b);
+                          if (packMatch) {
+                            setProductNameInput(packMatch.Name);
+                            setReceiveUnitCostStr(String(packMatch.CostPrice || ""));
+                            setReceiveLocationStr(String(packMatch.Location || ""));
+                            setReceiveRequiresExpiry(packMatch.HasExpiry !== "NO");
+                            setPackMultiplierDetected(Number(packMatch[mKey]) || 1);
+                            setPackLabelDetected(label);
+                            return;
+                          }
+                        }
+                        // 3. No match
+                        setProductNameInput("");
+                        setReceiveUnitCostStr("");
+                        setReceiveLocationStr("");
+                        setReceiveRequiresExpiry(true);
+                        setPackMultiplierDetected(1);
+                        setPackLabelDetected("");
                       }}
                     />
                     <button
@@ -985,18 +1046,30 @@ export default function Inventory() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">จำนวน *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                    {packLabelDetected ? `จำนวนแพ็ค (${packLabelDetected}) *` : "จำนวน *"}
+                    {packLabelDetected && (
+                      <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-semibold">
+                        ×{packMultiplierDetected} ชิ้น/แพ็ค
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="number"
                     required min="1"
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
-                    placeholder="0"
+                    placeholder={packLabelDetected ? "จำนวนแพ็ค" : "0"}
                     value={receiveQtyStr}
                     onChange={(e) => setReceiveQtyStr(e.target.value)}
                   />
+                  {packLabelDetected && receiveQtyStr && Number(receiveQtyStr) > 0 && (
+                    <p className="text-xs text-purple-700 mt-1 font-semibold flex items-center gap-1">
+                      = {Number(receiveQtyStr) * packMultiplierDetected} ชิ้น (รับเข้าระบบ)
+                    </p>
+                  )}
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
                     โลเคชั่นคลัง *
                     {receiveLocationStr && productNameInput && (
@@ -1006,11 +1079,33 @@ export default function Inventory() {
                   <input
                     type="text"
                     required
+                    autoComplete="off"
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
-                    placeholder="เช่น คลังหลัง A1"
+                    placeholder="เช่น คลังหลัง A1 หรือเลือกจากรายการ"
                     value={receiveLocationStr}
-                    onChange={(e) => setReceiveLocationStr(e.target.value)}
+                    onChange={(e) => { setReceiveLocationStr(e.target.value); setShowLocationDropdown(true); }}
+                    onFocus={() => setShowLocationDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowLocationDropdown(false), 150)}
                   />
+                  {showLocationDropdown && uniqueLocations.filter(l =>
+                    !receiveLocationStr || l.toLowerCase().includes(receiveLocationStr.toLowerCase())
+                  ).length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-44 overflow-y-auto">
+                      {uniqueLocations
+                        .filter(l => !receiveLocationStr || l.toLowerCase().includes(receiveLocationStr.toLowerCase()))
+                        .map((loc, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onMouseDown={() => { setReceiveLocationStr(loc); setShowLocationDropdown(false); }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-primary/5 text-sm text-gray-800 border-b border-gray-50 last:border-0 transition-colors flex items-center gap-2"
+                          >
+                            <MapPin size={13} className="text-gray-400 shrink-0" />
+                            {loc}
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 {receiveRequiresExpiry && (
@@ -1091,9 +1186,16 @@ export default function Inventory() {
                           <div><span className="text-gray-400">Barcode:</span> {item.barcode || "-"}</div>
                           <div><span className="text-gray-400">ตู้/คลัง:</span> {item.location}</div>
                           <div><span className="text-gray-400">Lot:</span> {item.lotNumber || "-"}</div>
-                          <div><span className="text-gray-400">EXP:</span> {item.expiryDate}</div>
+                          <div><span className="text-gray-400">EXP:</span> {item.expiryDate || "-"}</div>
                           <div><span className="text-gray-400">ต้นทุน/ชิ้น:</span> <span className="text-amber-600 font-semibold">฿{parseFloat(item.unitCost || 0).toLocaleString("th-TH", {minimumFractionDigits: 2})}</span></div>
                           <div><span className="text-gray-400">รวม:</span> <span className="text-amber-700 font-bold">฿{(parseFloat(item.unitCost || 0) * parseFloat(item.quantity || 0)).toLocaleString("th-TH", {minimumFractionDigits: 2})}</span></div>
+                          {item.packLabel && (
+                            <div className="col-span-2">
+                              <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                                📦 นำเข้าผ่าน {item.packLabel}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <button
