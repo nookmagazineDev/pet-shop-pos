@@ -1,7 +1,19 @@
 import { useState, useEffect } from "react";
-import { Plus, Tag, Percent, Banknote, Power, Check, X, Loader2, ListPlus } from "lucide-react";
+import { Plus, Tag, Percent, Banknote, Power, Check, X, Loader2, ListPlus, Calendar, CalendarDays } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
+
+const DAY_LABELS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+const DAY_FULL   = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const DAY_COLORS = [
+  "bg-orange-100 text-orange-700 border-orange-200",
+  "bg-yellow-100 text-yellow-700 border-yellow-200",
+  "bg-pink-100 text-pink-700 border-pink-200",
+  "bg-green-100 text-green-700 border-green-200",
+  "bg-orange-100 text-orange-700 border-orange-200",
+  "bg-blue-100 text-blue-700 border-blue-200",
+  "bg-purple-100 text-purple-700 border-purple-200",
+];
 
 export default function Promotions() {
   const [promotions, setPromotions] = useState([]);
@@ -20,6 +32,10 @@ export default function Promotions() {
   const [comboItems, setComboItems] = useState(["", ""]); // Array for A + B + C...
   const [discountType, setDiscountType] = useState("FIXED"); // FIXED, PERCENT, or FREE_ITEM
   const [discountValue, setDiscountValue] = useState("");
+  // Date & day scheduling
+  const [startDate, setStartDate] = useState("");   // "YYYY-MM-DD" or ""
+  const [endDate, setEndDate] = useState("");       // "YYYY-MM-DD" or ""
+  const [activeDays, setActiveDays] = useState([]); // [] = all days, else [0,1,...] (0=Sun)
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -57,6 +73,13 @@ export default function Promotions() {
       }
       setDiscountType(promo.DiscountType || "FIXED");
       setDiscountValue(promo.DiscountValue || "");
+      setStartDate(promo.StartDate || "");
+      setEndDate(promo.EndDate || "");
+      setActiveDays(
+        promo.ActiveDays && String(promo.ActiveDays).trim()
+          ? String(promo.ActiveDays).split(",").map(Number)
+          : []
+      );
     } else {
       setEditPromo(null);
       setName("");
@@ -65,6 +88,9 @@ export default function Promotions() {
       setComboItems(["", ""]);
       setDiscountType("FIXED");
       setDiscountValue("");
+      setStartDate("");
+      setEndDate("");
+      setActiveDays([]);
     }
     setIsModalOpen(true);
   };
@@ -91,7 +117,10 @@ export default function Promotions() {
         conditionValue2: "", // Deprecated, kept empty
         discountType,
         discountValue,
-        status: editPromo ? editPromo.Status : "ACTIVE"
+        status: editPromo ? editPromo.Status : "ACTIVE",
+        startDate: startDate || "",
+        endDate: endDate || "",
+        activeDays: activeDays.length > 0 ? activeDays.sort((a, b) => a - b).join(",") : "",
       }
     };
 
@@ -120,6 +149,38 @@ export default function Promotions() {
   const getProductNameByBarcode = (bc) => {
     const found = products.find(p => String(p.Barcode) === String(bc));
     return found ? found.Name : bc;
+  };
+
+  // Format date "YYYY-MM-DD" → "1 ม.ค. 68"
+  const fmtDate = (d) => {
+    if (!d) return "";
+    return new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
+  };
+
+  // Parse activeDays string/array → array of numbers
+  const parseDays = (val) => {
+    if (!val && val !== 0) return [];
+    if (Array.isArray(val)) return val.map(Number);
+    return String(val).split(",").map(Number).filter(n => !isNaN(n));
+  };
+
+  // Check if a promo is currently in-date (for display hint)
+  const getPromoDateStatus = (item) => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayDay = today.getDay();
+    const days = parseDays(item.ActiveDays);
+    const start = item.StartDate ? new Date(item.StartDate) : null;
+    const end   = item.EndDate   ? new Date(item.EndDate)   : null;
+    if (end) end.setHours(23, 59, 59, 999);
+
+    const dateOk = (!start || today >= start) && (!end || today <= end);
+    const dayOk  = days.length === 0 || days.includes(todayDay);
+    if (!dateOk) {
+      if (start && today < start) return { type: "future", label: `เริ่ม ${fmtDate(item.StartDate)}` };
+      if (end   && today > end)   return { type: "expired", label: `หมดอายุแล้ว ${fmtDate(item.EndDate)}` };
+    }
+    if (!dayOk) return { type: "offday", label: `ไม่ใช่วันที่กำหนด` };
+    return null;
   };
 
   return (
@@ -161,7 +222,40 @@ export default function Promotions() {
                 <tr key={idx} className={clsx("hover:bg-fuchsia-50/30 transition-colors", item.Status === "INACTIVE" && "opacity-60 bg-gray-50")}>
                   <td className="py-4 px-6 text-sm">
                     <div className="font-bold text-gray-900 text-base">{item.Name || "ไม่มีชื่อ"}</div>
-                    <div className="text-[10px] uppercase tracking-wider font-mono text-gray-400 mt-1">{item.PromoID}</div>
+                    <div className="text-[10px] uppercase tracking-wider font-mono text-gray-400 mt-0.5">{item.PromoID}</div>
+                    {/* Date range */}
+                    {(item.StartDate || item.EndDate) && (
+                      <div className="flex items-center gap-1 mt-1.5 text-[11px] text-indigo-600 font-medium">
+                        <Calendar size={11} />
+                        {item.StartDate ? fmtDate(item.StartDate) : "ตั้งแต่ต้น"}
+                        {" – "}
+                        {item.EndDate ? fmtDate(item.EndDate) : "ไม่มีกำหนด"}
+                      </div>
+                    )}
+                    {/* Active days */}
+                    {parseDays(item.ActiveDays).length > 0 && (
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        {parseDays(item.ActiveDays).map(d => (
+                          <span key={d} className={clsx("text-[10px] px-1.5 py-0.5 rounded border font-bold", DAY_COLORS[d])}>
+                            {DAY_LABELS[d]}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {/* Date status hint */}
+                    {(() => {
+                      const st = getPromoDateStatus(item);
+                      if (!st || item.Status !== "ACTIVE") return null;
+                      return (
+                        <span className={clsx("inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-semibold",
+                          st.type === "expired" ? "bg-red-100 text-red-600"
+                          : st.type === "future" ? "bg-blue-100 text-blue-600"
+                          : "bg-amber-100 text-amber-600"
+                        )}>
+                          {st.label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="py-4 px-6 text-sm">
                     {item.ConditionType === "MIN_AMOUNT" ? (
@@ -350,6 +444,81 @@ export default function Promotions() {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* ── DATE RANGE ── */}
+              <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-4">
+                <h4 className="font-bold text-sm text-indigo-800 flex items-center gap-1.5 border-b border-indigo-200/50 pb-2">
+                  <Calendar size={15} className="text-indigo-500" /> ช่วงวันที่ที่ใช้ได้ <span className="font-normal text-indigo-400 text-xs ml-1">(ไม่กรอก = ไม่จำกัด)</span>
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-indigo-700 mb-1.5">วันเริ่มต้น</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 bg-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-indigo-700 mb-1.5">วันสิ้นสุด</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      min={startDate || undefined}
+                      onChange={e => setEndDate(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 bg-white text-sm"
+                    />
+                  </div>
+                </div>
+                {startDate && endDate && new Date(endDate) < new Date(startDate) && (
+                  <p className="text-xs text-red-500 font-medium">⚠️ วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น</p>
+                )}
+              </div>
+
+              {/* ── DAY OF WEEK ── */}
+              <div className="p-4 rounded-2xl bg-violet-50 border border-violet-100 space-y-3">
+                <h4 className="font-bold text-sm text-violet-800 flex items-center gap-1.5 border-b border-violet-200/50 pb-2">
+                  <CalendarDays size={15} className="text-violet-500" /> วันที่อนุญาตให้ใช้โปรโมชั่น <span className="font-normal text-violet-400 text-xs ml-1">(ไม่เลือก = ทุกวัน)</span>
+                </h4>
+                <div className="flex gap-2 flex-wrap">
+                  {DAY_LABELS.map((label, d) => {
+                    const active = activeDays.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setActiveDays(prev =>
+                          prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]
+                        )}
+                        className={clsx(
+                          "flex flex-col items-center px-3 py-2 rounded-xl border-2 text-xs font-bold transition-all select-none",
+                          active
+                            ? clsx("border-transparent ring-2 ring-offset-1", DAY_COLORS[d], "ring-violet-400")
+                            : "border-gray-200 bg-white text-gray-400 hover:border-violet-300 hover:text-violet-500"
+                        )}
+                      >
+                        <span className="text-[10px] font-normal mb-0.5">{["อา","จ","อ","พ","พฤ","ศ","ส"][d]}</span>
+                        <span>{DAY_FULL[d].slice(0,3)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {activeDays.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-violet-600 font-medium">
+                      ✓ ใช้ได้เฉพาะ: {[...activeDays].sort((a,b)=>a-b).map(d => DAY_FULL[d]).join(", ")}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveDays([])}
+                      className="text-[11px] text-violet-400 hover:text-violet-600 underline"
+                    >
+                      ล้างทั้งหมด
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 border-t border-gray-100 flex gap-3">
