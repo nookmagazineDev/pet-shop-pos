@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, ShoppingCart, Loader2, Camera, X, Save, CreditCard, Globe, RefreshCw } from "lucide-react";
+import { ScanLine, Plus, Minus, Trash2, ShoppingCart, Loader2, Camera, X, Save, CreditCard, Globe, RefreshCw, FileSpreadsheet, Upload, Download, AlertCircle } from "lucide-react";
 import clsx from "clsx";
+import * as XLSX from "xlsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
 
@@ -21,6 +22,9 @@ export default function OnlineSales() {
   const [orderPlatform, setOrderPlatform] = useState(PLATFORMS[0]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const barcodeRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [importErrors, setImportErrors] = useState([]);
+  const [showImportErrors, setShowImportErrors] = useState(false);
 
   useEffect(() => {
     fetchApi("getProducts").then(data => {
@@ -136,6 +140,165 @@ export default function OnlineSales() {
     }
   };
 
+  const handleDownloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+
+    // --- Sheet 1: ฟอร์มกรอกข้อมูล ---
+    const instructionRows = [
+      ["แบบฟอร์มนำเข้าออเดอร์ขายออนไลน์ - Pet Shop POS"],
+      [""],
+      ["คำแนะนำ:", "กรอกข้อมูลตั้งแต่แถวที่ 7 เป็นต้นไป"],
+      ["", "ใส่ Barcode หรือ ชื่อสินค้า อย่างใดอย่างหนึ่ง (แนะนำใส่ Barcode เพื่อความแม่นยำ)"],
+      ["", "คอลัมน์ ราคา สามารถเว้นว่างได้ (ระบบจะใช้ราคาแพลตฟอร์มที่เลือก)"],
+      [""],
+      ["Barcode", "ชื่อสินค้า", "จำนวน", "ราคา (ไม่บังคับ)"],
+      ["8850999000123", "อาหารแมว Royal Canin", 2, ""],
+      ["8850999000456", "ทรายแมว", 1, 350],
+      ["", "แชมพูสุนัข XYZ", 3, ""],
+    ];
+
+    const ws1 = XLSX.utils.aoa_to_sheet(instructionRows);
+
+    // ความกว้างคอลัมน์
+    ws1["!cols"] = [
+      { wch: 22 },
+      { wch: 38 },
+      { wch: 12 },
+      { wch: 20 },
+    ];
+
+    // Merge title row
+    ws1["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+
+    XLSX.utils.book_append_sheet(wb, ws1, "ออเดอร์");
+
+    // --- Sheet 2: รายการสินค้าทั้งหมด (Reference) ---
+    if (products.length > 0) {
+      const productRows = [
+        ["รายการสินค้าในระบบ (ใช้อ้างอิง Barcode และชื่อสินค้า)"],
+        [""],
+        ["Barcode", "ชื่อสินค้า", "ราคาปกติ", "ราคา Shopee", "ราคา Lazada", "ราคา Lineman", "ราคา GrabFood", "คงเหลือ"],
+        ...products.map(p => [
+          String(p.Barcode || ""),
+          p.Name || "",
+          Number(p.Price) || 0,
+          Number(p.ShopeePrice) || 0,
+          Number(p.LazadaPrice) || 0,
+          Number(p.LinemanPrice) || 0,
+          Number(p.GrabFoodPrice) || 0,
+          Number(p.Quantity) || 0,
+        ]),
+      ];
+      const ws2 = XLSX.utils.aoa_to_sheet(productRows);
+      ws2["!cols"] = [
+        { wch: 22 }, { wch: 38 }, { wch: 12 }, { wch: 13 },
+        { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 10 },
+      ];
+      ws2["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } }];
+      XLSX.utils.book_append_sheet(wb, ws2, "รายการสินค้า");
+    }
+
+    XLSX.writeFile(wb, `template_online_order_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const handleImportExcel = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        // หา header row (แถวที่มี "Barcode" หรือ "ชื่อสินค้า")
+        let headerRowIdx = -1;
+        for (let i = 0; i < Math.min(rows.length, 15); i++) {
+          const rowStr = rows[i].map(c => String(c).trim().toLowerCase()).join("|");
+          if (rowStr.includes("barcode") || rowStr.includes("ชื่อสินค้า")) {
+            headerRowIdx = i;
+            break;
+          }
+        }
+        if (headerRowIdx === -1) {
+          alert("ไม่พบ Header Row ในไฟล์ Excel\nกรุณาตรวจสอบว่ามีแถว 'Barcode' หรือ 'ชื่อสินค้า' ในไฟล์");
+          return;
+        }
+
+        const headers = rows[headerRowIdx].map(c => String(c).trim().toLowerCase());
+        const colBarcode = headers.findIndex(h => h === "barcode");
+        const colName = headers.findIndex(h => h.includes("ชื่อสินค้า") || h === "name");
+        const colQty = headers.findIndex(h => h.includes("จำนวน") || h === "qty" || h === "quantity");
+        const colPrice = headers.findIndex(h => h.includes("ราคา") || h === "price");
+
+        if (colQty === -1) {
+          alert("ไม่พบคอลัมน์ 'จำนวน' ในไฟล์ Excel");
+          return;
+        }
+
+        const errors = [];
+        let addedCount = 0;
+
+        for (let i = headerRowIdx + 1; i < rows.length; i++) {
+          const row = rows[i];
+          const barcodeVal = colBarcode !== -1 ? String(row[colBarcode] || "").trim() : "";
+          const nameVal = colName !== -1 ? String(row[colName] || "").trim() : "";
+          const qtyVal = parseFloat(row[colQty]) || 0;
+          const priceVal = colPrice !== -1 ? parseFloat(row[colPrice]) || 0 : 0;
+
+          if (!barcodeVal && !nameVal) continue; // แถวว่าง
+          if (qtyVal <= 0) {
+            errors.push(`แถว ${i + 1}: จำนวนไม่ถูกต้อง (${barcodeVal || nameVal})`);
+            continue;
+          }
+
+          // หาสินค้า: Barcode ก่อน แล้วค่อย Name
+          let matched = null;
+          if (barcodeVal) {
+            matched = products.find(p => String(p.Barcode).trim() === barcodeVal);
+            if (!matched) matched = products.find(p => String(p.PackBarcode || "").trim() === barcodeVal);
+          }
+          if (!matched && nameVal) {
+            matched = products.find(p => p.Name?.toLowerCase() === nameVal.toLowerCase());
+            if (!matched) matched = products.find(p => p.Name?.toLowerCase().includes(nameVal.toLowerCase()));
+          }
+
+          if (!matched) {
+            errors.push(`แถว ${i + 1}: ไม่พบสินค้า "${barcodeVal || nameVal}"`);
+            continue;
+          }
+
+          const platformPrice = priceVal > 0 ? priceVal : getPlatformPrice(matched, orderPlatform);
+          const key = matched.Barcode || matched.Name;
+
+          setCart(prev => {
+            const existing = prev.find(item => item.id === key);
+            if (existing) return prev.map(item =>
+              item.id === key ? { ...item, qty: item.qty + qtyVal, price: priceVal > 0 ? priceVal : item.price } : item
+            );
+            return [
+              { id: key, Barcode: matched.Barcode, Name: matched.Name, name: matched.Name,
+                price: platformPrice, costPrice: Number(matched.CostPrice) || 0,
+                productObj: matched, qty: qtyVal },
+              ...prev,
+            ];
+          });
+          addedCount++;
+        }
+
+        setImportErrors(errors);
+        if (errors.length > 0) setShowImportErrors(true);
+        if (addedCount > 0) alert(`นำเข้าสำเร็จ ${addedCount} รายการ${errors.length > 0 ? `\n(มีข้อผิดพลาด ${errors.length} รายการ กดดูรายละเอียด)` : ""}`);
+        else if (errors.length === 0) alert("ไม่พบข้อมูลในไฟล์ Excel");
+      } catch (err) {
+        alert("เกิดข้อผิดพลาดในการอ่านไฟล์: " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handleConfirmPayment = async (orderId, platform) => {
     setIsPaying(orderId); // store orderId as loading indicator
     const res = await postApi({
@@ -152,8 +315,42 @@ export default function OnlineSales() {
 
   return (
     <div className="flex flex-col gap-6 h-full">
+      {/* Hidden file input for Excel import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleImportExcel}
+      />
+
+      {/* Import Error Modal */}
+      {showImportErrors && importErrors.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                <AlertCircle size={18} className="text-amber-600" />
+              </div>
+              <h3 className="font-bold text-gray-900">รายการที่นำเข้าไม่ได้ ({importErrors.length})</h3>
+            </div>
+            <div className="space-y-1.5 max-h-60 overflow-y-auto mb-5">
+              {importErrors.map((err, i) => (
+                <div key={i} className="text-sm text-gray-700 bg-amber-50 rounded-lg px-3 py-2">{err}</div>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowImportErrors(false)}
+              className="w-full py-2.5 bg-gray-800 text-white rounded-xl font-semibold hover:bg-gray-900 transition-colors"
+            >
+              ปิด
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600">
             <Globe size={22} />
@@ -162,6 +359,24 @@ export default function OnlineSales() {
             <h2 className="text-2xl font-bold tracking-tight text-gray-900">ระบบขายออนไลน์</h2>
             <p className="text-sm text-gray-500">บันทึกและติดตามออเดอร์จากแพลตฟอร์มออนไลน์</p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownloadTemplate}
+            disabled={isLoadingProducts}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50"
+          >
+            <Download size={16} />
+            ดาวน์โหลด Template
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoadingProducts}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-sm font-semibold hover:bg-violet-100 transition-colors disabled:opacity-50"
+          >
+            <FileSpreadsheet size={16} />
+            นำเข้าจาก Excel
+          </button>
         </div>
       </div>
 
