@@ -872,84 +872,88 @@ export default function Reports() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {(() => {
-                    // Show ALL non-cancelled transactions (not filtered by Tax field — compute VAT from cart)
-                    const taxRows = filteredTransactions.filter(t => t.Status !== "CANCELLED" && searchTx(t));
-                    // Void rows (all voided transactions, compute VAT from cart)
-                    const voidTaxRows = filteredVoids.filter(t => searchTx(t));
-
-                    if (taxRows.length === 0 && voidTaxRows.length === 0) {
-                      return <tr><td colSpan="6" className="p-8 text-center text-gray-400">ไม่มีรายการในช่วงที่เลือก</td></tr>;
-                    }
-
-                    // Compute VAT from cart details for accuracy (stored Tax field may be 0/null)
+                    // Compute VAT from cart details (more accurate than stored Tax field)
                     const computeVat = (tx) => {
                       const { vatableTotal } = getCartVatSplit(tx.CartDetails, products);
                       return r2(vatableTotal / 107 * 7);
                     };
 
-                    const grandTotal = taxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0)
-                                     - voidTaxRows.reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0);
-                    const grandTax   = taxRows.reduce((s, t) => s + computeVat(t), 0)
-                                     - voidTaxRows.reduce((s, t) => s + computeVat(t), 0);
+                    const receiptBadge = (tx) => (
+                      <span className={clsx("px-2 py-1 rounded text-xs font-bold",
+                        tx.ReceiptType === "ใบกำกับภาษี" ? "bg-purple-100 text-purple-700" :
+                          tx.ReceiptType === "online" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"
+                      )}>
+                        {tx.ReceiptType || "ใบเสร็จ"}
+                      </span>
+                    );
+
+                    // Merge all transactions (normal + void) sorted by date ascending
+                    const allTx = [...filteredTransactions]
+                      .sort((a, b) => new Date(a.Date) - new Date(b.Date))
+                      .filter(searchTx);
+
+                    if (allTx.length === 0) {
+                      return <tr><td colSpan="6" className="p-8 text-center text-gray-400">ไม่มีรายการในช่วงที่เลือก</td></tr>;
+                    }
+
+                    const normalCount = allTx.filter(t => t.Status !== "CANCELLED").length;
+                    const voidCount   = allTx.filter(t => t.Status === "CANCELLED").length;
+
+                    // Grand total: normal positives minus void amounts
+                    const grandTotal = allTx.reduce((s, t) => {
+                      const sign = t.Status === "CANCELLED" ? -1 : 1;
+                      return s + (parseFloat(t.TotalAmount) || 0) * sign;
+                    }, 0);
+                    const grandTax = allTx.reduce((s, t) => {
+                      const sign = t.Status === "CANCELLED" ? -1 : 1;
+                      return r2(s + computeVat(t) * sign);
+                    }, 0);
+
+                    const rows = [];
+                    allTx.forEach((tx, i) => {
+                      const isVoid = tx.Status === "CANCELLED";
+                      const amt    = parseFloat(tx.TotalAmount || 0);
+                      const vat    = computeVat(tx);
+
+                      // --- Original data row (always shown, positive amounts) ---
+                      rows.push(
+                        <tr key={`orig-${i}`} className={clsx("text-sm", isVoid ? "bg-red-50/40" : "hover:bg-gray-50")}>
+                          <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
+                          <td className="p-3">{receiptBadge(tx)}</td>
+                          <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
+                          <td className="p-3 text-right font-medium">฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-right text-amber-600 font-bold">
+                            {vat > 0 ? `฿${vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="p-3"></td>
+                        </tr>
+                      );
+
+                      // --- VOID reversal row (negated) — shown immediately below original ---
+                      if (isVoid) {
+                        rows.push(
+                          <tr key={`void-${i}`} className="bg-red-50 text-sm border-l-4 border-red-400">
+                            <td className="p-3 text-red-500 text-xs italic">ยกเลิก {new Date(tx.Date).toLocaleString("th-TH")}</td>
+                            <td className="p-3">{receiptBadge(tx)}</td>
+                            <td className="p-3 font-mono text-red-500">{tx.ReceiptNo || tx.OrderID}</td>
+                            <td className="p-3 text-right font-bold text-red-600">-฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                            <td className="p-3 text-right font-bold text-red-600">
+                              {vat > 0 ? `-฿${vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : <span className="text-gray-300">-</span>}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">VOID</span>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    });
 
                     return (
                       <>
-                        {/* Normal rows */}
-                        {taxRows.map((tx, i) => {
-                          const computedVat = computeVat(tx);
-                          return (
-                            <tr key={`tx-${i}`} className="hover:bg-gray-50 text-sm">
-                              <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
-                              <td className="p-3">
-                                <span className={clsx("px-2 py-1 rounded text-xs font-bold",
-                                  tx.ReceiptType === "ใบกำกับภาษี" ? "bg-purple-100 text-purple-700" :
-                                    (tx.ReceiptType === "online" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")
-                                )}>
-                                  {tx.ReceiptType || "ใบเสร็จ"}
-                                </span>
-                              </td>
-                              <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
-                              <td className="p-3 text-right font-medium">฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                              <td className="p-3 text-right text-amber-600 font-bold">
-                                {computedVat > 0
-                                  ? `฿${computedVat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
-                                  : <span className="text-gray-300">-</span>}
-                              </td>
-                              <td className="p-3"></td>
-                            </tr>
-                          );
-                        })}
-
-                        {/* Void reversal rows — negated */}
-                        {voidTaxRows.map((tx, i) => {
-                          const amt = parseFloat(tx.TotalAmount || 0);
-                          const vat = computeVat(tx);
-                          return (
-                            <tr key={`void-${i}`} className="bg-red-50 text-sm border-l-4 border-red-400">
-                              <td className="p-3 text-red-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
-                              <td className="p-3">
-                                <span className={clsx("px-2 py-1 rounded text-xs font-bold",
-                                  tx.ReceiptType === "ใบกำกับภาษี" ? "bg-purple-100 text-purple-700" :
-                                    (tx.ReceiptType === "online" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")
-                                )}>
-                                  {tx.ReceiptType || "ใบเสร็จ"}
-                                </span>
-                              </td>
-                              <td className="p-3 font-mono text-red-500">{tx.ReceiptNo || tx.OrderID}</td>
-                              <td className="p-3 text-right font-bold text-red-600">-฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                              <td className="p-3 text-right font-bold text-red-600">
-                                {vat > 0 ? `-฿${vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : <span className="text-gray-300">-</span>}
-                              </td>
-                              <td className="p-3 text-center">
-                                <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">VOID</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-
+                        {rows}
                         <tr className="bg-gray-100 font-bold text-sm border-t-2 border-gray-300">
                           <td className="p-3 text-gray-700" colSpan="3">
-                            Grand Total ({taxRows.length} รายการ{voidTaxRows.length > 0 ? `, หักลบ ${voidTaxRows.length} VOID` : ""})
+                            Grand Total ({normalCount} รายการ{voidCount > 0 ? `, หักลบ ${voidCount} VOID` : ""})
                           </td>
                           <td className={clsx("p-3 text-right", grandTotal < 0 ? "text-red-700" : "text-gray-900")}>
                             ฿{grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
