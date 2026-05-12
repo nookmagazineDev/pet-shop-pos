@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { fetchApi, postApi } from "../api";
-import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, TrendingUp, TrendingDown, DollarSign, Calendar, FileSpreadsheet, Ban } from "lucide-react";
+import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, TrendingUp, TrendingDown, DollarSign, Calendar, FileSpreadsheet, Ban, CreditCard } from "lucide-react";
 import clsx from "clsx";
 import * as XLSX from "xlsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
@@ -34,7 +34,10 @@ export default function Accounting() {
     });
   }, [expenses, dateFrom, dateTo]);
 
-  const totalIncome = useMemo(() => filteredTransactions.filter(tx => (tx.Status || tx[13]) !== "CANCELLED").reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [filteredTransactions]);
+  const activeTxs = useMemo(() => filteredTransactions.filter(tx => (tx.Status || tx[13]) !== "CANCELLED"), [filteredTransactions]);
+  const totalCreditCard = useMemo(() => activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) === "บัตรเครดิต").reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [activeTxs]);
+  // รายรับรวม = เงินสด + เงินโอน เท่านั้น (เครดิตการ์ดแยกต่างหาก ยังไม่ถือว่าเงินเข้า)
+  const totalIncome = useMemo(() => activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) !== "บัตรเครดิต").reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [activeTxs]);
   const totalExpenses = useMemo(() => filteredExpenses.reduce((sum, exp) => sum + (parseFloat(exp.Amount || exp[4]) || 0), 0), [filteredExpenses]);
   const netProfit = totalIncome - totalExpenses;
 
@@ -325,15 +328,25 @@ export default function Accounting() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center gap-4">
           <div className="w-11 h-11 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
             <TrendingUp size={22} className="text-emerald-600" />
           </div>
           <div>
-            <p className="text-xs font-medium text-emerald-600 mb-0.5">รายรับรวม</p>
+            <p className="text-xs font-medium text-emerald-600 mb-0.5">รายรับรวม (เงินสด+โอน)</p>
             <p className="text-xl font-bold text-emerald-700">฿{totalIncome.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
-            <p className="text-xs text-emerald-500">{filteredTransactions.length} รายการ</p>
+            <p className="text-xs text-emerald-500">{activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) !== "บัตรเครดิต").length} รายการ</p>
+          </div>
+        </div>
+        <div className="bg-violet-50 border border-violet-100 rounded-2xl p-5 flex items-center gap-4">
+          <div className="w-11 h-11 bg-violet-100 rounded-xl flex items-center justify-center shrink-0">
+            <CreditCard size={22} className="text-violet-600" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-violet-600 mb-0.5">ชำระด้วยบัตรเครดิต</p>
+            <p className="text-xl font-bold text-violet-700">฿{totalCreditCard.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            <p className="text-xs text-violet-500">{activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) === "บัตรเครดิต").length} รายการ</p>
           </div>
         </div>
         <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5 flex items-center gap-4">
