@@ -531,11 +531,13 @@ export default function Reports() {
       ];
 
       // Helper: build one row from a transaction
-      const buildTaxRow = (tx, i, isVoid = false) => {
+      // isVoid=true → negate all amounts and put "VOID" in voidFlag column
+      const buildTaxRow = (tx, rowNo, isVoid = false) => {
         const { nonVAT, vatableTotal } = getCartVatSplit(tx.CartDetails, products);
         const sign = isVoid ? -1 : 1;
         const beforeVAT = r2((vatableTotal / 1.07) * sign);
-        const vat       = r2(parseFloat(tx.Tax || 0) * sign);
+        // Compute VAT from cart details (more accurate than stored tx.Tax which may be 0/null)
+        const vat       = r2((vatableTotal / 107 * 7) * sign);
         let buyer = "ลูกค้าทั่วไป", buyerTaxId = "-";
         try {
           const ci = JSON.parse(tx.CustomerInfo || "{}");
@@ -545,7 +547,7 @@ export default function Reports() {
         const taxInv = taxInvoices.find(t => t.OrderID === tx.OrderID);
         if (taxInv) { buyer = taxInv.CustomerName || buyer; buyerTaxId = taxInv.CustomerTaxID || buyerTaxId; }
         return {
-          no:           i + 1,
+          no:           rowNo,
           date:         new Date(tx.Date).toLocaleString("th-TH"),
           taxInvoiceNo: taxInv?.TaxInvoiceNo || tx.ReceiptNo || tx.OrderID,
           buyer,
@@ -561,10 +563,16 @@ export default function Reports() {
       };
 
       const normalTxRows = filteredTransactions.filter(t => t.Status !== "CANCELLED");
-      const rows = [
-        ...normalTxRows.map((tx, i) => buildTaxRow(tx, i, false)),
-        ...filteredVoids.map((tx, i) => buildTaxRow(tx, normalTxRows.length + i, true)),
-      ];
+      let rowNo = 0;
+      const normalRows = normalTxRows.map((tx) => buildTaxRow(tx, ++rowNo, false));
+      // For VOID transactions: emit 2 rows each —
+      //   1st row: original positive data (no VOID label)
+      //   2nd row: negated amounts + "VOID" label (the reversal entry)
+      const voidPairRows = filteredVoids.flatMap((tx) => [
+        buildTaxRow(tx, ++rowNo, false),   // original data row
+        buildTaxRow(tx, ++rowNo, true),    // negated VOID reversal row
+      ]);
+      const rows = [...normalRows, ...voidPairRows];
       const sum = (key) => r2(rows.reduce((s, r) => s + (r[key] || 0), 0));
       const totals = { no: "Grand total", nonVAT: sum("nonVAT"), beforeVAT: sum("beforeVAT"), vat: sum("vat"), rounding: 0, total: sum("total"), voidFlag: "" };
       exportReportToExcel({ title: "Output tax report", company, period, headers, rows, totals, sheetName: "TaxReport", fileName: "Tax_Report", textCols: ['taxId'] });
