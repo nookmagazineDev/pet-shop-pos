@@ -23,6 +23,7 @@ export default function Reports() {
   // Shift Slip Modal
   const [isSlipModalOpen, setIsSlipModalOpen] = useState(false);
   const [shiftSlipData, setShiftSlipData] = useState(null);
+  const [shiftSlipBills, setShiftSlipBills] = useState([]);
 
   // Detail Modal States
   const [selectedTx, setSelectedTx] = useState(null);
@@ -1330,25 +1331,74 @@ export default function Reports() {
                 {filteredShifts.filter(searchShift).length === 0 ? (
                   <tr><td colSpan="6" className="py-8 text-center text-blue-400/80">ไม่พบรายงานการปิดกะในช่วงวันที่นี้</td></tr>
                 ) : (
-                  filteredShifts.filter(searchShift).map((s, idx) => (
-                    <tr key={idx} className="hover:bg-blue-50/30 text-sm">
-                      <td className="py-4 px-6 text-gray-700">{s.OpenTime ? new Date(s.OpenTime).toLocaleString("th-TH") : "-"}</td>
-                      <td className="py-4 px-6 text-gray-700">{s.CloseTime ? new Date(s.CloseTime).toLocaleString("th-TH") : <span className="text-amber-500 font-semibold">กำลังเปิดอยู่</span>}</td>
-                      <td className="py-4 px-6 text-gray-800 font-medium">{s.OpenedBy || s.Username || "-"}</td>
-                      <td className="py-4 px-6 text-right font-bold text-blue-700">฿{parseFloat(s.TotalSales || 0).toLocaleString()}</td>
-                      <td className="py-4 px-6 text-right text-gray-600">{s.TotalBills || s.OrderCount || "-"}</td>
-                      <td className="py-4 px-6 text-center">
-                        {s.CloseTime && (
+                  filteredShifts.filter(searchShift).map((s, idx) => {
+                    // Transactions that fall within this shift's time window
+                    const openD  = new Date(s.OpenTime);
+                    const closeD = s.CloseTime ? new Date(s.CloseTime) : null;
+                    const shiftTxs = transactions.filter(t => {
+                      const d = new Date(t.Date);
+                      return d >= openD && (!closeD || d <= closeD);
+                    });
+                    // Unique staff names from transactions in this shift
+                    const staffNames = [...new Set(
+                      shiftTxs.map(t => t.Username || t.Staff || "").filter(Boolean)
+                    )];
+                    const billCount = s.TotalBills || s.OrderCount || shiftTxs.length || "-";
+
+                    // Normalize shift record fields → camelCase expected by ShiftSlipModal
+                    const openShiftModal = () => {
+                      const normalized = {
+                        shiftId:       s.ShiftID || s.RecordID || s.ID || "-",
+                        openTime:      s.OpenTime,
+                        closeTime:     s.CloseTime,
+                        actor:         s.OpenedBy || s.ClosedBy || s.Username || "พนักงาน",
+                        initialCash:   parseFloat(s.InitialCash || s.StartCash || 0),
+                        cashSales:     parseFloat(s.CashSales || s.Cash || 0),
+                        transferDirect:parseFloat(s.TransferDirect || s.Transfer || 0),
+                        transferQR:    parseFloat(s.TransferQR || s.QR || 0),
+                        creditSales:   parseFloat(s.CreditSales || s.CreditCard || 0),
+                        creditPts:     parseFloat(s.CreditPts || s.CreditBalance || 0),
+                        expectedCash:  parseFloat(s.ExpectedCash || 0),
+                        actualCash:    parseFloat(s.ActualCash || 0),
+                        discrepancy:   parseFloat(s.Discrepancy || 0),
+                        onlinePaid:    typeof s.OnlinePaid === "string" ? JSON.parse(s.OnlinePaid || "{}") : (s.OnlinePaid || {}),
+                        onlinePending: typeof s.OnlinePending === "string" ? JSON.parse(s.OnlinePending || "{}") : (s.OnlinePending || {}),
+                        totalSales:    parseFloat(s.TotalSales || 0),
+                        totalBills:    billCount,
+                        staffNames,
+                      };
+                      setShiftSlipData(normalized);
+                      setShiftSlipBills(shiftTxs);
+                      setIsSlipModalOpen(true);
+                    };
+
+                    return (
+                      <tr key={idx} className="hover:bg-blue-50/30 text-sm">
+                        <td className="py-4 px-6 text-gray-700">{s.OpenTime ? new Date(s.OpenTime).toLocaleString("th-TH") : "-"}</td>
+                        <td className="py-4 px-6 text-gray-700">{s.CloseTime ? new Date(s.CloseTime).toLocaleString("th-TH") : <span className="text-amber-500 font-semibold">กำลังเปิดอยู่</span>}</td>
+                        <td className="py-4 px-6">
+                          {staffNames.length > 0
+                            ? <div className="flex flex-wrap gap-1">
+                                {staffNames.map((name, ni) => (
+                                  <span key={ni} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">{name}</span>
+                                ))}
+                              </div>
+                            : <span className="text-gray-500">{s.OpenedBy || s.Username || "-"}</span>
+                          }
+                        </td>
+                        <td className="py-4 px-6 text-right font-bold text-blue-700">฿{parseFloat(s.TotalSales || 0).toLocaleString()}</td>
+                        <td className="py-4 px-6 text-right text-gray-600 font-semibold">{billCount}</td>
+                        <td className="py-4 px-6 text-center">
                           <button
-                            onClick={() => { setShiftSlipData(s); setIsSlipModalOpen(true); }}
+                            onClick={openShiftModal}
                             className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-semibold transition-colors"
                           >
                             ดูสลิป
                           </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1571,8 +1621,10 @@ export default function Reports() {
       {/* Shift Slip Modal */}
       {isSlipModalOpen && shiftSlipData && (
         <ShiftSlipModal
+          isOpen={isSlipModalOpen}
           shiftData={shiftSlipData}
-          onClose={() => { setIsSlipModalOpen(false); setShiftSlipData(null); }}
+          bills={shiftSlipBills}
+          onClose={() => { setIsSlipModalOpen(false); setShiftSlipData(null); setShiftSlipBills([]); }}
         />
       )}
 
