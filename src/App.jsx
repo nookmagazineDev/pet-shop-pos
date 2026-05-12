@@ -15,6 +15,7 @@ import Coupons from "./pages/Coupons";
 import Login from "./pages/Login";
 import AdminUsers from "./pages/AdminUsers";
 import PrinterSettings from "./pages/PrinterSettings";
+import Suppliers from "./pages/Suppliers";
 import { ShiftProvider } from "./context/ShiftContext";
 import { AuthProvider } from "./context/AuthContext";
 import { PrinterProvider } from "./context/PrinterContext";
@@ -47,6 +48,7 @@ function App() {
               <Route path="coupons" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Coupons /></ProtectedRoute>} />
               <Route path="admin/users" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsers /></ProtectedRoute>} />
               <Route path="settings/printer" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><PrinterSettings /></ProtectedRoute>} />
+              <Route path="suppliers" element={<ProtectedRoute allowedRoles={MANAGEMENT}><Suppliers /></ProtectedRoute>} />
             </Route>
           </Routes>
           <Toaster position="top-right" />
