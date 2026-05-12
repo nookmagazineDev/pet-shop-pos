@@ -23,7 +23,7 @@ function setup() {
     "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy", "FreeItemBarcode", "FreeItemName"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
-    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"],
+    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate", "StartDate", "EndDate", "ActiveDays"],
     "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
     "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"],
     "ActivityLog": ["Timestamp", "User", "Role", "Module", "Action", "ReferenceID", "Details"],
@@ -1565,6 +1565,9 @@ function savePromotion(payload) {
         sheet.getRange(i + 1, 7).setValue(parseFloat(payload.discountValue) || 0);
         if (payload.status !== undefined) sheet.getRange(i + 1, 8).setValue(payload.status);
         if (payload.expiryDate !== undefined) sheet.getRange(i + 1, 9).setValue(payload.expiryDate);
+        sheet.getRange(i + 1, 10).setValue(payload.startDate || "");
+        sheet.getRange(i + 1, 11).setValue(payload.endDate   || "");
+        sheet.getRange(i + 1, 12).setValue(payload.activeDays || "");
         found = true;
         break;
       }
@@ -1583,7 +1586,10 @@ function savePromotion(payload) {
       payload.discountType || "FIXED",
       parseFloat(payload.discountValue) || 0,
       payload.status || "ACTIVE",
-      payload.expiryDate || ""
+      payload.expiryDate || "",
+      payload.startDate  || "",
+      payload.endDate    || "",
+      payload.activeDays || ""
     ]);
   }
 
@@ -1618,11 +1624,26 @@ function readSheetData(sheetName) {
   
   // Auto-fix headers to ensure valid JSON keys
   if (sheetName === "Promotions") {
-    const requiredHeaders = ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate"];
+    const requiredHeaders = ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate", "StartDate", "EndDate", "ActiveDays"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
     if (currentHeaderRow[0] !== "PromoID") {
+      // Sheet is empty / uninitialized — write all headers
       sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
+    } else {
+      // Sheet exists — add only the new columns if missing (backward compat)
+      const newCols = [
+        { col: 10, name: "StartDate"  },
+        { col: 11, name: "EndDate"    },
+        { col: 12, name: "ActiveDays" },
+      ];
+      newCols.forEach(function(c) {
+        const cell = sheet.getRange(1, c.col);
+        if (!cell.getValue() || cell.getValue() !== c.name) {
+          cell.setValue(c.name);
+          cell.setFontWeight("bold");
+        }
+      });
     }
   } else if (sheetName === "Products") {
     const requiredHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments"];
