@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye, Download } from "lucide-react";
+import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye, Download, FileSpreadsheet, Upload, AlertTriangle, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
 import { exportToExcel } from "../utils/excelExport";
+import * as XLSX from "xlsx";
 import { useAuth } from "../context/AuthContext";
 
 export default function Inventory() {
@@ -27,6 +28,8 @@ export default function Inventory() {
   const [receiveUnitCostStr, setReceiveUnitCostStr] = useState("");
   const [receiveRequiresExpiry, setReceiveRequiresExpiry] = useState(true);
   const [poFile, setPoFile] = useState(null); // PO Document file
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importPreviewItems, setImportPreviewItems] = useState([]);
   const [products, setProducts] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [isEditSaving, setIsEditSaving] = useState(false);
@@ -253,6 +256,73 @@ export default function Inventory() {
 
   const handleRemoveReceiveItem = (id) => {
     setReceiveCart(receiveCart.filter(item => item.id !== id));
+  };
+
+  const downloadReceiveTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    const instructions = [
+      ["แบบฟอร์มนำเข้ารายการสินค้าเข้าคลัง (Receive Goods Template)"],
+      [""],
+      ["คำแนะนำการกรอกข้อมูล:"],
+      ["- บาร์โค้ด *: กรอกบาร์โค้ดสินค้าที่มีในระบบ (บังคับ)"],
+      ["- จำนวน *: ตัวเลขจำนวนชิ้นที่รับเข้า (บังคับ)"],
+      ["- โลเคชั่นคลัง *: ตำแหน่งจัดเก็บ เช่น คลังหลัง A1 (บังคับ)"],
+      ["- ต้นทุน/ชิ้น: ราคาต้นทุนต่อชิ้น (ถ้าไม่กรอกจะใช้ค่าเดิมในระบบ)"],
+      ["- วันหมดอายุ: รูปแบบ YYYY-MM-DD เช่น 2026-12-31 (สำหรับสินค้าที่มี EXP)"],
+      [""],
+      ["⚠️  กรอกข้อมูลในชีต 'ข้อมูลสินค้า' เท่านั้น อย่าลบแถวหัวตาราง"],
+    ];
+    const wsInst = XLSX.utils.aoa_to_sheet(instructions);
+    wsInst["!cols"] = [{ wch: 70 }];
+    XLSX.utils.book_append_sheet(wb, wsInst, "คำแนะนำ");
+    const headers = ["บาร์โค้ด *", "ชื่อสินค้า (อ้างอิงเท่านั้น)", "จำนวน *", "ต้นทุน/ชิ้น (บาท)", "โลเคชั่นคลัง *", "วันหมดอายุ (YYYY-MM-DD)"];
+    const sample = [["8850999999999", "ตัวอย่าง: Royal Canin Mini Adult 1kg", 10, 250, "คลังหลัง A1", "2027-06-30"]];
+    const wsData = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+    wsData["!cols"] = [{ wch: 22 }, { wch: 38 }, { wch: 12 }, { wch: 20 }, { wch: 22 }, { wch: 26 }];
+    XLSX.utils.book_append_sheet(wb, wsData, "ข้อมูลสินค้า");
+    XLSX.writeFile(wb, "receive_goods_template.xlsx");
+  };
+
+  const handleImportExcel = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const wb = XLSX.read(evt.target.result, { type: "array" });
+      const ws = wb.Sheets["ข้อมูลสินค้า"] || wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      const items = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const barcode = String(row[0] || "").trim();
+        if (!barcode) continue;
+        const product = products.find(p => String(p.Barcode) === barcode);
+        items.push({
+          id: `imp_${Date.now()}_${i}`,
+          barcode,
+          productName: product ? product.Name : (String(row[1] || "").trim() || "ไม่พบในระบบ"),
+          quantity: String(row[2] || ""),
+          unitCost: String(row[3] || (product?.CostPrice || "")),
+          location: String(row[4] || (product?.Location || "")),
+          expiryDate: String(row[5] || ""),
+          lotNumber: orderNumberStr,
+          receivingDate: new Date().toISOString().split("T")[0],
+          found: !!product,
+          requiresExpiry: product ? product.HasExpiry !== "NO" : true,
+        });
+      }
+      setImportPreviewItems(items);
+      setShowImportModal(true);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
+  const handleConfirmImport = () => {
+    const valid = importPreviewItems.filter(item => item.found && item.quantity);
+    setReceiveCart(prev => [...prev, ...valid]);
+    setShowImportModal(false);
+    setImportPreviewItems([]);
   };
 
   const handlePoFileChange = (e) => {
@@ -836,8 +906,36 @@ export default function Inventory() {
               </div>
             </div>
 
+            {/* Import / Download bar */}
+            <div className={clsx(
+              "flex flex-wrap items-center gap-2 mb-4 p-3 rounded-xl border",
+              (!companyNameStr || !orderNumberStr) ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-100"
+            )}>
+              <button type="button" onClick={downloadReceiveTemplate}
+                className="flex items-center gap-1.5 text-xs bg-white text-emerald-700 hover:bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-200 font-semibold transition-colors shadow-sm shrink-0">
+                <FileSpreadsheet size={14} /> ดาวน์โหลดแบบฟอร์ม Excel
+              </button>
+              <label className={clsx(
+                "flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border font-semibold transition-colors shrink-0",
+                (!companyNameStr || !orderNumberStr)
+                  ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                  : "bg-white text-blue-700 hover:bg-blue-100 border-blue-200 cursor-pointer shadow-sm"
+              )}>
+                <Upload size={14} /> นำเข้าจาก Excel
+                <input type="file" accept=".xlsx,.xls" className="hidden"
+                  disabled={!companyNameStr || !orderNumberStr}
+                  onChange={handleImportExcel} />
+              </label>
+              {(!companyNameStr || !orderNumberStr) && (
+                <span className="text-xs text-amber-700 flex items-center gap-1 font-medium">
+                  <AlertTriangle size={12} />
+                  กรอกบริษัทและเลขออเดอร์ก่อนจึงจะนำเข้าได้
+                </span>
+              )}
+            </div>
+
             <form className="space-y-4 bg-gray-50 p-4 rounded-xl border border-gray-100" onSubmit={handleAddReceiveItem}>
-              <h4 className="font-semibold text-gray-800 border-b pb-2 mb-2">ฟอร์มเพิ่มรายการสินค้า</h4>
+              <h4 className="font-semibold text-gray-800 border-b pb-2 mb-2">ฟอร์มเพิ่มรายการสินค้า (ทีละรายการ)</h4>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
@@ -944,10 +1042,21 @@ export default function Inventory() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 border border-blue-200"
+                  disabled={!companyNameStr || !orderNumberStr}
+                  className={clsx(
+                    "w-full py-2.5 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 border",
+                    (!companyNameStr || !orderNumberStr)
+                      ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                      : "bg-blue-100 hover:bg-blue-200 text-blue-700 border-blue-200"
+                  )}
                 >
                   <Plus size={18} /> เพิ่มลงรายการนำเข้า
                 </button>
+                {(!companyNameStr || !orderNumberStr) && (
+                  <p className="text-xs text-center text-amber-600 mt-1.5 flex items-center justify-center gap-1">
+                    <AlertTriangle size={11} /> กรอกชื่อบริษัทและเลขที่ออเดอร์ก่อน
+                  </p>
+                )}
               </div>
             </form>
           </div>
@@ -1118,6 +1227,91 @@ export default function Inventory() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import Preview Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-[400] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                  <FileSpreadsheet size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">ตรวจสอบข้อมูลนำเข้าจาก Excel</h3>
+                  <p className="text-xs text-gray-400">ตรวจสอบรายการก่อนเพิ่มลงใบรับสินค้า</p>
+                </div>
+              </div>
+              <button onClick={() => setShowImportModal(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-5 space-y-2">
+              {importPreviewItems.length === 0 ? (
+                <p className="text-center text-gray-400 py-10">ไม่พบข้อมูลในไฟล์</p>
+              ) : (
+                importPreviewItems.map((item, idx) => (
+                  <div key={item.id} className={clsx(
+                    "p-3 rounded-xl border text-sm",
+                    item.found ? "bg-green-50/60 border-green-100" : "bg-red-50 border-red-200"
+                  )}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={clsx("font-semibold", item.found ? "text-gray-900" : "text-red-700")}>
+                        {idx + 1}. {item.productName}
+                      </span>
+                      {item.found
+                        ? <span className="text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1"><CheckCircle2 size={11} /> พบในระบบ</span>
+                        : <span className="text-[11px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1"><AlertTriangle size={11} /> ไม่พบบาร์โค้ด</span>
+                      }
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                      <span><span className="text-gray-400">Barcode:</span> {item.barcode}</span>
+                      <span><span className="text-gray-400">จำนวน:</span> {item.quantity || "-"} ชิ้น</span>
+                      <span><span className="text-gray-400">ต้นทุน/ชิ้น:</span> {item.unitCost ? `฿${item.unitCost}` : "-"}</span>
+                      <span><span className="text-gray-400">โลเคชั่น:</span> {item.location || "-"}</span>
+                      <span><span className="text-gray-400">EXP:</span> {item.expiryDate || "-"}</span>
+                    </div>
+                    {!item.found && (
+                      <p className="text-xs text-red-600 mt-1.5 flex items-center gap-1">
+                        <AlertTriangle size={11} /> บาร์โค้ดนี้ไม่มีในระบบ — จะถูกข้าม กรุณาเพิ่มสินค้าก่อนนำเข้า
+                      </p>
+                    )}
+                    {item.found && item.requiresExpiry && !item.expiryDate && (
+                      <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
+                        <AlertTriangle size={11} /> สินค้านี้ต้องการวันหมดอายุ — สามารถแก้ไขได้ในรายการหลังจากนำเข้า
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50 rounded-b-2xl">
+              <div className="text-sm text-gray-600">
+                พบ <span className="font-bold text-green-700">{importPreviewItems.filter(i => i.found).length}</span> รายการ
+                {importPreviewItems.filter(i => !i.found).length > 0 && (
+                  <span className="ml-2 text-red-600">
+                    / ข้าม <span className="font-bold">{importPreviewItems.filter(i => !i.found).length}</span> รายการ (ไม่พบในระบบ)
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm hover:bg-gray-100 transition-colors">
+                  ยกเลิก
+                </button>
+                <button type="button" onClick={handleConfirmImport}
+                  disabled={importPreviewItems.filter(i => i.found && i.quantity).length === 0}
+                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5">
+                  <CheckCircle2 size={15} />
+                  เพิ่มลงใบรับสินค้า ({importPreviewItems.filter(i => i.found && i.quantity).length} รายการ)
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
