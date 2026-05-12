@@ -1,11 +1,216 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, ShoppingCart, Loader2, Camera, X, Save, CreditCard, Globe, RefreshCw } from "lucide-react";
+import {
+  Search, ScanLine, Plus, Minus, Trash2, ShoppingCart, Loader2, Camera, X,
+  Save, CreditCard, Globe, RefreshCw, FileDown, Upload, CheckCircle2,
+  AlertTriangle, FileSpreadsheet, ChevronDown, ChevronUp
+} from "lucide-react";
+import * as XLSX from "xlsx";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
 
 const PLATFORMS = ["Shopee", "Lazada", "Lineman", "GrabFood", "อื่นๆ"];
 
+/* ──────────────────────────────────────────────
+   Template generator
+────────────────────────────────────────────── */
+function downloadOnlineTemplate() {
+  const wb = XLSX.utils.book_new();
+
+  // ── Sheet 1: คำแนะนำ ──
+  const instructions = [
+    ["คำแนะนำการใช้งาน - แบบฟอร์มนำเข้าออเดอร์ขายออนไลน์"],
+    [""],
+    ["1.  กรอกข้อมูลในชีต  'ข้อมูลออเดอร์'  แล้วบันทึก"],
+    ["2.  เลขออเดอร์  — ใส่ตัวเลขหรือรหัสออเดอร์  แถวที่เลขเดียวกัน = ออเดอร์เดียวกัน"],
+    ["                   หากเว้นว่างไว้จะถือว่าแต่ละแถวเป็นออเดอร์แยกกัน"],
+    ["3.  แพลตฟอร์ม    — Shopee | Lazada | Lineman | GrabFood | อื่นๆ"],
+    ["4.  บาร์โค้ด      — กรอกบาร์โค้ดสินค้า (แนะนำ) หรือชื่อสินค้า"],
+    ["5.  ชื่อสินค้า    — ถ้ากรอกบาร์โค้ดถูกต้องจะดึงชื่อจากระบบอัตโนมัติ"],
+    ["6.  จำนวน         — จำนวนชิ้นที่ขาย"],
+    ["7.  ราคาต่อชิ้น   — หากว่างจะใช้ราคาแพลตฟอร์มที่ตั้งค่าในระบบ"],
+    [""],
+    ["* สามารถนำเข้าหลายออเดอร์พร้อมกันได้"],
+    ["* สินค้าที่ไม่พบในระบบจะแสดงเป็นสีเหลืองในหน้าตรวจสอบ"],
+  ];
+  const wsInst = XLSX.utils.aoa_to_sheet(instructions);
+  wsInst["!cols"] = [{ wch: 70 }];
+  XLSX.utils.book_append_sheet(wb, wsInst, "คำแนะนำ");
+
+  // ── Sheet 2: ข้อมูลออเดอร์ ──
+  const headers = [
+    "เลขออเดอร์",
+    "แพลตฟอร์ม",
+    "บาร์โค้ดสินค้า",
+    "ชื่อสินค้า",
+    "จำนวน",
+    "ราคาต่อชิ้น (ถ้าว่างใช้ราคาแพลตฟอร์ม)",
+  ];
+  const sample = [
+    ["ORD-001", "Shopee",   "8851234567890", "อาหารสุนัข Royal Canin 1kg", 2, ""],
+    ["ORD-001", "Shopee",   "8859876543210", "ขนมสุนัข Snack",             1, ""],
+    ["ORD-002", "Lazada",   "8851112223334", "แชมพูสุนัข Freshy",          3, 89],
+    ["ORD-003", "Lineman",  "",              "อาหารแมว Whiskas",           1, 150],
+    ["ORD-004", "GrabFood", "8850001112223", "Cat Litter ทรายแมว 5L",      2, ""],
+  ];
+  const wsData = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+  wsData["!cols"] = [
+    { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 32 }, { wch: 8 }, { wch: 32 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsData, "ข้อมูลออเดอร์");
+
+  XLSX.writeFile(wb, "OnlineSales_Template.xlsx");
+}
+
+/* ──────────────────────────────────────────────
+   Import preview modal
+────────────────────────────────────────────── */
+function ImportPreviewModal({ preview, onClose, onConfirm, isSaving }) {
+  const [expanded, setExpanded] = useState(null);
+  if (!preview) return null;
+
+  const { orders } = preview;
+  const totalOrders = orders.length;
+  const warnOrders = orders.filter(o => o.items.some(i => !i.found)).length;
+  const totalItems  = orders.reduce((s, o) => s + o.items.reduce((ss, i) => ss + i.qty, 0), 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0">
+          <div>
+            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+              <FileSpreadsheet size={20} className="text-violet-600" />
+              ตรวจสอบข้อมูลก่อนนำเข้า
+            </h3>
+            <p className="text-sm text-gray-500 mt-0.5">
+              พบ <strong>{totalOrders}</strong> ออเดอร์ •&nbsp;
+              <strong>{totalItems}</strong> ชิ้น
+              {warnOrders > 0 && (
+                <span className="ml-2 text-amber-600">
+                  ⚠ {warnOrders} ออเดอร์มีสินค้าที่ไม่พบในระบบ
+                </span>
+              )}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Orders list */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {orders.map((order, oi) => {
+            const orderTotal = order.items.reduce((s, i) => s + i.price * i.qty, 0);
+            const hasWarn = order.items.some(i => !i.found);
+            const isExpanded = expanded === oi;
+
+            return (
+              <div
+                key={oi}
+                className={clsx(
+                  "border rounded-xl overflow-hidden",
+                  hasWarn ? "border-amber-200" : "border-gray-100"
+                )}
+              >
+                {/* Order header */}
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isExpanded ? null : oi)}
+                  className={clsx(
+                    "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors",
+                    hasWarn ? "bg-amber-50 hover:bg-amber-100/60" : "bg-gray-50 hover:bg-gray-100/60"
+                  )}
+                >
+                  {hasWarn
+                    ? <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+                    : <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                  }
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm text-gray-800">
+                      ออเดอร์ {order.orderNo}
+                    </div>
+                    <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                      <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-medium">
+                        {order.platform}
+                      </span>
+                      <span>{order.items.length} รายการ</span>
+                    </div>
+                  </div>
+                  <div className="font-bold text-violet-700 shrink-0 mr-2">
+                    ฿{orderTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </div>
+                  {isExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                </button>
+
+                {/* Expanded items */}
+                {isExpanded && (
+                  <div className="divide-y divide-gray-100">
+                    {order.items.map((item, ii) => (
+                      <div key={ii} className={clsx(
+                        "flex items-center gap-3 px-4 py-2.5 text-sm",
+                        !item.found ? "bg-amber-50/60" : "bg-white"
+                      )}>
+                        <div className="flex-1 min-w-0">
+                          <div className={clsx("font-medium truncate", !item.found ? "text-amber-700" : "text-gray-800")}>
+                            {item.name}
+                            {!item.found && (
+                              <span className="ml-2 text-[10px] bg-amber-100 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">
+                                ไม่พบในระบบ
+                              </span>
+                            )}
+                          </div>
+                          {item.Barcode && (
+                            <div className="text-[11px] text-gray-400 font-mono">{item.Barcode}</div>
+                          )}
+                        </div>
+                        <div className="text-gray-500 shrink-0">x{item.qty}</div>
+                        <div className="font-semibold text-gray-700 shrink-0 w-24 text-right">
+                          ฿{item.price.toLocaleString()} / ชิ้น
+                          {item.customPrice && <span className="text-[10px] text-violet-500 block">กำหนดเอง</span>}
+                        </div>
+                        <div className="font-bold text-gray-900 shrink-0 w-24 text-right">
+                          ฿{(item.price * item.qty).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer actions */}
+        <div className="p-4 border-t border-gray-100 bg-white flex gap-3 shrink-0">
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isSaving}
+            className="flex-1 py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors shadow-md shadow-violet-200 flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            {isSaving
+              ? <><Loader2 size={18} className="animate-spin" /> กำลังนำเข้า...</>
+              : <><Upload size={18} /> นำเข้า {totalOrders} ออเดอร์</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   Main component
+────────────────────────────────────────────── */
 export default function OnlineSales() {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
@@ -14,13 +219,16 @@ export default function OnlineSales() {
   const [isSaving, setIsSaving] = useState(false);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
-  const [payModal, setPayModal] = useState(null); // { orderId, cartDetails }
+  const [payModal, setPayModal] = useState(null);
   const [isPaying, setIsPaying] = useState(false);
-  const [selectedPlatform, setSelectedPlatform] = useState(PLATFORMS[0]);
-  const [customPlatform, setCustomPlatform] = useState("");
   const [orderPlatform, setOrderPlatform] = useState(PLATFORMS[0]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const barcodeRef = useRef(null);
+
+  // Excel import
+  const importFileRef = useRef(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     fetchApi("getProducts").then(data => {
@@ -31,15 +239,16 @@ export default function OnlineSales() {
   }, []);
 
   useEffect(() => {
-    if (!isScannerOpen && !isPaying && !isSaving && !isLoadingProducts) barcodeRef.current?.focus();
+    if (!isScannerOpen && !isPaying && !isSaving && !isLoadingProducts && !importPreview)
+      barcodeRef.current?.focus();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, isScannerOpen, isPaying, isSaving, isLoadingProducts]);
+  }, [cart, isScannerOpen, isPaying, isSaving, isLoadingProducts, importPreview]);
 
   const getPlatformPrice = (product, platform) => {
     if (!product) return 0;
-    if (platform === "Shopee" && product.ShopeePrice > 0) return Number(product.ShopeePrice);
-    if (platform === "Lazada" && product.LazadaPrice > 0) return Number(product.LazadaPrice);
-    if (platform === "Lineman" && product.LinemanPrice > 0) return Number(product.LinemanPrice);
+    if (platform === "Shopee"   && product.ShopeePrice   > 0) return Number(product.ShopeePrice);
+    if (platform === "Lazada"   && product.LazadaPrice   > 0) return Number(product.LazadaPrice);
+    if (platform === "Lineman"  && product.LinemanPrice  > 0) return Number(product.LinemanPrice);
     if (platform === "GrabFood" && product.GrabFoodPrice > 0) return Number(product.GrabFoodPrice);
     return Number(product.Price) || 0;
   };
@@ -49,6 +258,7 @@ export default function OnlineSales() {
       ...item,
       price: item.productObj ? getPlatformPrice(item.productObj, orderPlatform) : item.price
     })));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderPlatform]);
 
   const loadPendingOrders = () => {
@@ -67,7 +277,12 @@ export default function OnlineSales() {
       const key = product.Barcode || product.Name;
       const existing = prev.find(item => item.id === key);
       if (existing) return prev.map(item => item.id === key ? { ...item, qty: item.qty + qtyToAdd } : item);
-      return [{ id: key, Barcode: product.Barcode, Name: product.Name, name: product.Name, price: getPlatformPrice(product, orderPlatform), costPrice: Number(product.CostPrice) || 0, productObj: product, qty: qtyToAdd }, ...prev];
+      return [{
+        id: key, Barcode: product.Barcode, Name: product.Name, name: product.Name,
+        price: getPlatformPrice(product, orderPlatform),
+        costPrice: Number(product.CostPrice) || 0,
+        productObj: product, qty: qtyToAdd
+      }, ...prev];
     });
     setBarcodeInput("");
   };
@@ -106,12 +321,13 @@ export default function OnlineSales() {
       })
     : [];
 
-  const updateQty = (id, delta) => setCart(prev => prev.map(item => item.id === id ? { ...item, qty: Math.max(1, item.qty + delta) } : item));
+  const updateQty = (id, delta) =>
+    setCart(prev => prev.map(item => item.id === id ? { ...item, qty: Math.max(1, item.qty + delta) } : item));
   const removeItem = (id) => setCart(prev => prev.filter(item => item.id !== id));
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const tax = subtotal * 0.07;
-  const total = subtotal + tax;
+  const tax      = subtotal * 0.07;
+  const total    = subtotal + tax;
 
   const handleSaveOrder = async () => {
     if (cart.length === 0) return;
@@ -120,7 +336,7 @@ export default function OnlineSales() {
       action: "checkout",
       payload: {
         totalAmount: total,
-        tax: tax,
+        tax,
         paymentMethod: `${orderPlatform} รอชำระ`,
         receiptType: "online",
         cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name, qty: c.qty, price: c.price, costPrice: c.costPrice }))
@@ -137,7 +353,7 @@ export default function OnlineSales() {
   };
 
   const handleConfirmPayment = async (orderId, platform) => {
-    setIsPaying(orderId); // store orderId as loading indicator
+    setIsPaying(orderId);
     const res = await postApi({
       action: "updateTransactionPayment",
       payload: { orderId, paymentMethod: platform }
@@ -150,10 +366,145 @@ export default function OnlineSales() {
     }
   };
 
+  /* ── Excel import ── */
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: "array" });
+
+        // Use "ข้อมูลออเดอร์" sheet, else first sheet
+        const sheetName = wb.SheetNames.find(n => n.includes("ออเดอร์")) || wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        // Row 0 = headers, rows 1+ = data
+        const dataRows = rows.slice(1).filter(row => row.some(cell => String(cell).trim() !== ""));
+        if (dataRows.length === 0) {
+          alert("ไม่พบข้อมูลในไฟล์ กรุณาตรวจสอบรูปแบบไฟล์");
+          return;
+        }
+
+        // Build order groups
+        // Columns: [เลขออเดอร์, แพลตฟอร์ม, บาร์โค้ด, ชื่อสินค้า, จำนวน, ราคาต่อชิ้น]
+        const orderMap = new Map();
+        let autoIdx = 0;
+
+        dataRows.forEach((row) => {
+          const rawOrderNo  = String(row[0] ?? "").trim();
+          const platform    = String(row[1] ?? "").trim() || "อื่นๆ";
+          const barcode     = String(row[2] ?? "").trim();
+          const nameInput   = String(row[3] ?? "").trim();
+          const qty         = Math.max(1, parseFloat(row[4]) || 1);
+          const rawPrice    = parseFloat(row[5]);
+          const customPrice = !isNaN(rawPrice) && rawPrice > 0 ? rawPrice : null;
+
+          if (!barcode && !nameInput) return; // blank row
+
+          const orderKey = rawOrderNo || `auto_${autoIdx++}`;
+
+          // Lookup product
+          let product = null;
+          if (barcode) {
+            product = products.find(p => String(p.Barcode ?? "").trim() === barcode);
+          }
+          if (!product && nameInput) {
+            product = products.find(p => (p.Name ?? "").toLowerCase() === nameInput.toLowerCase())
+                   || products.find(p => (p.Name ?? "").toLowerCase().includes(nameInput.toLowerCase()));
+          }
+
+          const price    = customPrice ?? (product ? getPlatformPrice(product, platform) : 0);
+          const itemName = product?.Name || nameInput || barcode;
+
+          if (!orderMap.has(orderKey)) {
+            orderMap.set(orderKey, { orderNo: orderKey, platform, items: [] });
+          }
+          orderMap.get(orderKey).items.push({
+            id:          barcode || nameInput,
+            Barcode:     barcode || product?.Barcode || "",
+            Name:        itemName,
+            name:        itemName,
+            qty,
+            price,
+            costPrice:   Number(product?.CostPrice) || 0,
+            productObj:  product || null,
+            found:       !!product,
+            customPrice: !!customPrice,
+          });
+        });
+
+        const orders = Array.from(orderMap.values());
+        if (orders.length === 0) {
+          alert("ไม่พบออเดอร์ที่ถูกต้องในไฟล์");
+          return;
+        }
+        setImportPreview({ orders });
+      } catch (err) {
+        console.error(err);
+        alert("ไม่สามารถอ่านไฟล์ได้: " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview) return;
+    setIsImporting(true);
+
+    let success = 0;
+    let failed  = 0;
+
+    for (const order of importPreview.orders) {
+      const orderSubtotal = order.items.reduce((s, i) => s + i.price * i.qty, 0);
+      const orderTax      = orderSubtotal * 0.07;
+      const orderTotal    = orderSubtotal + orderTax;
+
+      const res = await postApi({
+        action: "checkout",
+        payload: {
+          totalAmount: orderTotal,
+          tax:          orderTax,
+          paymentMethod: `${order.platform} รอชำระ`,
+          receiptType:  "online",
+          cart: order.items.map(i => ({
+            Barcode:   i.Barcode,
+            Name:      i.name,
+            qty:       i.qty,
+            price:     i.price,
+            costPrice: i.costPrice,
+          })),
+        }
+      });
+
+      if (res.success) success++;
+      else failed++;
+    }
+
+    setIsImporting(false);
+    setImportPreview(null);
+    loadPendingOrders();
+    alert(`นำเข้าสำเร็จ ${success} ออเดอร์${failed > 0 ? ` (ผิดพลาด ${failed} ออเดอร์)` : ""}`);
+  };
+
+  /* ────────────────────── render ────────────────────── */
   return (
     <div className="flex flex-col gap-6 h-full">
+
+      {/* Hidden file input */}
+      <input
+        ref={importFileRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleImportFile}
+      />
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600">
             <Globe size={22} />
@@ -163,11 +514,33 @@ export default function OnlineSales() {
             <p className="text-sm text-gray-500">บันทึกและติดตามออเดอร์จากแพลตฟอร์มออนไลน์</p>
           </div>
         </div>
+
+        {/* Excel buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={downloadOnlineTemplate}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-50 transition-colors shadow-sm"
+          >
+            <FileDown size={16} className="text-emerald-600" />
+            ดาวน์โหลดแบบฟอร์ม
+          </button>
+          <button
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl font-semibold text-sm hover:bg-violet-700 transition-colors shadow-md shadow-violet-200"
+          >
+            <Upload size={16} />
+            นำเข้า Excel
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
+
         {/* LEFT: Cart Builder */}
         <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+
           {/* Platform Selector */}
           <div className="p-3 border-b border-gray-100 bg-violet-50/50">
             <p className="text-xs font-medium text-gray-500 mb-2">แพลตฟอร์มออนไลน์:</p>
@@ -268,28 +641,28 @@ export default function OnlineSales() {
                 {cart.map(item => {
                   const stock = parseFloat(item.productObj?.Quantity || 0);
                   return (
-                  <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-gray-900">{item.name}</h4>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-violet-600 font-bold">฿{item.price.toLocaleString()}</span>
-                        <span className={clsx("text-xs font-semibold px-1.5 py-0.5 rounded",
-                          stock <= 0 ? "bg-red-100 text-red-600" :
-                          stock <= 5 ? "bg-amber-100 text-amber-600" :
-                          "bg-emerald-50 text-emerald-600"
-                        )}>
-                          คงเหลือ {stock} ชิ้น
-                        </span>
+                    <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-gray-900">{item.name}</h4>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-violet-600 font-bold">฿{item.price.toLocaleString()}</span>
+                          <span className={clsx("text-xs font-semibold px-1.5 py-0.5 rounded",
+                            stock <= 0 ? "bg-red-100 text-red-600" :
+                            stock <= 5 ? "bg-amber-100 text-amber-600" :
+                            "bg-emerald-50 text-emerald-600"
+                          )}>
+                            คงเหลือ {stock} ชิ้น
+                          </span>
+                        </div>
                       </div>
+                      <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1 border border-gray-200">
+                        <button onClick={() => updateQty(item.id, -1)} className="p-2 hover:bg-white rounded-md transition-colors text-gray-500"><Minus size={16} /></button>
+                        <span className="w-8 text-center font-medium">{item.qty}</span>
+                        <button onClick={() => updateQty(item.id, 1)} className="p-2 hover:bg-white rounded-md transition-colors text-gray-500"><Plus size={16} /></button>
+                      </div>
+                      <div className="w-24 text-right font-bold text-lg">฿{(item.price * item.qty).toLocaleString()}</div>
+                      <button onClick={() => removeItem(item.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
                     </div>
-                    <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1 border border-gray-200">
-                      <button onClick={() => updateQty(item.id, -1)} className="p-2 hover:bg-white rounded-md transition-colors text-gray-500"><Minus size={16} /></button>
-                      <span className="w-8 text-center font-medium">{item.qty}</span>
-                      <button onClick={() => updateQty(item.id, 1)} className="p-2 hover:bg-white rounded-md transition-colors text-gray-500"><Plus size={16} /></button>
-                    </div>
-                    <div className="w-24 text-right font-bold text-lg">฿{(item.price * item.qty).toLocaleString()}</div>
-                    <button onClick={() => removeItem(item.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
-                  </div>
                   );
                 })}
               </div>
@@ -334,13 +707,12 @@ export default function OnlineSales() {
             ) : pendingOrders.map((order, i) => {
               let cartItems = [];
               try { cartItems = JSON.parse(order.CartDetails || "[]"); } catch {}
-              // "Shopee รอชำระ" → platform = "Shopee"
               const platform = (order.PaymentMethod || "").replace("รอชำระ", "").trim() || "ออนไลน์";
               const platformColors = {
-                Shopee: "bg-orange-100 text-orange-700 border-orange-200",
-                Lazada: "bg-blue-100 text-blue-700 border-blue-200",
-                Lineman: "bg-green-100 text-green-700 border-green-200",
-                GrabFood: "bg-green-100 text-green-700 border-green-200",
+                Shopee:   "bg-orange-100 text-orange-700 border-orange-200",
+                Lazada:   "bg-blue-100   text-blue-700   border-blue-200",
+                Lineman:  "bg-green-100  text-green-700  border-green-200",
+                GrabFood: "bg-green-100  text-green-700  border-green-200",
               };
               const colorClass = platformColors[platform] || "bg-violet-100 text-violet-700 border-violet-200";
               return (
@@ -379,6 +751,13 @@ export default function OnlineSales() {
         </div>
       </div>
 
+      {/* Import preview modal */}
+      <ImportPreviewModal
+        preview={importPreview}
+        onClose={() => setImportPreview(null)}
+        onConfirm={handleConfirmImport}
+        isSaving={isImporting}
+      />
     </div>
   );
 }
