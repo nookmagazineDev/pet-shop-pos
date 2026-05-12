@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Users, Search, Star, Ticket, ChevronDown, ChevronUp, Phone, MapPin, Hash, Loader2, Download, X } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Users, Search, Star, Ticket, ChevronDown, ChevronUp, Phone, MapPin, Hash, Loader2, Download, X, History, TrendingUp, TrendingDown } from "lucide-react";
 import { fetchApi } from "../api";
 import { exportToExcel } from "../utils/excelExport";
 
@@ -13,21 +13,39 @@ function formatDate(val) {
 export default function Members() {
   const [customers, setCustomers] = useState([]);
   const [coupons, setCoupons] = useState([]);
+  const [pointsHistory, setPointsHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [sortPoints, setSortPoints] = useState(""); // "" | "asc" | "desc"
+  const [creditSearch, setCreditSearch] = useState({}); // { [customerId]: searchStr }
 
   useEffect(() => {
     Promise.all([
       fetchApi("getCustomers"),
       fetchApi("getCustomerCoupons"),
-    ]).then(([custs, couponData]) => {
+      fetchApi("getPointsHistory"),
+    ]).then(([custs, couponData, histData]) => {
       setCustomers(Array.isArray(custs) ? custs : []);
       setCoupons(Array.isArray(couponData) ? couponData : []);
+      setPointsHistory(Array.isArray(histData) ? [...histData].reverse() : []);
       setIsLoading(false);
     });
   }, []);
+
+  // Pre-index credit history by customer name (lowercase) for fast lookup
+  const creditHistoryByName = useMemo(() => {
+    const map = {};
+    pointsHistory.forEach(h => {
+      const key = String(h.CustomerName || "").trim().toLowerCase();
+      if (!map[key]) map[key] = [];
+      map[key].push(h);
+    });
+    return map;
+  }, [pointsHistory]);
+
+  const getCreditHistory = (name) =>
+    creditHistoryByName[String(name || "").trim().toLowerCase()] || [];
 
   const filtered = customers
     .filter((c) => {
@@ -207,70 +225,180 @@ export default function Members() {
                     isExpanded && (
                       <tr key={`detail-${rowId}`} className="bg-indigo-50/20">
                         <td colSpan={6} className="px-6 pt-2 pb-5">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            {/* Info card */}
-                            <div className="bg-white border border-indigo-100 rounded-2xl p-5 space-y-3 shadow-sm">
-                              <h4 className="text-sm font-bold text-indigo-800 border-b border-indigo-50 pb-2 flex items-center gap-1.5">
-                                <Users size={14} /> ข้อมูลสมาชิก
-                              </h4>
-                              <div className="space-y-2 text-sm">
-                                <InfoRow icon={<Hash size={13} />} label="รหัสสมาชิก" value={c.CustomerID || "-"} mono />
-                                <InfoRow icon={<Users size={13} />} label="ชื่อ" value={c.Name || "-"} />
-                                <InfoRow icon={<Phone size={13} />} label="เบอร์โทร" value={c.Phone || "-"} />
-                                <InfoRow icon={<Hash size={13} />} label="เลขภาษี" value={c.TaxID || "-"} mono />
-                                <InfoRow icon={<MapPin size={13} />} label="ที่อยู่ภาษี" value={c.TaxAddress || "-"} />
-                                <InfoRow icon={<MapPin size={13} />} label="ที่อยู่" value={c.Address || "-"} />
-                                <InfoRow
-                                  icon={<Star size={13} />}
-                                  label="เครดิตสะสม"
-                                  value={<span className="font-bold text-yellow-600">{Number(c.Points || 0).toLocaleString()} pts</span>}
-                                />
-                                <InfoRow icon={<Star size={13} />} label="อัพเดทเครดิตล่าสุด" value={formatDate(c.PointsUpdatedAt)} />
-                                <InfoRow icon={<Users size={13} />} label="วันที่สมัคร" value={formatDate(c.CreatedAt)} />
+                          <div className="space-y-4">
+                            {/* Row 1: info + coupons */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Info card */}
+                              <div className="bg-white border border-indigo-100 rounded-2xl p-5 space-y-3 shadow-sm">
+                                <h4 className="text-sm font-bold text-indigo-800 border-b border-indigo-50 pb-2 flex items-center gap-1.5">
+                                  <Users size={14} /> ข้อมูลสมาชิก
+                                </h4>
+                                <div className="space-y-2 text-sm">
+                                  <InfoRow icon={<Hash size={13} />} label="รหัสสมาชิก" value={c.CustomerID || "-"} mono />
+                                  <InfoRow icon={<Users size={13} />} label="ชื่อ" value={c.Name || "-"} />
+                                  <InfoRow icon={<Phone size={13} />} label="เบอร์โทร" value={c.Phone || "-"} />
+                                  <InfoRow icon={<Hash size={13} />} label="เลขภาษี" value={c.TaxID || "-"} mono />
+                                  <InfoRow icon={<MapPin size={13} />} label="ที่อยู่ภาษี" value={c.TaxAddress || "-"} />
+                                  <InfoRow icon={<MapPin size={13} />} label="ที่อยู่" value={c.Address || "-"} />
+                                  <InfoRow
+                                    icon={<Star size={13} />}
+                                    label="เครดิตสะสม"
+                                    value={<span className="font-bold text-yellow-600">{Number(c.Points || 0).toLocaleString()} pts</span>}
+                                  />
+                                  <InfoRow icon={<Star size={13} />} label="อัพเดทล่าสุด" value={formatDate(c.PointsUpdatedAt)} />
+                                  <InfoRow icon={<Users size={13} />} label="วันที่สมัคร" value={formatDate(c.CreatedAt)} />
+                                </div>
+                              </div>
+
+                              {/* Active coupons card */}
+                              <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm flex flex-col">
+                                <h4 className="text-sm font-bold text-indigo-800 border-b border-indigo-50 pb-2 flex items-center gap-1.5 shrink-0">
+                                  <Ticket size={14} /> คูปองที่ยังใช้ได้
+                                  {activeCoupons.length > 0 && (
+                                    <span className="ml-auto bg-indigo-100 text-indigo-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                                      {activeCoupons.length}
+                                    </span>
+                                  )}
+                                </h4>
+                                {activeCoupons.length === 0 ? (
+                                  <div className="flex-1 flex flex-col items-center justify-center py-8 text-gray-400">
+                                    <Ticket size={32} className="opacity-20 mb-2" />
+                                    <span className="text-xs">ไม่มีคูปองที่ใช้งานได้</span>
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 space-y-2 overflow-y-auto max-h-52">
+                                    {activeCoupons.map((cc, ci) => (
+                                      <div key={ci} className="flex items-start justify-between gap-3 bg-indigo-50/60 border border-indigo-100 rounded-xl px-3.5 py-3">
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-gray-900 text-sm truncate">{cc.CouponName || cc.CouponID || "คูปอง"}</div>
+                                          {cc.ExpiryDate && <div className="text-[11px] text-gray-400 mt-0.5">หมดอายุ: {formatDate(cc.ExpiryDate)}</div>}
+                                          {cc.CouponID && <div className="text-[10px] text-gray-400 font-mono mt-0.5">{cc.CouponID}</div>}
+                                        </div>
+                                        <span className="shrink-0 text-[11px] bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full font-semibold">ใช้ได้</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
 
-                            {/* Active coupons card */}
-                            <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm flex flex-col">
-                              <h4 className="text-sm font-bold text-indigo-800 border-b border-indigo-50 pb-2 flex items-center gap-1.5 shrink-0">
-                                <Ticket size={14} /> คูปองที่ยังใช้ได้
-                                {activeCoupons.length > 0 && (
-                                  <span className="ml-auto bg-indigo-100 text-indigo-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
-                                    {activeCoupons.length}
-                                  </span>
-                                )}
-                              </h4>
-                              {activeCoupons.length === 0 ? (
-                                <div className="flex-1 flex flex-col items-center justify-center py-8 text-gray-400">
-                                  <Ticket size={32} className="opacity-20 mb-2" />
-                                  <span className="text-xs">ไม่มีคูปองที่ใช้งานได้</span>
-                                </div>
-                              ) : (
-                                <div className="mt-3 space-y-2 overflow-y-auto max-h-52">
-                                  {activeCoupons.map((cc, ci) => (
-                                    <div
-                                      key={ci}
-                                      className="flex items-start justify-between gap-3 bg-indigo-50/60 border border-indigo-100 rounded-xl px-3.5 py-3"
-                                    >
-                                      <div className="min-w-0">
-                                        <div className="font-semibold text-gray-900 text-sm truncate">
-                                          {cc.CouponName || cc.CouponID || "คูปอง"}
-                                        </div>
-                                        {cc.ExpiryDate && (
-                                          <div className="text-[11px] text-gray-400 mt-0.5">หมดอายุ: {formatDate(cc.ExpiryDate)}</div>
-                                        )}
-                                        {cc.CouponID && (
-                                          <div className="text-[10px] text-gray-400 font-mono mt-0.5">{cc.CouponID}</div>
-                                        )}
-                                      </div>
-                                      <span className="shrink-0 text-[11px] bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full font-semibold">
-                                        ใช้ได้
+                            {/* Row 2: Credit history card (full width) */}
+                            {(() => {
+                              const history = getCreditHistory(c.Name);
+                              const cKey = rowId;
+                              const cq = (creditSearch[cKey] || "").toLowerCase().trim();
+                              const visibleHistory = cq
+                                ? history.filter(h =>
+                                    String(h.Reference || "").toLowerCase().includes(cq) ||
+                                    String(h.Type || "").toLowerCase().includes(cq) ||
+                                    String(h.Points || "").includes(cq)
+                                  )
+                                : history;
+
+                              const earnTotal  = history.filter(h => h.Type === "EARN").reduce((s, h) => s + (parseFloat(h.Points) || 0), 0);
+                              const redeemTotal = history.filter(h => h.Type !== "EARN").reduce((s, h) => s + (parseFloat(h.Points) || 0), 0);
+
+                              return (
+                                <div className="bg-white border border-indigo-100 rounded-2xl shadow-sm overflow-hidden">
+                                  {/* Card header */}
+                                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-indigo-50 bg-indigo-50/40">
+                                    <h4 className="text-sm font-bold text-indigo-800 flex items-center gap-1.5">
+                                      <History size={14} /> ประวัติการใช้งานเครดิต
+                                      <span className="ml-1 bg-indigo-100 text-indigo-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                                        {history.length} รายการ
+                                      </span>
+                                    </h4>
+                                    {/* Summary badges */}
+                                    <div className="flex items-center gap-2 text-xs font-semibold">
+                                      <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full">
+                                        <TrendingUp size={11} /> รับ +{earnTotal.toLocaleString()}
+                                      </span>
+                                      <span className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-100 px-2.5 py-1 rounded-full">
+                                        <TrendingDown size={11} /> ใช้ -{redeemTotal.toLocaleString()}
+                                      </span>
+                                      <span className="flex items-center gap-1 bg-yellow-50 text-yellow-700 border border-yellow-100 px-2.5 py-1 rounded-full">
+                                        <Star size={11} /> คงเหลือ {Number(c.Points || 0).toLocaleString()}
                                       </span>
                                     </div>
-                                  ))}
+                                  </div>
+
+                                  {history.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-10 text-gray-400 gap-2">
+                                      <History size={32} className="opacity-20" />
+                                      <span className="text-xs">ยังไม่มีประวัติการใช้งานเครดิต</span>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {/* Search bar */}
+                                      <div className="px-5 py-2.5 border-b border-gray-50 bg-gray-50/50">
+                                        <div className="relative max-w-xs">
+                                          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                          <input
+                                            value={creditSearch[cKey] || ""}
+                                            onChange={e => setCreditSearch(prev => ({ ...prev, [cKey]: e.target.value }))}
+                                            onClick={e => e.stopPropagation()}
+                                            placeholder="ค้นหาประเภท / หมายเหตุ / จำนวน..."
+                                            className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* Table */}
+                                      <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                          <thead className="bg-gray-50 sticky top-0">
+                                            <tr className="border-b border-gray-100 text-gray-500 font-semibold">
+                                              <th className="py-2 px-4">วันที่ / เวลา</th>
+                                              <th className="py-2 px-4 text-center">ประเภท</th>
+                                              <th className="py-2 px-4 text-right">เครดิต</th>
+                                              <th className="py-2 px-4 text-right">คงเหลือ</th>
+                                              <th className="py-2 px-4">หมายเหตุ / อ้างอิง</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-gray-50">
+                                            {visibleHistory.length === 0 ? (
+                                              <tr><td colSpan={5} className="py-6 text-center text-gray-400">ไม่พบรายการที่ค้นหา</td></tr>
+                                            ) : (
+                                              visibleHistory.map((h, hi) => {
+                                                const isEarn = h.Type === "EARN";
+                                                const pts = parseFloat(h.Points) || 0;
+                                                return (
+                                                  <tr key={hi} className={isEarn ? "hover:bg-emerald-50/30" : "hover:bg-red-50/30"}>
+                                                    <td className="py-2.5 px-4 text-gray-500 whitespace-nowrap">
+                                                      {h.Date ? new Date(h.Date).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-"}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-center">
+                                                      {isEarn ? (
+                                                        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                                          <TrendingUp size={9} /> รับเครดิต
+                                                        </span>
+                                                      ) : (
+                                                        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600">
+                                                          <TrendingDown size={9} /> ใช้เครดิต
+                                                        </span>
+                                                      )}
+                                                    </td>
+                                                    <td className={`py-2.5 px-4 text-right font-bold ${isEarn ? "text-emerald-600" : "text-red-500"}`}>
+                                                      {isEarn ? "+" : "-"}{pts.toLocaleString()}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-right font-semibold text-gray-700">
+                                                      {h.Balance != null ? Number(h.Balance).toLocaleString() : "-"}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-gray-500 max-w-[200px] truncate" title={h.Reference || ""}>
+                                                      {h.Reference || <span className="text-gray-300">-</span>}
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              })
+                                            )}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
-                              )}
-                            </div>
+                              );
+                            })()}
                           </div>
                         </td>
                       </tr>
