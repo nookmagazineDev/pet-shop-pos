@@ -120,9 +120,9 @@ export default function Inventory() {
     if (activeTab === "receive") { fetchProducts(); fetchSuppliers(); }
   }, [activeTab]);
 
-  // Unique locations from products for dropdown
+  // Unique locations from products for dropdown (always strings)
   const uniqueLocations = useMemo(() =>
-    [...new Set(products.map(p => p.Location).filter(Boolean))].sort()
+    [...new Set(products.map(p => p.Location).filter(Boolean).map(String))].sort()
   , [products]);
 
   const selectSupplier = (s) => {
@@ -1088,16 +1088,19 @@ export default function Inventory() {
                     onBlur={() => setTimeout(() => setShowLocationDropdown(false), 150)}
                   />
                   {showLocationDropdown && uniqueLocations.filter(l =>
-                    !receiveLocationStr || l.toLowerCase().includes(receiveLocationStr.toLowerCase())
+                    !receiveLocationStr || String(l).toLowerCase().includes(String(receiveLocationStr).toLowerCase())
                   ).length > 0 && (
-                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-44 overflow-y-auto">
+                    <div
+                      className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-44 overflow-y-auto"
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
                       {uniqueLocations
-                        .filter(l => !receiveLocationStr || l.toLowerCase().includes(receiveLocationStr.toLowerCase()))
+                        .filter(l => !receiveLocationStr || String(l).toLowerCase().includes(String(receiveLocationStr).toLowerCase()))
                         .map((loc, i) => (
                           <button
                             key={i}
                             type="button"
-                            onMouseDown={() => { setReceiveLocationStr(loc); setShowLocationDropdown(false); }}
+                            onClick={() => { setReceiveLocationStr(String(loc)); setShowLocationDropdown(false); }}
                             className="w-full text-left px-4 py-2.5 hover:bg-primary/5 text-sm text-gray-800 border-b border-gray-50 last:border-0 transition-colors flex items-center gap-2"
                           >
                             <MapPin size={13} className="text-gray-400 shrink-0" />
