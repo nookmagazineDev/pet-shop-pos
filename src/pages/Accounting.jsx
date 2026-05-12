@@ -35,9 +35,41 @@ export default function Accounting() {
   }, [expenses, dateFrom, dateTo]);
 
   const activeTxs = useMemo(() => filteredTransactions.filter(tx => (tx.Status || tx[13]) !== "CANCELLED"), [filteredTransactions]);
-  const totalCreditCard = useMemo(() => activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) === "บัตรเครดิต").reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [activeTxs]);
-  // รายรับรวม = เงินสด + เงินโอน เท่านั้น (เครดิตการ์ดแยกต่างหาก ยังไม่ถือว่าเงินเข้า)
-  const totalIncome = useMemo(() => activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) !== "บัตรเครดิต").reduce((sum, tx) => sum + (parseFloat(tx.TotalAmount || tx[2]) || 0), 0), [activeTxs]);
+
+  // Parse split-payment strings like "เงินสด:1000 + โอนเข้าบัญชี:650 + เครดิต:500"
+  // Returns only the real-cash portion (excludes store credit and บัตรเครดิต)
+  const getCashAmount = (tx) => {
+    const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
+    const method = (tx.PaymentMethod || tx[4] || "").trim();
+    if (method.includes(":")) {
+      let cash = 0;
+      method.split("+").forEach(part => {
+        const [m, amt] = part.trim().split(":").map(s => s.trim());
+        if (m !== "เครดิต" && m !== "บัตรเครดิต") cash += parseFloat(amt) || 0;
+      });
+      return cash;
+    }
+    if (method === "เครดิต" || method === "บัตรเครดิต") return 0;
+    return total;
+  };
+
+  const getCreditCardAmount = (tx) => {
+    const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
+    const method = (tx.PaymentMethod || tx[4] || "").trim();
+    if (method.includes(":")) {
+      let cc = 0;
+      method.split("+").forEach(part => {
+        const [m, amt] = part.trim().split(":").map(s => s.trim());
+        if (m === "บัตรเครดิต") cc += parseFloat(amt) || 0;
+      });
+      return cc;
+    }
+    return method === "บัตรเครดิต" ? total : 0;
+  };
+
+  // รายรับรวม = เงินสด + โอน เท่านั้น (ตัด store credit + บัตรเครดิต ออก)
+  const totalIncome = useMemo(() => activeTxs.reduce((sum, tx) => sum + getCashAmount(tx), 0), [activeTxs]);
+  const totalCreditCard = useMemo(() => activeTxs.reduce((sum, tx) => sum + getCreditCardAmount(tx), 0), [activeTxs]);
   const totalExpenses = useMemo(() => filteredExpenses.reduce((sum, exp) => sum + (parseFloat(exp.Amount || exp[4]) || 0), 0), [filteredExpenses]);
   const netProfit = totalIncome - totalExpenses;
 
@@ -336,7 +368,7 @@ export default function Accounting() {
           <div>
             <p className="text-xs font-medium text-emerald-600 mb-0.5">รายรับรวม (เงินสด+โอน)</p>
             <p className="text-xl font-bold text-emerald-700">฿{totalIncome.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
-            <p className="text-xs text-emerald-500">{activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) !== "บัตรเครดิต").length} รายการ</p>
+            <p className="text-xs text-emerald-500">{activeTxs.filter(tx => getCashAmount(tx) > 0).length} รายการ</p>
           </div>
         </div>
         <div className="bg-violet-50 border border-violet-100 rounded-2xl p-5 flex items-center gap-4">
@@ -346,7 +378,7 @@ export default function Accounting() {
           <div>
             <p className="text-xs font-medium text-violet-600 mb-0.5">ชำระด้วยบัตรเครดิต</p>
             <p className="text-xl font-bold text-violet-700">฿{totalCreditCard.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
-            <p className="text-xs text-violet-500">{activeTxs.filter(tx => (tx.PaymentMethod || tx[4]) === "บัตรเครดิต").length} รายการ</p>
+            <p className="text-xs text-violet-500">{activeTxs.filter(tx => getCreditCardAmount(tx) > 0).length} รายการ</p>
           </div>
         </div>
         <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5 flex items-center gap-4">
