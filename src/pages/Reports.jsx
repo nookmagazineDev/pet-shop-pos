@@ -87,15 +87,18 @@ export default function Reports() {
     return itemDate >= start && itemDate <= end;
   };
 
-  // Find receiveGoods PO linked to a stock movement (by ReferenceNo)
+  // Find receiveGoods PO linked to a stock movement (flexible substring match)
   const getLinkedPO = (m) => {
     const ref = String(m.ReferenceNo || "").trim();
     if (!ref) return null;
-    return receiveGoodsList.find(po =>
-      String(po.OrderNumber || "").trim() === ref ||
-      String(po.LotNumber  || "").trim() === ref ||
-      String(po.ReceiveID  || "").trim() === ref
-    ) || null;
+    return receiveGoodsList.find(po => {
+      // All candidate keys from the PO record
+      const candidates = [
+        po.OrderNumber, po.LotNumber, po.ReceiveID, po.RecordID, po.ID
+      ].map(v => String(v || "").trim()).filter(Boolean);
+      // Match if ref equals OR contains OR is contained by any candidate
+      return candidates.some(c => ref === c || ref.includes(c) || c.includes(ref));
+    }) || null;
   };
 
   const getPOItems = (po) => {
