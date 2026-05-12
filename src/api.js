@@ -1,7 +1,18 @@
 // API Endpoints for Google Sheets Backend
 export const API_URL = "https://script.google.com/macros/s/AKfycbw55ZnPhKMRIV_y1OoqhJEuhovL4_w8fikg4ARvFx_O7X9zHhiP3clE2F6-hDnXechNCw/exec";
 
-export const fetchApi = async (action) => {
+// In-memory cache: avoids duplicate Google Sheets fetches within the same session.
+// POST-mutating actions call invalidateCache(action) to bust stale entries.
+const _cache = new Map(); // action → { data, ts }
+const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+export const invalidateCache = (action) => _cache.delete(action);
+
+export const fetchApi = async (action, { skipCache = false } = {}) => {
+  if (!skipCache) {
+    const hit = _cache.get(action);
+    if (hit && Date.now() - hit.ts < CACHE_TTL_MS) return hit.data;
+  }
   try {
     const response = await fetch(`${API_URL}?action=${action}`);
     let data = await response.json();
@@ -28,6 +39,7 @@ export const fetchApi = async (action) => {
        });
     }
 
+    _cache.set(action, { data, ts: Date.now() });
     return data;
   } catch (error) {
     console.error(`Error fetching ${action}:`, error);

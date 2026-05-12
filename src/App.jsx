@@ -1,25 +1,27 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Dashboard from "./pages/Dashboard";
-import POS from "./pages/POS";
-import Inventory from "./pages/Inventory";
-import Shift from "./pages/Shift";
-import OnlineSales from "./pages/OnlineSales";
-import Accounting from "./pages/Accounting";
-import Reports from "./pages/Reports";
-import Promotions from "./pages/Promotions";
-import Packages from "./pages/Packages";
-import Members from "./pages/Members";
-import Coupons from "./pages/Coupons";
 import Login from "./pages/Login";
-import AdminUsers from "./pages/AdminUsers";
-import PrinterSettings from "./pages/PrinterSettings";
-import Suppliers from "./pages/Suppliers";
 import { ShiftProvider } from "./context/ShiftContext";
 import { AuthProvider } from "./context/AuthContext";
 import { PrinterProvider } from "./context/PrinterContext";
 import { Toaster } from "react-hot-toast";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const POS = lazy(() => import("./pages/POS"));
+const Inventory = lazy(() => import("./pages/Inventory"));
+const Shift = lazy(() => import("./pages/Shift"));
+const OnlineSales = lazy(() => import("./pages/OnlineSales"));
+const Accounting = lazy(() => import("./pages/Accounting"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Promotions = lazy(() => import("./pages/Promotions"));
+const Packages = lazy(() => import("./pages/Packages"));
+const Members = lazy(() => import("./pages/Members"));
+const Coupons = lazy(() => import("./pages/Coupons"));
+const AdminUsers = lazy(() => import("./pages/AdminUsers"));
+const PrinterSettings = lazy(() => import("./pages/PrinterSettings"));
+const Suppliers = lazy(() => import("./pages/Suppliers"));
 
 // Role definitions
 const ALL = ["admin", "manager", "staff", "cashier"];
@@ -32,6 +34,7 @@ function App() {
       <PrinterProvider>
         <ShiftProvider>
         <BrowserRouter>
+          <Suspense fallback={<div className="flex items-center justify-center h-screen text-gray-400">กำลังโหลด...</div>}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Layout />}>
@@ -52,6 +55,7 @@ function App() {
             </Route>
           </Routes>
           <Toaster position="top-right" />
+          </Suspense>
         </BrowserRouter>
         </ShiftProvider>
       </PrinterProvider>

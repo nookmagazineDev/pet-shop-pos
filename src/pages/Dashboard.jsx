@@ -39,6 +39,59 @@ export default function Dashboard() {
   const [startDateStr, setStartDateStr] = useState(defaultStartDate.toISOString().split('T')[0]);
   const [endDateStr, setEndDateStr] = useState(defaultEndDate.toISOString().split('T')[0]);
 
+  // Raw data store — fetched once (or on manual refresh), not re-fetched on date change
+  const [rawTransactions, setRawTransactions] = useState([]);
+
+  const computeCharts = (transactions, sDateStr, eDateStr) => {
+    const sDate = new Date(sDateStr); sDate.setHours(0,0,0,0);
+    const eDate = new Date(eDateStr); eDate.setHours(23,59,59,999);
+
+    const dayDiff = Math.max(1, Math.ceil((eDate - sDate) / (1000 * 60 * 60 * 24)));
+    const dateRangeArr = Array.from({length: dayDiff}, (_, i) => {
+      const d = new Date(sDate);
+      d.setDate(d.getDate() + i);
+      return {
+        date: d.toLocaleDateString("th-TH", { day: 'numeric', month: 'short' }),
+        fullDate: d.toDateString(),
+        sales: 0
+      };
+    });
+
+    const paymentStats = { "เงินสด": 0, "เงินโอน": 0, "บัตรเครดิต": 0 };
+    const categoryStats = {};
+
+    transactions.forEach(tx => {
+      const txDate = new Date(tx.Date);
+      const txAmt = parseFloat(tx.TotalAmount) || 0;
+      if (txDate >= sDate && txDate <= eDate) {
+        const dayMatch = dateRangeArr.find(d => d.fullDate === txDate.toDateString());
+        if (dayMatch) dayMatch.sales += txAmt;
+        if (paymentStats[tx.PaymentMethod] !== undefined) paymentStats[tx.PaymentMethod] += txAmt;
+        else if (tx.PaymentMethod) paymentStats[tx.PaymentMethod] = txAmt;
+        try {
+          const items = JSON.parse(tx.CartDetails || "[]");
+          items.forEach(item => {
+            const cat = item.Category || item.category || "อื่นๆ";
+            const itemTotal = (parseFloat(item.Price || item.price) * parseFloat(item.qty)) || 0;
+            categoryStats[cat] = (categoryStats[cat] || 0) + itemTotal;
+          });
+        } catch(e) {}
+      }
+    });
+
+    setChartDataDaily(dateRangeArr);
+    setChartDataPayment(
+      Object.entries(paymentStats).filter(([_, v]) => v > 0).map(([name, value]) => ({ name, value }))
+    );
+    setChartDataCategory(
+      Object.entries(categoryStats)
+        .filter(([_, v]) => v > 0)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 7)
+        .map(([name, value]) => ({ name, value }))
+    );
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -53,90 +106,25 @@ export default function Dashboard() {
       const storeStock = Array.isArray(storeData) ? storeData : [];
       setAllProducts(products);
 
-      const todayStr = new Date().toDateString();
-      let todaySales = 0;
-      let todayOrders = 0;
-      const todayTxs = [];
-      let cashTotal = 0;
-      let transferTotal = 0;
-      let creditTotal = 0;
-      
-      // Dynamic Date Range for Charts
-      const sDate = new Date(startDateStr);
-      sDate.setHours(0,0,0,0);
-      const eDate = new Date(endDateStr);
-      eDate.setHours(23,59,59,999);
-      
-      const dayDiff = Math.max(1, Math.ceil((eDate - sDate) / (1000 * 60 * 60 * 24)));
-      const dateRangeArr = Array.from({length: dayDiff}, (_, i) => {
-        const d = new Date(sDate);
-        d.setDate(d.getDate() + i);
-        return {
-          date: d.toLocaleDateString("th-TH", { day: 'numeric', month: 'short' }),
-          fullDate: d.toDateString(),
-          sales: 0
-        };
-      });
-
-      const paymentStats = { "เงินสด": 0, "เงินโอน": 0, "บัตรเครดิต": 0 };
-      const categoryStats = {};
-
       const sortedTxs = transactions.sort((a, b) => new Date(b.Date) - new Date(a.Date));
+      setRawTransactions(sortedTxs);
+
+      const todayStr = new Date().toDateString();
+      let todaySales = 0, todayOrders = 0, cashTotal = 0, transferTotal = 0, creditTotal = 0;
+      const todayTxs = [];
+
       sortedTxs.forEach(tx => {
         const txDate = new Date(tx.Date);
         const txAmt = parseFloat(tx.TotalAmount) || 0;
-
-        // Check if transaction is within the selected date range
-        if (txDate >= sDate && txDate <= eDate) {
-          // Chart 1 Match
-          const dayMatch = dateRangeArr.find(d => d.fullDate === txDate.toDateString());
-          if (dayMatch) {
-            dayMatch.sales += txAmt;
-          }
-
-          // Chart 2 Payment Match
-          if (paymentStats[tx.PaymentMethod] !== undefined) {
-             paymentStats[tx.PaymentMethod] += txAmt;
-          } else if (tx.PaymentMethod) {
-             paymentStats[tx.PaymentMethod] = txAmt;
-          }
-
-          // Chart 3 Category Match
-          try {
-             const items = JSON.parse(tx.CartDetails || "[]");
-             items.forEach(item => {
-               const cat = item.Category || item.category || "อื่นๆ";
-               const itemTotal = (parseFloat(item.Price || item.price) * parseFloat(item.qty)) || 0;
-               categoryStats[cat] = (categoryStats[cat] || 0) + itemTotal;
-             });
-          } catch(e) {}
-        }
-
-        // Today metrics
         if (txDate.toDateString() === todayStr) {
           todaySales += txAmt;
           todayOrders++;
           todayTxs.push(tx);
-          
           if (tx.PaymentMethod === "เงินสด") cashTotal += txAmt;
           else if (tx.PaymentMethod === "เงินโอน") transferTotal += txAmt;
           else if (tx.PaymentMethod === "บัตรเครดิต") creditTotal += txAmt;
         }
       });
-      
-      setChartDataDaily(dateRangeArr);
-      setChartDataPayment(
-        Object.entries(paymentStats)
-          .filter(([_, v]) => v > 0)
-          .map(([name, value]) => ({ name, value }))
-      );
-      setChartDataCategory(
-        Object.entries(categoryStats)
-          .filter(([_, v]) => v > 0)
-          .sort((a, b) => b[1] - a[1]) // highest first
-          .slice(0, 7) // top 7 categories to avoid clutter
-          .map(([name, value]) => ({ name, value }))
-      );
 
       setTodayTransactions(todayTxs);
       setTodaySalesBreakdown({ cash: cashTotal, transfer: transferTotal, credit: creditTotal });
@@ -145,31 +133,20 @@ export default function Dashboard() {
       const now = new Date();
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(now.getDate() + 30);
-
       products.forEach(p => {
         const qty = parseFloat(p.Quantity) || 0;
-        let isExpiringSoon = false;
-        let reason = "";
+        let isExpiringSoon = false, reason = "";
         if (p.ExpiryDate && p.ExpiryDate !== "-" && p.ExpiryDate !== "") {
-           const expDate = new Date(p.ExpiryDate);
-           if (expDate <= thirtyDaysFromNow) {
-             isExpiringSoon = true;
-             reason = "ใกล้หมดอายุ (" + p.ExpiryDate + ")";
-           }
+          const expDate = new Date(p.ExpiryDate);
+          if (expDate <= thirtyDaysFromNow) { isExpiringSoon = true; reason = "ใกล้หมดอายุ (" + p.ExpiryDate + ")"; }
         }
-        if (qty <= 5) {
-          reason = reason ? reason + " และ " : "";
-          reason += "สต๊อกเหลือน้อย (" + qty + " ชิ้น)";
-        }
-        if (qty <= 5 || isExpiringSoon) {
-          attentionList.push({ ...p, attentionReason: reason });
-        }
+        if (qty <= 5) { reason = reason ? reason + " และ " : ""; reason += "สต๊อกเหลือน้อย (" + qty + " ชิ้น)"; }
+        if (qty <= 5 || isExpiringSoon) attentionList.push({ ...p, attentionReason: reason });
       });
       setAttentionProducts(attentionList);
 
       const lowStore = storeStock.filter(s => parseFloat(s.Quantity) <= 3);
       setLowStoreStock(lowStore);
-
       setRecentOrders(sortedTxs.slice(0, 5));
       setStats([
         { id: "sales", name: "ยอดขายวันนี้", value: `฿${todaySales.toLocaleString()}`, change: "ยอดรวมวันนี้", icon: <DollarSign size={24} />, color: "bg-blue-50 text-blue-600 border-blue-200" },
@@ -178,14 +155,22 @@ export default function Dashboard() {
         { id: "products", name: "จำนวนสินค้าในระบบ", value: products.length.toString(), change: "พร้อมขาย", icon: <Users size={24} />, color: "bg-purple-50 text-purple-600 border-purple-200" },
         { id: "storestock", name: "สินค้าหน้าร้านใกล้หมด", value: lowStore.length.toString(), change: "คงเหลือ ≤ 3 ชิ้น", icon: <Store size={24} />, color: "bg-emerald-50 text-emerald-600 border-emerald-200" },
       ]);
+
+      computeCharts(sortedTxs, startDateStr, endDateStr);
     } catch (err) {
       console.error(err);
     }
     setIsLoading(false);
   };
 
+  // Initial load — fetch from network (or cache if <3 min old)
+  useEffect(() => { loadData(); }, []);
+
+  // Date range changes → recalculate charts from existing data, no API call
   useEffect(() => {
-    loadData();
+    if (rawTransactions.length > 0) {
+      computeCharts(rawTransactions, startDateStr, endDateStr);
+    }
   }, [startDateStr, endDateStr]);
 
   return (
