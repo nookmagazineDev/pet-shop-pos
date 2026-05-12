@@ -91,13 +91,21 @@ export default function Reports() {
   const getLinkedPO = (m) => {
     const ref = String(m.ReferenceNo || "").trim();
     if (!ref) return null;
+    // Split composite ref like "RCV-xxx / staff / PO:yyy" into parts
+    const refParts = ref.split(/[\s\/,|]+/).map(s => s.trim()).filter(Boolean);
     return receiveGoodsList.find(po => {
-      // All candidate keys from the PO record
       const candidates = [
-        po.OrderNumber, po.LotNumber, po.ReceiveID, po.RecordID, po.ID
+        po.OrderNumber, po.LotNumber, po.ReceiveID, po.RecordID, po.ID,
+        String(po.Timestamp || "").trim()
       ].map(v => String(v || "").trim()).filter(Boolean);
-      // Match if ref equals OR contains OR is contained by any candidate
-      return candidates.some(c => ref === c || ref.includes(c) || c.includes(ref));
+      return candidates.some(c =>
+        c && (
+          ref === c ||
+          ref.includes(c) ||
+          c.includes(ref) ||
+          refParts.some(part => part.length > 3 && (c === part || c.includes(part) || part.includes(c)))
+        )
+      );
     }) || null;
   };
 
@@ -1100,7 +1108,7 @@ export default function Reports() {
                         <tr key={idx} className={`text-sm ${isReceive ? "bg-blue-50/40 hover:bg-blue-50/70" : "hover:bg-emerald-50/30"}`}>
                           {/* expand toggle */}
                           <td className="py-3 px-4">
-                            {(hasDoc || poItems.length > 0) && (
+                            {(m.ReferenceNo || hasDoc || poItems.length > 0) && (
                               <button
                                 type="button"
                                 onClick={() => setExpandedMoveIdx(isExp ? null : idx)}
@@ -1134,7 +1142,7 @@ export default function Reports() {
                                   เอกสาร
                                 </button>
                               )}
-                              {(poItems.length > 0 || linkedPO) && (
+                              {(m.ReferenceNo || poItems.length > 0 || linkedPO) && (
                                 <button
                                   type="button"
                                   onClick={() => setExpandedMoveIdx(isExp ? null : idx)}
@@ -1235,7 +1243,18 @@ export default function Reports() {
                                   )}
                                 </div>
                               ) : (
-                                <div className="text-xs text-gray-400 text-center py-2">ไม่พบข้อมูลเอกสารอ้างอิงสำหรับรายการนี้</div>
+                                /* fallback: show movement record info directly */
+                                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 py-3 text-xs bg-primary/5">
+                                    <div><div className="text-gray-400 mb-0.5">เลขที่อ้างอิง</div><div className="font-mono font-semibold text-gray-800">{m.ReferenceNo || "-"}</div></div>
+                                    <div><div className="text-gray-400 mb-0.5">สินค้า</div><div className="font-semibold text-gray-800">{m.Name || "-"}</div></div>
+                                    <div><div className="text-gray-400 mb-0.5">จาก → ถึง</div><div className="font-semibold text-gray-800">{m.FromLocation} → {m.ToLocation}</div></div>
+                                    <div><div className="text-gray-400 mb-0.5">จำนวน</div><div className="font-bold text-emerald-700">+{m.Quantity} ชิ้น</div></div>
+                                  </div>
+                                  <div className="px-4 py-3 text-xs text-amber-600 flex items-center gap-1.5">
+                                    <span>⚠️</span> ไม่พบข้อมูล PO อ้างอิงในระบบ — อาจเป็นการย้ายสต็อกที่ไม่มีใบ PO หรือ ReferenceNo ไม่ตรงกับบันทึกรับเข้า
+                                  </div>
+                                </div>
                               )}
                             </td>
                           </tr>
