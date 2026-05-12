@@ -14,25 +14,32 @@ import { exportToExcel } from "../utils/excelExport";
 const PLATFORMS = ["Shopee", "Lazada", "Lineman", "GrabFood", "อื่นๆ"];
 
 const PLATFORM_COLORS = {
-  Shopee:   { bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200", dot: "bg-orange-400" },
-  Lazada:   { bg: "bg-blue-100",   text: "text-blue-700",   border: "border-blue-200",   dot: "bg-blue-400"   },
-  Lineman:  { bg: "bg-green-100",  text: "text-green-700",  border: "border-green-200",  dot: "bg-green-400"  },
-  GrabFood: { bg: "bg-emerald-100",text: "text-emerald-700",border: "border-emerald-200",dot: "bg-emerald-400"},
+  Shopee:   { bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
+  Lazada:   { bg: "bg-blue-100",   text: "text-blue-700",   border: "border-blue-200"   },
+  Lineman:  { bg: "bg-green-100",  text: "text-green-700",  border: "border-green-200"  },
+  GrabFood: { bg: "bg-emerald-100",text: "text-emerald-700",border: "border-emerald-200"},
 };
-const defaultColor = { bg: "bg-violet-100", text: "text-violet-700", border: "border-violet-200", dot: "bg-violet-400" };
+const defaultColor = { bg: "bg-violet-100", text: "text-violet-700", border: "border-violet-200" };
 const getPlatformColor = (p) => PLATFORM_COLORS[p] || defaultColor;
+
+/* ── extract platform name from PaymentMethod ── */
+const extractPlatform = (method = "") => {
+  const m = method.trim();
+  const found = PLATFORMS.find(p => m === p || m.startsWith(p + " "));
+  return found || m.replace("รอชำระ", "").trim() || "อื่นๆ";
+};
+const isPending = (method = "") => method.includes("รอชำระ");
 
 /* ──────────────────────────────────────────────
    Excel template
 ────────────────────────────────────────────── */
 function downloadOnlineTemplate() {
   const wb = XLSX.utils.book_new();
-
   const instructions = [
     ["คำแนะนำการใช้งาน - แบบฟอร์มนำเข้าออเดอร์ขายออนไลน์"],
     [""],
     ["1.  กรอกข้อมูลในชีต 'ข้อมูลออเดอร์' แล้วบันทึก"],
-    ["2.  เลขออเดอร์  — แถวที่เลขเดียวกัน = ออเดอร์เดียวกัน (หากว่าง = แต่ละแถวเป็นออเดอร์แยก)"],
+    ["2.  เลขออเดอร์  — แถวที่เลขเดียวกัน = ออเดอร์เดียวกัน (ว่าง = แต่ละแถวเป็นออเดอร์แยก)"],
     ["3.  แพลตฟอร์ม  — Shopee | Lazada | Lineman | GrabFood | อื่นๆ"],
     ["4.  บาร์โค้ด   — กรอกบาร์โค้ดสินค้า (แนะนำ) หรือชื่อสินค้า"],
     ["5.  จำนวน      — จำนวนชิ้นที่ขาย"],
@@ -73,7 +80,7 @@ function ImportPreviewModal({ preview, onClose, onConfirm, isSaving }) {
         <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0">
           <div>
             <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-              <FileSpreadsheet size={20} className="text-violet-600" />
+              <FileSpreadsheet size={20} className="text-violet-600"/>
               ตรวจสอบข้อมูลก่อนนำเข้า
             </h3>
             <p className="text-sm text-gray-500 mt-0.5">
@@ -81,7 +88,7 @@ function ImportPreviewModal({ preview, onClose, onConfirm, isSaving }) {
               {warnOrders > 0 && <span className="ml-2 text-amber-600">⚠ {warnOrders} ออเดอร์มีสินค้าที่ไม่พบในระบบ</span>}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-400"><X size={20} /></button>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-400"><X size={20}/></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {orders.map((order, oi) => {
@@ -91,12 +98,9 @@ function ImportPreviewModal({ preview, onClose, onConfirm, isSaving }) {
             const pc         = getPlatformColor(order.platform);
             return (
               <div key={oi} className={clsx("border rounded-xl overflow-hidden", hasWarn ? "border-amber-200" : "border-gray-100")}>
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isExp ? null : oi)}
-                  className={clsx("w-full flex items-center gap-3 px-4 py-3 text-left transition-colors", hasWarn ? "bg-amber-50 hover:bg-amber-100/60" : "bg-gray-50 hover:bg-gray-100/60")}
-                >
-                  {hasWarn ? <AlertTriangle size={16} className="text-amber-500 shrink-0" /> : <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />}
+                <button type="button" onClick={() => setExpanded(isExp ? null : oi)}
+                  className={clsx("w-full flex items-center gap-3 px-4 py-3 text-left transition-colors", hasWarn ? "bg-amber-50 hover:bg-amber-100/60" : "bg-gray-50 hover:bg-gray-100/60")}>
+                  {hasWarn ? <AlertTriangle size={16} className="text-amber-500 shrink-0"/> : <CheckCircle2 size={16} className="text-emerald-500 shrink-0"/>}
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-sm text-gray-800">ออเดอร์ {order.orderNo}</div>
                     <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
@@ -144,49 +148,60 @@ function ImportPreviewModal({ preview, onClose, onConfirm, isSaving }) {
 }
 
 /* ──────────────────────────────────────────────
-   Online Sales Report (right-panel tab)
+   Online Report panel (right side)
+   Shows ALL online orders — pending rows have a ✓ tick button
 ────────────────────────────────────────────── */
-function OnlineReport({ allTransactions, isLoading, onRefresh }) {
+function OnlineReportPanel({ allTransactions, isLoading, onRefresh, onMarkPaid, payingId }) {
   const [filterPlatform, setFilterPlatform] = useState("ทั้งหมด");
-  const [startDate, setStartDate] = useState("");
-  const [endDate,   setEndDate]   = useState("");
-  const [expanded,  setExpanded]  = useState(null);
+  const [filterStatus,   setFilterStatus]   = useState("ทั้งหมด"); // ทั้งหมด | รอชำระ | ชำระแล้ว
+  const [startDate,      setStartDate]      = useState("");
+  const [endDate,        setEndDate]        = useState("");
+  const [expanded,       setExpanded]       = useState(null);
 
-  // Completed online orders: method = platform name, no "รอชำระ", not VOID
-  const completedOrders = useMemo(() => {
-    return allTransactions.filter(tx => {
-      if (tx.Status === "VOID") return false;
-      const m = (tx.PaymentMethod || "").trim();
-      return PLATFORMS.some(p => m === p) && !m.includes("รอชำระ");
-    }).reverse();
+  // All online orders = method mentions any PLATFORM (pending or confirmed)
+  const allOnline = useMemo(() => {
+    return allTransactions
+      .filter(tx => {
+        if (tx.Status === "VOID") return false;
+        const m = tx.PaymentMethod || "";
+        return PLATFORMS.some(p => m === p || m.startsWith(p + " ") || m.endsWith(" " + p) || m === `${p} รอชำระ`);
+      })
+      .reverse();
   }, [allTransactions]);
 
   const filtered = useMemo(() => {
-    return completedOrders.filter(tx => {
-      if (filterPlatform !== "ทั้งหมด" && tx.PaymentMethod?.trim() !== filterPlatform) return false;
+    return allOnline.filter(tx => {
+      const platform = extractPlatform(tx.PaymentMethod);
+      const pending  = isPending(tx.PaymentMethod);
+
+      if (filterPlatform !== "ทั้งหมด" && platform !== filterPlatform) return false;
+      if (filterStatus === "รอชำระ"   && !pending) return false;
+      if (filterStatus === "ชำระแล้ว" && pending)  return false;
+
       if (startDate) {
         const d = new Date(tx.Date); d.setHours(0,0,0,0);
         if (d < new Date(startDate)) return false;
       }
       if (endDate) {
-        const d = new Date(tx.Date); d.setHours(23,59,59,999);
+        const d = new Date(tx.Date);
         if (d > new Date(endDate + "T23:59:59")) return false;
       }
       return true;
     });
-  }, [completedOrders, filterPlatform, startDate, endDate]);
+  }, [allOnline, filterPlatform, filterStatus, startDate, endDate]);
 
-  const totalAmt = filtered.reduce((s, tx) => s + parseFloat(tx.TotalAmount || 0), 0);
+  const totalAmt     = filtered.reduce((s, tx) => s + parseFloat(tx.TotalAmount || 0), 0);
+  const pendingCount = allOnline.filter(tx => isPending(tx.PaymentMethod)).length;
 
-  // Platform counts for badge
+  // Platform counts (across all online, not just filtered)
   const platformCounts = useMemo(() => {
     const cnt = {};
-    completedOrders.forEach(tx => {
-      const p = tx.PaymentMethod?.trim() || "อื่นๆ";
+    allOnline.forEach(tx => {
+      const p = extractPlatform(tx.PaymentMethod);
       cnt[p] = (cnt[p] || 0) + 1;
     });
     return cnt;
-  }, [completedOrders]);
+  }, [allOnline]);
 
   const handleExport = () => {
     if (filtered.length === 0) { alert("ไม่มีข้อมูล"); return; }
@@ -194,12 +209,13 @@ function OnlineReport({ allTransactions, isLoading, onRefresh }) {
       let items = "";
       try { items = JSON.parse(tx.CartDetails || "[]").map(c => `${c.Name} x${c.qty}`).join(", "); } catch {}
       return {
-        "ลำดับ": i + 1,
-        "วันที่": tx.Date ? new Date(tx.Date).toLocaleString("th-TH") : "-",
-        "เลขออเดอร์": tx.OrderID || "-",
-        "แพลตฟอร์ม": tx.PaymentMethod || "-",
-        "รายการสินค้า": items,
-        "ยอดรวม": parseFloat(tx.TotalAmount || 0),
+        "ลำดับ":       i + 1,
+        "วันที่":       tx.Date ? new Date(tx.Date).toLocaleString("th-TH") : "-",
+        "เลขออเดอร์":  tx.OrderID || "-",
+        "แพลตฟอร์ม":   extractPlatform(tx.PaymentMethod),
+        "สถานะ":       isPending(tx.PaymentMethod) ? "รอชำระ" : "ชำระแล้ว",
+        "รายการสินค้า":items,
+        "ยอดรวม":      parseFloat(tx.TotalAmount || 0),
       };
     });
     exportToExcel(rows, "OnlineReport", "OnlineSales_Report");
@@ -207,24 +223,65 @@ function OnlineReport({ allTransactions, isLoading, onRefresh }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Filter bar */}
-      <div className="p-3 border-b border-gray-100 space-y-2.5">
+
+      {/* Header bar */}
+      <div className="p-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <BarChart2 size={18} className="text-violet-600"/>
+          <span className="font-semibold text-gray-800">รายงานขายออนไลน์</span>
+          {pendingCount > 0 && (
+            <span className="bg-amber-100 text-amber-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+              รอชำระ {pendingCount}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
+            <Download size={13}/> Export
+          </button>
+          <button onClick={onRefresh} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" title="รีเฟรช">
+            <RefreshCw size={15}/>
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="px-4 pt-3 pb-2 border-b border-gray-100 space-y-2.5 shrink-0">
+
+        {/* Status filter */}
+        <div className="flex gap-1.5">
+          {["ทั้งหมด","รอชำระ","ชำระแล้ว"].map(s => (
+            <button key={s} onClick={() => setFilterStatus(s)}
+              className={clsx(
+                "flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                filterStatus === s
+                  ? s === "รอชำระ"
+                    ? "bg-amber-100 text-amber-700 border-amber-300"
+                    : s === "ชำระแล้ว"
+                      ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                      : "bg-violet-100 text-violet-700 border-violet-300"
+                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+              )}>
+              {s === "รอชำระ" && <Clock size={11} className="inline mr-1"/>}
+              {s === "ชำระแล้ว" && <CheckCircle2 size={11} className="inline mr-1"/>}
+              {s}
+            </button>
+          ))}
+        </div>
+
         {/* Platform pills */}
         <div className="flex flex-wrap gap-1.5">
           {["ทั้งหมด", ...PLATFORMS].map(p => {
             const pc  = getPlatformColor(p);
-            const cnt = p === "ทั้งหมด" ? completedOrders.length : (platformCounts[p] || 0);
+            const cnt = p === "ทั้งหมด" ? allOnline.length : (platformCounts[p] || 0);
             return (
-              <button
-                key={p}
-                onClick={() => setFilterPlatform(p)}
+              <button key={p} onClick={() => setFilterPlatform(p)}
                 className={clsx(
                   "px-2.5 py-1 rounded-full text-xs font-semibold border transition-all flex items-center gap-1",
                   filterPlatform === p
                     ? clsx(pc.bg, pc.text, pc.border, "shadow-sm")
                     : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                )}
-              >
+                )}>
                 {p}
                 <span className={clsx("text-[10px] font-bold px-1 py-0.5 rounded-full", filterPlatform === p ? "bg-white/60" : "bg-gray-100")}>
                   {cnt}
@@ -233,6 +290,7 @@ function OnlineReport({ allTransactions, isLoading, onRefresh }) {
             );
           })}
         </div>
+
         {/* Date range */}
         <div className="flex items-center gap-2">
           <Calendar size={13} className="text-gray-400 shrink-0"/>
@@ -248,23 +306,13 @@ function OnlineReport({ allTransactions, isLoading, onRefresh }) {
       </div>
 
       {/* Summary */}
-      <div className="px-4 py-3 bg-violet-50/40 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-4 py-2.5 bg-violet-50/40 border-b border-gray-100 flex items-center justify-between shrink-0">
         <div>
-          <div className="text-xs text-gray-500">ออเดอร์ทั้งหมด</div>
-          <div className="font-bold text-gray-900 text-lg">{filtered.length} รายการ</div>
+          <span className="text-xs text-gray-500">แสดง </span>
+          <span className="font-bold text-gray-900">{filtered.length}</span>
+          <span className="text-xs text-gray-500"> / {allOnline.length} ออเดอร์</span>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-gray-500">ยอดรวม</div>
-          <div className="font-bold text-violet-700 text-lg">฿{totalAmt.toLocaleString(undefined,{minimumFractionDigits:2})}</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={onRefresh} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-white rounded-lg transition-colors" title="รีเฟรช">
-            <RefreshCw size={15}/>
-          </button>
-          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
-            <Download size={13}/> Export
-          </button>
-        </div>
+        <div className="font-bold text-violet-700">฿{totalAmt.toLocaleString(undefined,{minimumFractionDigits:2})}</div>
       </div>
 
       {/* Order list */}
@@ -274,55 +322,92 @@ function OnlineReport({ allTransactions, isLoading, onRefresh }) {
         ) : filtered.length === 0 ? (
           <div className="py-14 flex flex-col items-center justify-center gap-3 text-gray-400">
             <BarChart2 size={40} className="opacity-20"/>
-            <span className="text-sm">ไม่มีรายการขายออนไลน์</span>
+            <span className="text-sm">ไม่มีรายการ</span>
           </div>
         ) : filtered.map((tx, i) => {
           let cartItems = [];
           try { cartItems = JSON.parse(tx.CartDetails || "[]"); } catch {}
-          const platform  = tx.PaymentMethod?.trim() || "อื่นๆ";
+          const platform  = extractPlatform(tx.PaymentMethod);
+          const pending   = isPending(tx.PaymentMethod);
           const pc        = getPlatformColor(platform);
           const isExp     = expanded === i;
+          const loading   = payingId === tx.OrderID;
           const txAmt     = parseFloat(tx.TotalAmount || 0);
+
           return (
-            <div key={i}>
-              <button
-                type="button"
-                onClick={() => setExpanded(isExp ? null : i)}
-                className="w-full p-4 hover:bg-gray-50/60 transition-colors text-left"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+            <div key={i} className={clsx(pending ? "bg-amber-50/30" : "")}>
+              <div className="p-4">
+                <div className="flex items-start gap-3">
+                  {/* Expand button + info */}
+                  <button type="button" onClick={() => setExpanded(isExp ? null : i)} className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className={clsx("text-[11px] font-bold px-2 py-0.5 rounded-full border", pc.bg, pc.text, pc.border)}>{platform}</span>
-                      <CheckCircle2 size={13} className="text-emerald-500 shrink-0"/>
-                      <span className="text-[11px] text-emerald-600 font-medium">ชำระแล้ว</span>
+                      {pending ? (
+                        <span className="text-[11px] bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-0.5">
+                          <Clock size={10}/> รอชำระ
+                        </span>
+                      ) : (
+                        <span className="text-[11px] bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-0.5">
+                          <CheckCircle2 size={10}/> ชำระแล้ว
+                        </span>
+                      )}
                     </div>
-                    <div className="font-mono text-xs text-gray-500 mt-1 truncate">{tx.OrderID}</div>
+                    <div className="font-mono text-xs text-gray-500 truncate">{tx.OrderID}</div>
                     <div className="text-xs text-gray-400 mt-0.5">
                       {tx.Date ? new Date(tx.Date).toLocaleString("th-TH") : "-"}
                     </div>
-                  </div>
-                  <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                    <div className="font-bold text-gray-900">฿{txAmt.toLocaleString()}</div>
-                    <div className="text-xs text-gray-400">{cartItems.length} รายการ</div>
-                    {isExp ? <ChevronUp size={14} className="text-gray-400"/> : <ChevronDown size={14} className="text-gray-400"/>}
+                  </button>
+
+                  {/* Amount + action */}
+                  <div className="shrink-0 flex flex-col items-end gap-2">
+                    <div className="font-bold text-gray-900 text-base">฿{txAmt.toLocaleString()}</div>
+                    <div className="flex items-center gap-1.5">
+                      {/* Expand chevron */}
+                      <button type="button" onClick={() => setExpanded(isExp ? null : i)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
+                        {isExp ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                      </button>
+                      {/* ✓ tick — only for pending */}
+                      {pending && (
+                        <button
+                          onClick={() => onMarkPaid(tx.OrderID, platform)}
+                          disabled={loading}
+                          title="ยืนยันได้รับเงินแล้ว"
+                          className={clsx(
+                            "flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all",
+                            loading
+                              ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                              : "bg-white border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-sm"
+                          )}
+                        >
+                          {loading ? <Loader2 size={13} className="animate-spin"/> : <CheckCircle2 size={13}/>}
+                          ได้รับเงิน
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </button>
-              {isExp && (
-                <div className="px-4 pb-4 bg-gray-50/40">
-                  <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-50 overflow-hidden">
-                    {cartItems.map((c, j) => (
-                      <div key={j} className="flex items-center justify-between px-3 py-2 text-xs">
-                        <span className="text-gray-700 flex-1 truncate">{c.Name}</span>
-                        <span className="text-gray-500 mx-3">x{c.qty}</span>
-                        <span className="font-semibold text-gray-900">฿{((c.price || 0) * c.qty).toLocaleString()}</span>
-                      </div>
-                    ))}
-                    {cartItems.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">ไม่มีข้อมูลรายการ</div>}
+
+                {/* Expanded items */}
+                {isExp && (
+                  <div className="mt-3 bg-white border border-gray-100 rounded-xl divide-y divide-gray-50 overflow-hidden">
+                    {cartItems.length === 0
+                      ? <div className="px-3 py-2 text-xs text-gray-400">ไม่มีข้อมูลรายการ</div>
+                      : cartItems.map((c, j) => (
+                        <div key={j} className="flex items-center justify-between px-3 py-2 text-xs">
+                          <span className="text-gray-700 flex-1 truncate">{c.Name}</span>
+                          <span className="text-gray-400 mx-3">x{c.qty}</span>
+                          <span className="font-semibold text-gray-800">฿{((c.price||0)*c.qty).toLocaleString()}</span>
+                        </div>
+                      ))
+                    }
+                    <div className="flex justify-between px-3 py-2 text-xs bg-gray-50 font-semibold text-gray-700">
+                      <span>ยอดรวม</span>
+                      <span>฿{txAmt.toLocaleString(undefined,{minimumFractionDigits:2})}</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })}
@@ -335,28 +420,20 @@ function OnlineReport({ allTransactions, isLoading, onRefresh }) {
    Main component
 ────────────────────────────────────────────── */
 export default function OnlineSales() {
-  const [products, setProducts] = useState([]);
-  const [cart, setCart] = useState([]);
-  const [barcodeInput, setBarcodeInput] = useState("");
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [allTransactions, setAllTransactions] = useState([]);
-  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
-  const [isPaying, setIsPaying] = useState(null);  // orderId being confirmed
-  const [orderPlatform, setOrderPlatform] = useState(PLATFORMS[0]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
-  const [rightTab, setRightTab] = useState("pending"); // "pending" | "report"
-  const barcodeRef = useRef(null);
-
-  // Excel import
-  const importFileRef = useRef(null);
+  const [products,         setProducts]         = useState([]);
+  const [cart,             setCart]             = useState([]);
+  const [barcodeInput,     setBarcodeInput]     = useState("");
+  const [isScannerOpen,    setIsScannerOpen]    = useState(false);
+  const [isSaving,         setIsSaving]         = useState(false);
+  const [allTransactions,  setAllTransactions]  = useState([]);
+  const [isLoadingOrders,  setIsLoadingOrders]  = useState(false);
+  const [isPaying,         setIsPaying]         = useState(null);
+  const [orderPlatform,    setOrderPlatform]    = useState(PLATFORMS[0]);
+  const [isLoadingProducts,setIsLoadingProducts]= useState(true);
+  const barcodeRef   = useRef(null);
+  const importFileRef= useRef(null);
   const [importPreview, setImportPreview] = useState(null);
-  const [isImporting, setIsImporting] = useState(false);
-
-  const pendingOrders = useMemo(
-    () => allTransactions.filter(tx => tx.PaymentMethod?.includes("รอชำระ")).reverse(),
-    [allTransactions]
-  );
+  const [isImporting,   setIsImporting]   = useState(false);
 
   useEffect(() => {
     fetchApi("getProducts").then(data => {
@@ -472,7 +549,6 @@ export default function OnlineSales() {
     }
   };
 
-  // Tick: mark order as paid
   const handleMarkPaid = async (orderId, platform) => {
     setIsPaying(orderId);
     const res = await postApi({
@@ -480,11 +556,8 @@ export default function OnlineSales() {
       payload: { orderId, paymentMethod: platform }
     });
     setIsPaying(null);
-    if (res.success) {
-      loadTransactions();
-    } else {
-      alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
-    }
+    if (res.success) loadTransactions();
+    else alert("เกิดข้อผิดพลาด: " + (res.error || "Unknown"));
   };
 
   /* ── Excel import ── */
@@ -545,9 +618,9 @@ export default function OnlineSales() {
     setIsImporting(true);
     let success = 0, failed = 0;
     for (const order of importPreview.orders) {
-      const sub   = order.items.reduce((s, i) => s + i.price * i.qty, 0);
-      const t     = sub * 0.07;
-      const res   = await postApi({
+      const sub = order.items.reduce((s, i) => s + i.price * i.qty, 0);
+      const t   = sub * 0.07;
+      const res = await postApi({
         action: "checkout",
         payload: {
           totalAmount: sub + t, tax: t,
@@ -730,116 +803,15 @@ export default function OnlineSales() {
           </div>
         </div>
 
-        {/* RIGHT: Tabs — รอชำระ / รายงาน */}
-        <div className="w-full lg:w-[440px] flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 shrink-0 overflow-hidden">
-
-          {/* Tab bar */}
-          <div className="flex border-b border-gray-100 shrink-0">
-            <button
-              onClick={() => setRightTab("pending")}
-              className={clsx(
-                "flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-colors border-b-2",
-                rightTab === "pending" ? "border-violet-600 text-violet-700 bg-violet-50/50" : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-              )}
-            >
-              <Clock size={15}/> รอชำระ
-              {pendingOrders.length > 0 && (
-                <span className="bg-amber-100 text-amber-700 text-[11px] font-bold px-1.5 py-0.5 rounded-full">{pendingOrders.length}</span>
-              )}
-            </button>
-            <button
-              onClick={() => setRightTab("report")}
-              className={clsx(
-                "flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-colors border-b-2",
-                rightTab === "report" ? "border-violet-600 text-violet-700 bg-violet-50/50" : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-              )}
-            >
-              <BarChart2 size={15}/> รายงานขาย
-            </button>
-          </div>
-
-          {/* Tab content */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-
-            {/* ── Pending orders ── */}
-            {rightTab === "pending" && (
-              <>
-                <div className="p-3 border-b border-gray-50 flex justify-end shrink-0">
-                  <button onClick={loadTransactions} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                    <RefreshCw size={15}/>
-                  </button>
-                </div>
-                <div className="flex-1 overflow-auto divide-y divide-gray-100">
-                  {isLoadingOrders ? (
-                    <div className="py-12 flex justify-center text-gray-400"><Loader2 size={24} className="animate-spin"/></div>
-                  ) : pendingOrders.length === 0 ? (
-                    <div className="py-14 flex flex-col items-center justify-center gap-3 text-gray-400">
-                      <Clock size={40} className="opacity-20"/>
-                      <span className="text-sm">ไม่มีรายการรอชำระ</span>
-                    </div>
-                  ) : pendingOrders.map((order, i) => {
-                    let cartItems = [];
-                    try { cartItems = JSON.parse(order.CartDetails || "[]"); } catch {}
-                    const platform  = (order.PaymentMethod || "").replace("รอชำระ","").trim() || "ออนไลน์";
-                    const pc        = getPlatformColor(platform);
-                    const loading   = isPaying === order.OrderID;
-                    return (
-                      <div key={i} className="p-4 hover:bg-gray-50/40 transition-colors">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={clsx("text-[11px] font-bold px-2 py-0.5 rounded-full border", pc.bg, pc.text, pc.border)}>{platform}</span>
-                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">รอชำระ</span>
-                            </div>
-                            <div className="font-mono text-xs text-gray-500 truncate">{order.OrderID}</div>
-                            <div className="text-xs text-gray-400 mt-0.5">
-                              {order.Date ? new Date(order.Date).toLocaleString("th-TH") : "-"}
-                            </div>
-                            <div className="mt-2 space-y-0.5">
-                              {cartItems.slice(0,3).map((c,j) => (
-                                <div key={j} className="text-xs text-gray-600">• {c.Name} x{c.qty}</div>
-                              ))}
-                              {cartItems.length > 3 && <div className="text-xs text-gray-400">+{cartItems.length-3} รายการอื่น</div>}
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-2 shrink-0">
-                            <div className="font-bold text-gray-900 text-lg">฿{parseFloat(order.TotalAmount||0).toLocaleString()}</div>
-                            {/* ✓ tick button */}
-                            <button
-                              onClick={() => handleMarkPaid(order.OrderID, platform)}
-                              disabled={loading}
-                              title="ยืนยันได้รับเงินแล้ว"
-                              className={clsx(
-                                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all",
-                                loading
-                                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                  : "bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-md hover:shadow-emerald-200"
-                              )}
-                            >
-                              {loading
-                                ? <Loader2 size={16} className="animate-spin"/>
-                                : <CheckCircle2 size={16}/>
-                              }
-                              ได้รับเงินแล้ว
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {/* ── Report ── */}
-            {rightTab === "report" && (
-              <OnlineReport
-                allTransactions={allTransactions}
-                isLoading={isLoadingOrders}
-                onRefresh={loadTransactions}
-              />
-            )}
-          </div>
+        {/* RIGHT: Report only */}
+        <div className="w-full lg:w-[460px] flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 shrink-0 overflow-hidden">
+          <OnlineReportPanel
+            allTransactions={allTransactions}
+            isLoading={isLoadingOrders}
+            onRefresh={loadTransactions}
+            onMarkPaid={handleMarkPaid}
+            payingId={isPaying}
+          />
         </div>
       </div>
 
