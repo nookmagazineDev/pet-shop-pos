@@ -75,6 +75,8 @@ export default function Inventory() {
     packMultiplier: "",
     packBarcode2: "",
     packMultiplier2: "",
+    packBarcode3: "",
+    packMultiplier3: "",
     hasExpiry: "YES",
     acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"]
   });
@@ -226,6 +228,8 @@ export default function Inventory() {
         acceptedPayments: (newProductData.acceptedPayments || []).join(","),
         packBarcode2: newProductData.packBarcode2 || "",
         packMultiplier2: newProductData.packMultiplier2 || "",
+        packBarcode3: newProductData.packBarcode3 || "",
+        packMultiplier3: newProductData.packMultiplier3 || "",
         _actor: currentUser
       }
     });
@@ -238,7 +242,7 @@ export default function Inventory() {
         barcode: "", name: "", vatStatus: "VAT", costPrice: "", price: "",
         wholesalePrice: "", shopeePrice: "", lazadaPrice: "", linemanPrice: "",
         category: "ทั่วไป", lowStockThreshold: 5,
-        packBarcode: "", packMultiplier: "", packBarcode2: "", packMultiplier2: "",
+        packBarcode: "", packMultiplier: "", packBarcode2: "", packMultiplier2: "", packBarcode3: "", packMultiplier3: "",
         hasExpiry: "YES", acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"]
       });
       fetchProducts();
@@ -349,6 +353,8 @@ export default function Inventory() {
         packMultiplier: editItem.PackMultiplier || "",
         packBarcode2: editItem.PackBarcode2 || "",
         packMultiplier2: editItem.PackMultiplier2 || "",
+        packBarcode3: editItem.PackBarcode3 || "",
+        packMultiplier3: editItem.PackMultiplier3 || "",
         hasExpiry: editItem.HasExpiry || "YES",
         acceptedPayments: Array.isArray(editItem.AcceptedPayments)
           ? editItem.AcceptedPayments.join(",")
@@ -1399,6 +1405,22 @@ export default function Inventory() {
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
                       placeholder="เช่น 3, 24"/>
                   </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">แพ็ค 3 — บาร์โค้ด</label>
+                    <input type="text"
+                      value={editItem.PackBarcode3 || ""}
+                      onChange={e => setEditItem(prev => ({ ...prev, PackBarcode3: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                      placeholder="บาร์โค้ดแพ็คที่ 3"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">แพ็ค 3 — จำนวนชิ้น</label>
+                    <input type="number" min="0"
+                      value={editItem.PackMultiplier3 || ""}
+                      onChange={e => setEditItem(prev => ({ ...prev, PackMultiplier3: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                      placeholder="เช่น 2, 48"/>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-3 pt-2">
@@ -1599,6 +1621,22 @@ export default function Inventory() {
                           value={newProductData.packMultiplier2}
                           onChange={(e) => setNewProductData({...newProductData, packMultiplier2: e.target.value})}
                           placeholder="เช่น 3, 24"/>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">แพ็ค 3 — บาร์โค้ด</label>
+                        <input type="text"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          value={newProductData.packBarcode3}
+                          onChange={(e) => setNewProductData({...newProductData, packBarcode3: e.target.value})}
+                          placeholder="บาร์โค้ดแพ็คที่ 3"/>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">แพ็ค 3 — จำนวนชิ้น</label>
+                        <input type="number" min="0"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          value={newProductData.packMultiplier3}
+                          onChange={(e) => setNewProductData({...newProductData, packMultiplier3: e.target.value})}
+                          placeholder="เช่น 2, 48"/>
                       </div>
                     </div>
                   </div>
