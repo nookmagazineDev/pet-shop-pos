@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye, Download, FileSpreadsheet, Upload, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil, Save, MoveRight, Store, ArrowRightLeft, Eye, Download, FileSpreadsheet, Upload, AlertTriangle, CheckCircle2, ClipboardList, ChevronDown, ChevronUp, ExternalLink, FileImage, RefreshCw } from "lucide-react";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
@@ -30,6 +30,11 @@ export default function Inventory() {
   const [poFile, setPoFile] = useState(null); // PO Document file
   const [showImportModal, setShowImportModal] = useState(false);
   const [importPreviewItems, setImportPreviewItems] = useState([]);
+  const [receiveHistory, setReceiveHistory] = useState([]);
+  const [expandedHistoryPO, setExpandedHistoryPO] = useState(null);
+  const [viewDocPO, setViewDocPO] = useState(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
   const [packMultiplierDetected, setPackMultiplierDetected] = useState(1);
   const [packLabelDetected, setPackLabelDetected] = useState("");
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
@@ -118,6 +123,7 @@ export default function Inventory() {
     if (activeTab === "stock") fetchProducts();
     if (activeTab === "store") fetchStoreStock();
     if (activeTab === "receive") { fetchProducts(); fetchSuppliers(); }
+    if (activeTab === "history") fetchReceiveHistory();
   }, [activeTab]);
 
   // Unique locations from products for dropdown (always strings)
@@ -183,6 +189,34 @@ export default function Inventory() {
       String(item.Location || "").toLowerCase().includes(q)
     );
   });
+
+  const fetchReceiveHistory = async () => {
+    setIsLoadingHistory(true);
+    const data = await fetchApi("getReceiveGoods");
+    setReceiveHistory(Array.isArray(data) ? [...data].reverse() : []);
+    setIsLoadingHistory(false);
+  };
+
+  const getPOItems = (po) => {
+    const raw = po.Items || po.items || po.CartDetails || [];
+    if (Array.isArray(raw)) return raw;
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+  };
+
+  const openDocument = (po) => {
+    if (!po.FileData) return;
+    const ext = (po.FileName || "").split(".").pop().toLowerCase();
+    const mimeMap = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+    const mime = mimeMap[ext] || "application/octet-stream";
+    try {
+      const byteChars = atob(po.FileData);
+      const bytes = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch { alert("ไม่สามารถเปิดเอกสารได้"); }
+  };
 
   const handleAddReceiveItem = (e) => {
     e.preventDefault();
@@ -596,6 +630,18 @@ export default function Inventory() {
             style={!canEdit ? { display: "none" } : {}}
           >
             ใบรับของเข้าคลัง (Receive Goods)
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={clsx(
+              "px-6 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-1.5",
+              activeTab === "history" ? "bg-white text-primary shadow-sm" : "text-gray-500 hover:text-gray-900"
+            )}
+            disabled={!canEdit}
+            style={!canEdit ? { display: "none" } : {}}
+          >
+            <ClipboardList size={15} />
+            รายงานรับเข้า
           </button>
         </div>
         
@@ -1231,6 +1277,299 @@ export default function Inventory() {
         </div>
       )}
 
+      {/* ── History Tab ─────────────────────────────────────────── */}
+      {activeTab === "history" && (
+        <div className="flex flex-col gap-4">
+          {/* Header bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ClipboardList size={20} className="text-primary" />
+              <h3 className="font-bold text-gray-900 text-lg">รายงานรับสินค้าเข้าคลัง</h3>
+              <span className="bg-primary/10 text-primary text-xs font-bold px-2 py-0.5 rounded-full">
+                {receiveHistory.length} รายการ
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={e => setHistorySearch(e.target.value)}
+                  placeholder="ค้นหาบริษัท, เลขออเดอร์..."
+                  className="pl-8 pr-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white w-56"
+                />
+              </div>
+              <button
+                onClick={fetchReceiveHistory}
+                disabled={isLoadingHistory}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <RefreshCw size={14} className={isLoadingHistory ? "animate-spin" : ""} />
+                รีเฟรช
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {isLoadingHistory ? (
+              <div className="py-20 flex flex-col items-center gap-3 text-gray-400">
+                <Loader2 size={36} className="animate-spin opacity-40" />
+                <span className="text-sm">กำลังโหลดข้อมูล...</span>
+              </div>
+            ) : receiveHistory.filter(po => {
+                const q = historySearch.toLowerCase();
+                if (!q) return true;
+                return (po.CompanyName || "").toLowerCase().includes(q) ||
+                       (po.OrderNumber || po.LotNumber || "").toLowerCase().includes(q);
+              }).length === 0 ? (
+              <div className="py-20 flex flex-col items-center gap-3 text-gray-400">
+                <ClipboardList size={40} className="opacity-20" />
+                <span className="text-sm">ยังไม่มีข้อมูลการรับสินค้าเข้าคลัง</span>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {receiveHistory
+                  .filter(po => {
+                    const q = historySearch.toLowerCase();
+                    if (!q) return true;
+                    return (po.CompanyName || "").toLowerCase().includes(q) ||
+                           (po.OrderNumber || po.LotNumber || "").toLowerCase().includes(q);
+                  })
+                  .map((po, pi) => {
+                    const items    = getPOItems(po);
+                    const isExp    = expandedHistoryPO === pi;
+                    const date     = po.Date || po.ReceivedAt || po.CreatedAt;
+                    const orderNo  = po.OrderNumber || po.LotNumber || po.ReceiveID || `RG-${pi + 1}`;
+                    const totalCost= items.reduce((s, it) =>
+                      s + (parseFloat(it.unitCost || it.UnitCost || 0) * parseFloat(it.quantity || it.Quantity || 1)), 0);
+                    const hasDoc   = !!(po.FileName && po.FileData);
+                    const ext      = (po.FileName || "").split(".").pop().toLowerCase();
+                    const isImgDoc = ["jpg","jpeg","png","gif","webp"].includes(ext);
+
+                    return (
+                      <div key={pi}>
+                        {/* Row header */}
+                        <div className="flex items-center gap-2 px-4 py-3 hover:bg-gray-50/60 transition-colors">
+                          {/* Expand toggle */}
+                          <button
+                            type="button"
+                            onClick={() => setExpandedHistoryPO(isExp ? null : pi)}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 shrink-0"
+                            title={isExp ? "ซ่อนรายการ" : "ดูรายการสินค้า"}
+                          >
+                            {isExp ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </button>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-semibold text-sm text-gray-900">{orderNo}</span>
+                              <span className="text-gray-500 text-sm">{po.CompanyName || "-"}</span>
+                              {hasDoc && (
+                                <span className="text-[11px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                  <Eye size={10} /> มีเอกสาร
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
+                              <span className="flex items-center gap-0.5">
+                                <Calendar size={11} />
+                                {date ? new Date(date).toLocaleDateString("th-TH", { dateStyle: "medium" }) : "-"}
+                              </span>
+                              <span>{items.length} รายการสินค้า</span>
+                              {totalCost > 0 && (
+                                <span className="text-amber-700 font-bold">
+                                  ฿{totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedHistoryPO(isExp ? null : pi)}
+                              className="flex items-center gap-1 text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded-lg font-semibold transition-colors"
+                            >
+                              <ClipboardList size={13} /> ดูรายการ ({items.length})
+                            </button>
+                            {hasDoc && (
+                              <button
+                                type="button"
+                                onClick={() => setViewDocPO(po)}
+                                className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-semibold transition-colors border border-blue-100"
+                              >
+                                {isImgDoc ? <FileImage size={13} /> : <FileSpreadsheet size={13} />}
+                                ดูเอกสาร
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Expanded items */}
+                        {isExp && (
+                          <div className="px-4 pb-4 pt-1">
+                            {/* PO meta */}
+                            <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 py-3 text-xs border-b border-gray-100">
+                                <div>
+                                  <div className="text-gray-400 mb-0.5">เลขที่ออเดอร์</div>
+                                  <div className="font-mono font-semibold text-gray-800">{orderNo}</div>
+                                </div>
+                                <div>
+                                  <div className="text-gray-400 mb-0.5">บริษัท/ซัพพลายเออร์</div>
+                                  <div className="font-semibold text-gray-800">{po.CompanyName || "-"}</div>
+                                </div>
+                                <div>
+                                  <div className="text-gray-400 mb-0.5">วันที่รับเข้า</div>
+                                  <div className="font-semibold text-gray-800">
+                                    {date ? new Date(date).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-"}
+                                  </div>
+                                </div>
+                                {po.FileName && (
+                                  <div>
+                                    <div className="text-gray-400 mb-0.5">เอกสารแนบ</div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-blue-600 font-medium truncate max-w-[120px]">{po.FileName}</span>
+                                      {hasDoc && (
+                                        <button onClick={() => openDocument(po)} className="text-blue-500 hover:text-blue-700 shrink-0" title="เปิดเอกสาร">
+                                          <ExternalLink size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Items table */}
+                              {items.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="bg-primary/5 text-primary font-semibold">
+                                        <th className="py-2 px-4 text-left">#</th>
+                                        <th className="py-2 px-3 text-left">สินค้า</th>
+                                        <th className="py-2 px-3 text-left">บาร์โค้ด</th>
+                                        <th className="py-2 px-3 text-center">จำนวน</th>
+                                        <th className="py-2 px-3 text-right">ต้นทุน/ชิ้น</th>
+                                        <th className="py-2 px-3 text-right">รวม</th>
+                                        <th className="py-2 px-3 text-center">EXP</th>
+                                        <th className="py-2 px-3 text-left">โลเคชั่น</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {items.map((item, ii) => {
+                                        const qty   = parseFloat(item.quantity || item.Quantity || 1);
+                                        const cost  = parseFloat(item.unitCost || item.UnitCost || 0);
+                                        return (
+                                          <tr key={ii} className="hover:bg-white/80 transition-colors">
+                                            <td className="py-2 px-4 text-gray-400">{ii + 1}</td>
+                                            <td className="py-2 px-3 font-medium text-gray-800">{item.productName || item.ProductName || "-"}</td>
+                                            <td className="py-2 px-3 font-mono text-gray-500">{item.barcode || item.Barcode || "-"}</td>
+                                            <td className="py-2 px-3 text-center font-bold text-gray-900">{qty}</td>
+                                            <td className="py-2 px-3 text-right text-amber-600">
+                                              {cost > 0 ? `฿${cost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "-"}
+                                            </td>
+                                            <td className="py-2 px-3 text-right font-bold text-amber-700">
+                                              {cost > 0 ? `฿${(qty * cost).toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "-"}
+                                            </td>
+                                            <td className="py-2 px-3 text-center text-gray-500">
+                                              {item.expiryDate || item.ExpiryDate || "-"}
+                                            </td>
+                                            <td className="py-2 px-3 text-gray-500">
+                                              {item.location || item.Location || "-"}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr className="bg-amber-50 font-bold text-amber-800 text-xs">
+                                        <td colSpan={5} className="py-2 px-4 text-right">รวมต้นทุนทั้งสิ้น</td>
+                                        <td className="py-2 px-3 text-right">฿{totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                                        <td colSpan={2} />
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                              ) : (
+                                <div className="py-6 text-center text-xs text-gray-400">ไม่มีข้อมูลรายการสินค้า</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Document Viewer Modal */}
+      {viewDocPO && (
+        <div className="fixed inset-0 z-[500] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                  <Eye size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">เอกสารอ้างอิง</h3>
+                  <p className="text-xs text-gray-400">
+                    {viewDocPO.OrderNumber || viewDocPO.LotNumber} · {viewDocPO.CompanyName} · {viewDocPO.FileName}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openDocument(viewDocPO)}
+                  className="flex items-center gap-1.5 text-sm text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-100 font-semibold transition-colors"
+                >
+                  <ExternalLink size={14} /> เปิดในแท็บใหม่
+                </button>
+                <button onClick={() => setViewDocPO(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Document preview */}
+            <div className="flex-1 overflow-hidden bg-gray-100 rounded-b-2xl">
+              {(() => {
+                const ext = (viewDocPO.FileName || "").split(".").pop().toLowerCase();
+                const isImg = ["jpg","jpeg","png","gif","webp"].includes(ext);
+                if (isImg) {
+                  return (
+                    <div className="w-full h-full flex items-center justify-center p-4 overflow-auto">
+                      <img
+                        src={`data:image/${ext === "jpg" ? "jpeg" : ext};base64,${viewDocPO.FileData}`}
+                        alt={viewDocPO.FileName}
+                        className="max-w-full rounded-xl shadow-md"
+                      />
+                    </div>
+                  );
+                }
+                // PDF or other
+                return (
+                  <iframe
+                    src={`data:application/pdf;base64,${viewDocPO.FileData}`}
+                    title={viewDocPO.FileName}
+                    className="w-full h-full rounded-b-2xl"
+                    style={{ minHeight: "500px" }}
+                  />
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Supplier Modal */}
       {isAddSupplierModalOpen && (
