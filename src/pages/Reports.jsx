@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FileText, ArrowRightLeft, Calendar, FileBox, Calculator, Loader2, X, Download, Search, ChevronDown, ChevronUp, Receipt, RotateCcw } from "lucide-react";
+import { FileText, ArrowRightLeft, Calendar, FileBox, Calculator, Loader2, X, Download, Search, ChevronDown, ChevronUp, Receipt, RotateCcw, Eye, FileImage, ExternalLink, ClipboardList } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
 import { exportToExcel, exportReportToExcel, getCartVatSplit, formatThaiPeriod } from "../utils/excelExport";
@@ -36,6 +36,11 @@ export default function Reports() {
   // Void bill expand
   const [expandedVoidId, setExpandedVoidId] = useState(null);
 
+  // Stock movement doc + expand
+  const [receiveGoodsList, setReceiveGoodsList] = useState([]);
+  const [expandedMoveIdx, setExpandedMoveIdx] = useState(null);
+  const [viewDocMove, setViewDocMove] = useState(null);
+
   // Filter States
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
@@ -55,8 +60,12 @@ export default function Reports() {
       setProducts(Array.isArray(prods) ? prods : []);
       setReturnsHistory(Array.isArray(ret) ? ret : []);
     } else if (activeTab === "stock") {
-      const moves = await fetchApi("getStockMovements");
+      const [moves, rg] = await Promise.all([
+        fetchApi("getStockMovements"),
+        fetchApi("getReceiveGoods"),
+      ]);
       setStockMovements(Array.isArray(moves) ? moves : []);
+      setReceiveGoodsList(Array.isArray(rg) ? rg : []);
     } else if (activeTab === "shifts") {
       const shifts = await fetchApi("getShifts");
       setShiftsHistory(Array.isArray(shifts) ? shifts : []);
@@ -76,6 +85,37 @@ export default function Reports() {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
     return itemDate >= start && itemDate <= end;
+  };
+
+  // Find receiveGoods PO linked to a stock movement (by ReferenceNo)
+  const getLinkedPO = (m) => {
+    const ref = String(m.ReferenceNo || "").trim();
+    if (!ref) return null;
+    return receiveGoodsList.find(po =>
+      String(po.OrderNumber || "").trim() === ref ||
+      String(po.LotNumber  || "").trim() === ref ||
+      String(po.ReceiveID  || "").trim() === ref
+    ) || null;
+  };
+
+  const getPOItems = (po) => {
+    const raw = po.Items || po.items || po.CartDetails || [];
+    if (Array.isArray(raw)) return raw;
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+  };
+
+  const openDocument = (po) => {
+    if (!po?.FileData) return;
+    const ext = (po.FileName || "").split(".").pop().toLowerCase();
+    const mimeMap = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+    const mime = mimeMap[ext] || "application/octet-stream";
+    try {
+      const byteChars = atob(po.FileData);
+      const bytes = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime });
+      window.open(URL.createObjectURL(blob), "_blank");
+    } catch { toast.error("ไม่สามารถเปิดเอกสารได้"); }
   };
 
   // Process data for different views
@@ -1030,34 +1070,174 @@ export default function Reports() {
             <table className="w-full text-left border-collapse">
               <thead className="bg-emerald-50 sticky top-0">
                 <tr className="border-b border-emerald-100 text-sm font-medium text-emerald-700">
-                  <th className="py-3 px-6">วันที่เวลา</th>
-                  <th className="py-3 px-6">Barcode / สินค้า</th>
-                  <th className="py-3 px-6 text-right">จำนวน</th>
-                  <th className="py-3 px-6">จาก → ถึง</th>
-                  <th className="py-3 px-6">เลขที่อ้างอิง</th>
+                  <th className="py-3 px-4 w-8"></th>
+                  <th className="py-3 px-4">วันที่เวลา</th>
+                  <th className="py-3 px-4">Barcode / สินค้า</th>
+                  <th className="py-3 px-4 text-right">จำนวน</th>
+                  <th className="py-3 px-4">จาก → ถึง</th>
+                  <th className="py-3 px-4">เลขที่อ้างอิง</th>
+                  <th className="py-3 px-4 text-center">เอกสาร / รายการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {filteredStockMoves.filter(searchStock).length === 0 ? (
-                  <tr><td colSpan="5" className="py-8 text-center text-emerald-500/80">ไม่พบประวัติการเคลื่อนไหวสต็อกในช่วงวันที่นี้<br /><span className="text-sm opacity-80">(บันทึกเมื่อรับสินค้าจากซัพพลายเออร์, ย้ายสินค้าไปหน้าร้าน, หรือยกเลิกบิล)</span></td></tr>
+                  <tr><td colSpan="7" className="py-8 text-center text-emerald-500/80">ไม่พบประวัติการเคลื่อนไหวสต็อกในช่วงวันที่นี้<br /><span className="text-sm opacity-80">(บันทึกเมื่อรับสินค้าจากซัพพลายเออร์, ย้ายสินค้าไปหน้าร้าน, หรือยกเลิกบิล)</span></td></tr>
                 ) : (
                   filteredStockMoves.filter(searchStock).map((m, idx) => {
                     const isReceive = String(m.FromLocation || "").startsWith("ซัพพลายเออร์");
+                    const linkedPO  = getLinkedPO(m);
+                    const hasDoc    = !!(linkedPO?.FileName && linkedPO?.FileData) || !!(m.FileName && m.FileData);
+                    const docSource = (m.FileName && m.FileData) ? m : linkedPO;
+                    const poItems   = linkedPO ? getPOItems(linkedPO) : [];
+                    const isExp     = expandedMoveIdx === idx;
+                    const extDoc    = (docSource?.FileName || "").split(".").pop().toLowerCase();
+                    const isImgDoc  = ["jpg","jpeg","png","gif","webp"].includes(extDoc);
                     return (
-                      <tr key={idx} className={`text-sm ${isReceive ? "bg-blue-50/40 hover:bg-blue-50/70" : "hover:bg-emerald-50/30"}`}>
-                        <td className="py-4 px-6 text-emerald-900">{new Date(m.Date).toLocaleString("th-TH")}</td>
-                        <td className="py-4 px-6">
-                          <div className="font-semibold text-gray-800">{m.Name}</div>
-                          <div className="text-xs text-gray-500 font-mono">BC: {m.Barcode}</div>
-                        </td>
-                        <td className="py-4 px-6 text-right font-bold text-emerald-700">+{m.Quantity} ชิ้น</td>
-                        <td className="py-4 px-6 text-gray-600">
-                          <span className={`px-2 py-1 rounded text-xs ${isReceive ? "bg-blue-100 text-blue-800 font-semibold" : "bg-gray-100"}`}>{m.FromLocation}</span>
-                          <span className="mx-2 text-gray-300">→</span>
-                          <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-semibold">{m.ToLocation}</span>
-                        </td>
-                        <td className="py-4 px-6 text-xs text-gray-500 font-mono">{m.ReferenceNo || "-"}</td>
-                      </tr>
+                      <>
+                        <tr key={idx} className={`text-sm ${isReceive ? "bg-blue-50/40 hover:bg-blue-50/70" : "hover:bg-emerald-50/30"}`}>
+                          {/* expand toggle */}
+                          <td className="py-3 px-4">
+                            {(hasDoc || poItems.length > 0) && (
+                              <button
+                                type="button"
+                                onClick={() => setExpandedMoveIdx(isExp ? null : idx)}
+                                className="p-1 rounded hover:bg-white/60 text-gray-400 transition-colors"
+                              >
+                                {isExp ? <ChevronUp size={15}/> : <ChevronDown size={15}/>}
+                              </button>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-emerald-900">{new Date(m.Date).toLocaleString("th-TH")}</td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-gray-800">{m.Name}</div>
+                            <div className="text-xs text-gray-500 font-mono">BC: {m.Barcode}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-emerald-700">+{m.Quantity} ชิ้น</td>
+                          <td className="py-3 px-4 text-gray-600">
+                            <span className={`px-2 py-1 rounded text-xs ${isReceive ? "bg-blue-100 text-blue-800 font-semibold" : "bg-gray-100"}`}>{m.FromLocation}</span>
+                            <span className="mx-2 text-gray-300">→</span>
+                            <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-semibold">{m.ToLocation}</span>
+                          </td>
+                          <td className="py-3 px-4 text-xs text-gray-500 font-mono">{m.ReferenceNo || "-"}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {hasDoc && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewDocMove(docSource)}
+                                  className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg border border-blue-100 font-semibold transition-colors"
+                                >
+                                  {isImgDoc ? <FileImage size={12}/> : <Eye size={12}/>}
+                                  เอกสาร
+                                </button>
+                              )}
+                              {(poItems.length > 0 || linkedPO) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedMoveIdx(isExp ? null : idx)}
+                                  className="flex items-center gap-1 text-xs bg-primary/10 text-primary hover:bg-primary/20 px-2.5 py-1.5 rounded-lg font-semibold transition-colors"
+                                >
+                                  <ClipboardList size={12}/>
+                                  รายการ
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Expanded row */}
+                        {isExp && (
+                          <tr className="bg-gray-50/80">
+                            <td colSpan="7" className="px-6 py-4">
+                              {linkedPO ? (
+                                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+                                  {/* PO meta */}
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 py-3 text-xs border-b border-gray-100 bg-primary/5">
+                                    <div>
+                                      <div className="text-gray-400 mb-0.5">เลขที่อ้างอิง</div>
+                                      <div className="font-mono font-semibold text-gray-800">{linkedPO.OrderNumber || linkedPO.LotNumber || "-"}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-gray-400 mb-0.5">บริษัท/ซัพพลายเออร์</div>
+                                      <div className="font-semibold text-gray-800">{linkedPO.CompanyName || "-"}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-gray-400 mb-0.5">วันที่รับเข้า</div>
+                                      <div className="font-semibold text-gray-800">
+                                        {linkedPO.Date || linkedPO.ReceivedAt
+                                          ? new Date(linkedPO.Date || linkedPO.ReceivedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })
+                                          : "-"}
+                                      </div>
+                                    </div>
+                                    {linkedPO.FileName && (
+                                      <div>
+                                        <div className="text-gray-400 mb-0.5">เอกสารแนบ</div>
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-blue-600 font-medium truncate max-w-[110px]">{linkedPO.FileName}</span>
+                                          {hasDoc && (
+                                            <button onClick={() => openDocument(docSource)} className="text-blue-500 hover:text-blue-700" title="เปิดเอกสาร">
+                                              <ExternalLink size={12}/>
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {/* Items table */}
+                                  {poItems.length > 0 ? (
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-xs">
+                                        <thead>
+                                          <tr className="bg-primary/5 text-primary font-semibold">
+                                            <th className="py-2 px-4 text-left">#</th>
+                                            <th className="py-2 px-3 text-left">สินค้า</th>
+                                            <th className="py-2 px-3 text-left">บาร์โค้ด</th>
+                                            <th className="py-2 px-3 text-center">จำนวน</th>
+                                            <th className="py-2 px-3 text-right">ต้นทุน/ชิ้น</th>
+                                            <th className="py-2 px-3 text-right">รวม</th>
+                                            <th className="py-2 px-3 text-center">EXP</th>
+                                            <th className="py-2 px-3 text-left">โลเคชั่น</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                          {poItems.map((item, ii) => {
+                                            const qty  = parseFloat(item.quantity || item.Quantity || 1);
+                                            const cost = parseFloat(item.unitCost || item.UnitCost || 0);
+                                            return (
+                                              <tr key={ii} className="hover:bg-white/80">
+                                                <td className="py-2 px-4 text-gray-400">{ii + 1}</td>
+                                                <td className="py-2 px-3 font-medium text-gray-800">{item.productName || item.ProductName || "-"}</td>
+                                                <td className="py-2 px-3 font-mono text-gray-500">{item.barcode || item.Barcode || "-"}</td>
+                                                <td className="py-2 px-3 text-center font-bold text-gray-900">{qty}</td>
+                                                <td className="py-2 px-3 text-right text-amber-600">{cost > 0 ? `฿${cost.toLocaleString("th-TH", {minimumFractionDigits:2})}` : "-"}</td>
+                                                <td className="py-2 px-3 text-right font-bold text-amber-700">{cost > 0 ? `฿${(qty*cost).toLocaleString("th-TH",{minimumFractionDigits:2})}` : "-"}</td>
+                                                <td className="py-2 px-3 text-center text-gray-500">{item.expiryDate || item.ExpiryDate || "-"}</td>
+                                                <td className="py-2 px-3 text-gray-500">{item.location || item.Location || "-"}</td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                        <tfoot>
+                                          <tr className="bg-amber-50 font-bold text-amber-800 text-xs">
+                                            <td colSpan={5} className="py-2 px-4 text-right">รวมต้นทุน</td>
+                                            <td className="py-2 px-3 text-right">
+                                              ฿{poItems.reduce((s,it) => s + parseFloat(it.unitCost||it.UnitCost||0)*parseFloat(it.quantity||it.Quantity||1), 0).toLocaleString("th-TH",{minimumFractionDigits:2})}
+                                            </td>
+                                            <td colSpan={2}/>
+                                          </tr>
+                                        </tfoot>
+                                      </table>
+                                    </div>
+                                  ) : (
+                                    <div className="py-4 text-center text-xs text-gray-400">ไม่มีข้อมูลรายการสินค้าใน PO นี้</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-gray-400 text-center py-2">ไม่พบข้อมูลเอกสารอ้างอิงสำหรับรายการนี้</div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })
                 )}
@@ -1337,6 +1517,63 @@ export default function Reports() {
           shiftData={shiftSlipData}
           onClose={() => { setIsSlipModalOpen(false); setShiftSlipData(null); }}
         />
+      )}
+
+      {/* Stock Move Document Viewer Modal */}
+      {viewDocMove && (
+        <div className="fixed inset-0 z-[500] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                  <Eye size={18}/>
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">เอกสารอ้างอิง</h3>
+                  <p className="text-xs text-gray-400">
+                    {viewDocMove.OrderNumber || viewDocMove.LotNumber || viewDocMove.ReferenceNo || ""}{viewDocMove.CompanyName ? ` · ${viewDocMove.CompanyName}` : ""} · {viewDocMove.FileName}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openDocument(viewDocMove)}
+                  className="flex items-center gap-1.5 text-sm text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-100 font-semibold transition-colors"
+                >
+                  <ExternalLink size={14}/> เปิดในแท็บใหม่
+                </button>
+                <button onClick={() => setViewDocMove(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                  <X size={20}/>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden bg-gray-100 rounded-b-2xl">
+              {(() => {
+                const ext = (viewDocMove.FileName || "").split(".").pop().toLowerCase();
+                const isImg = ["jpg","jpeg","png","gif","webp"].includes(ext);
+                if (isImg) {
+                  return (
+                    <div className="w-full h-full flex items-center justify-center p-4 overflow-auto">
+                      <img
+                        src={`data:image/${ext === "jpg" ? "jpeg" : ext};base64,${viewDocMove.FileData}`}
+                        alt={viewDocMove.FileName}
+                        className="max-w-full rounded-xl shadow-md"
+                      />
+                    </div>
+                  );
+                }
+                return (
+                  <iframe
+                    src={`data:application/pdf;base64,${viewDocMove.FileData}`}
+                    title={viewDocMove.FileName}
+                    className="w-full h-full rounded-b-2xl"
+                    style={{ minHeight: "500px" }}
+                  />
+                );
+              })()}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
