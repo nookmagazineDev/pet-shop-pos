@@ -562,17 +562,21 @@ export default function Reports() {
         };
       };
 
-      const normalTxRows = filteredTransactions.filter(t => t.Status !== "CANCELLED");
+      // Merge all transactions sorted by date — same order as on-screen table
+      // VOID transactions emit 2 rows each (original + negated reversal) right next to each other
+      const allSorted = [...filteredTransactions].sort((a, b) => new Date(a.Date) - new Date(b.Date));
       let rowNo = 0;
-      const normalRows = normalTxRows.map((tx) => buildTaxRow(tx, ++rowNo, false));
-      // For VOID transactions: emit 2 rows each —
-      //   1st row: original positive data (no VOID label)
-      //   2nd row: negated amounts + "VOID" label (the reversal entry)
-      const voidPairRows = filteredVoids.flatMap((tx) => [
-        buildTaxRow(tx, ++rowNo, false),   // original data row
-        buildTaxRow(tx, ++rowNo, true),    // negated VOID reversal row
-      ]);
-      const rows = [...normalRows, ...voidPairRows];
+      const rows = allSorted.flatMap((tx) => {
+        const isVoid = tx.Status === "CANCELLED";
+        if (isVoid) {
+          // 2 rows: original positive data, then negated VOID reversal
+          return [
+            buildTaxRow(tx, ++rowNo, false),
+            buildTaxRow(tx, ++rowNo, true),
+          ];
+        }
+        return [buildTaxRow(tx, ++rowNo, false)];
+      });
       const sum = (key) => r2(rows.reduce((s, r) => s + (r[key] || 0), 0));
       const totals = { no: "Grand total", nonVAT: sum("nonVAT"), beforeVAT: sum("beforeVAT"), vat: sum("vat"), rounding: 0, total: sum("total"), voidFlag: "" };
       exportReportToExcel({ title: "Output tax report", company, period, headers, rows, totals, sheetName: "TaxReport", fileName: "Tax_Report", textCols: ['taxId'] });
