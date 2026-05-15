@@ -68,7 +68,20 @@ export default function Inventory() {
   // New Product Modal states
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const PAYMENT_METHODS = ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"];
+  const PAYMENT_METHODS = ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต", "พ้อย"];
+  const PAYMENT_METHOD_GROUPS = [
+    { label: "ทั่วไป", methods: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต"] },
+    { label: "เครดิต/พ้อย", methods: ["เครดิต", "พ้อย"] },
+  ];
+  const PAYMENT_METHOD_STYLE = {
+    "เงินสด":        "bg-amber-100 text-amber-800 border-amber-300",
+    "โอนเข้าบัญชี": "bg-blue-100 text-blue-800 border-blue-300",
+    "สแกน QR":       "bg-sky-100 text-sky-800 border-sky-300",
+    "บัตรเครดิต":   "bg-purple-100 text-purple-800 border-purple-300",
+    "เครดิต":        "bg-yellow-100 text-yellow-800 border-yellow-300",
+    "พ้อย":          "bg-orange-100 text-orange-800 border-orange-300",
+  };
+  const PAYMENT_METHOD_STYLE_OFF = "bg-gray-50 text-gray-400 border-gray-200";
 
   const [newProductData, setNewProductData] = useState({
     barcode: "",
@@ -89,7 +102,7 @@ export default function Inventory() {
     packBarcode3: "",
     packMultiplier3: "",
     hasExpiry: "YES",
-    acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"]
+    acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต", "พ้อย"]
   });
 
   const fetchProducts = () => {
@@ -722,7 +735,7 @@ export default function Inventory() {
                       {item.AcceptedPayments && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {String(item.AcceptedPayments).split(",").filter(Boolean).map(pm => (
-                            <span key={pm} className="text-[10px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded font-medium">{pm.trim()}</span>
+                            <span key={pm} className={clsx("text-[10px] px-1.5 py-0.5 rounded-full border font-semibold", PAYMENT_METHOD_STYLE[pm.trim()] || "bg-gray-100 text-gray-600 border-gray-200")}>{pm.trim()}</span>
                           ))}
                         </div>
                       )}
@@ -1896,25 +1909,37 @@ export default function Inventory() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">วิธีชำระเงินที่รับได้</label>
-                <div className="flex flex-wrap gap-2">
-                  {PAYMENT_METHODS.map(pm => {
+                <div className="space-y-2">
+                  {PAYMENT_METHOD_GROUPS.map(group => {
                     const current = String(editItem.AcceptedPayments || "").split(",").map(s => s.trim()).filter(Boolean);
-                    const checked = current.length === 0 ? true : current.includes(pm);
                     return (
-                      <label key={pm} className="flex items-center gap-1.5 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={e => {
-                            const prev = String(editItem.AcceptedPayments || "").split(",").map(s => s.trim()).filter(Boolean);
-                            const base = prev.length === 0 ? [...PAYMENT_METHODS] : prev;
-                            const next = e.target.checked ? [...new Set([...base, pm])] : base.filter(p => p !== pm);
-                            setEditItem(p => ({ ...p, AcceptedPayments: next.join(",") }));
-                          }}
-                          className="rounded"
-                        />
-                        <span className="text-sm text-gray-700">{pm}</span>
-                      </label>
+                      <div key={group.label}>
+                        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">{group.label}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {group.methods.map(pm => {
+                            const checked = current.length === 0 ? true : current.includes(pm);
+                            return (
+                              <label key={pm} className="cursor-pointer select-none">
+                                <input type="checkbox" checked={checked} className="sr-only"
+                                  onChange={e => {
+                                    const prev = String(editItem.AcceptedPayments || "").split(",").map(s => s.trim()).filter(Boolean);
+                                    const base = prev.length === 0 ? [...PAYMENT_METHODS] : prev;
+                                    const next = e.target.checked ? [...new Set([...base, pm])] : base.filter(p => p !== pm);
+                                    setEditItem(p => ({ ...p, AcceptedPayments: next.join(",") }));
+                                  }}
+                                />
+                                <span className={clsx(
+                                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all",
+                                  checked ? PAYMENT_METHOD_STYLE[pm] : PAYMENT_METHOD_STYLE_OFF
+                                )}>
+                                  {checked && <span className="text-[10px]">✓</span>}
+                                  {pm}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -2206,21 +2231,34 @@ export default function Inventory() {
 
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">วิธีชำระเงินที่รับได้</label>
-                    <div className="flex flex-wrap gap-2">
-                      {PAYMENT_METHODS.map(pm => (
-                        <label key={pm} className="flex items-center gap-1.5 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={(newProductData.acceptedPayments || []).includes(pm)}
-                            onChange={e => {
-                              const prev = newProductData.acceptedPayments || [];
-                              const next = e.target.checked ? [...new Set([...prev, pm])] : prev.filter(p => p !== pm);
-                              setNewProductData({...newProductData, acceptedPayments: next});
-                            }}
-                            className="rounded"
-                          />
-                          <span className="text-sm text-gray-700">{pm}</span>
-                        </label>
+                    <div className="space-y-2">
+                      {PAYMENT_METHOD_GROUPS.map(group => (
+                        <div key={group.label}>
+                          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">{group.label}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {group.methods.map(pm => {
+                              const checked = (newProductData.acceptedPayments || []).includes(pm);
+                              return (
+                                <label key={pm} className="cursor-pointer select-none">
+                                  <input type="checkbox" checked={checked} className="sr-only"
+                                    onChange={e => {
+                                      const prev = newProductData.acceptedPayments || [];
+                                      const next = e.target.checked ? [...new Set([...prev, pm])] : prev.filter(p => p !== pm);
+                                      setNewProductData({...newProductData, acceptedPayments: next});
+                                    }}
+                                  />
+                                  <span className={clsx(
+                                    "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all",
+                                    checked ? PAYMENT_METHOD_STYLE[pm] : PAYMENT_METHOD_STYLE_OFF
+                                  )}>
+                                    {checked && <span className="text-[10px]">✓</span>}
+                                    {pm}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
