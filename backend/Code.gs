@@ -17,7 +17,9 @@ function setup() {
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
     "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"],
-    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt"],
+    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays"],
+    "CustomerPackages": ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor"],
+    "PackageUsage": ["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"],
     "PointsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"],
     "Coupons": ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt", "FreeItemBarcode", "FreeItemName"],
     "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy", "FreeItemBarcode", "FreeItemName"],
@@ -244,8 +246,12 @@ function doGet(e) {
     return jsonResponse(getUsers());
   } else if (action === "getSuppliers") {
     return jsonResponse(readSheetData("Suppliers"));
+  } else if (action === "getCustomerPackages") {
+    return jsonResponse(readSheetData("CustomerPackages"));
+  } else if (action === "getPackageUsage") {
+    return jsonResponse(readSheetData("PackageUsage"));
   }
-  
+
   return jsonResponse({ error: "Invalid action" });
 }
 
@@ -307,8 +313,14 @@ function doPost(e) {
       return saveTaxInvoice(data.payload);
     } else if (action === "saveSupplier") {
       return saveSupplier(data.payload);
+    } else if (action === "purchaseSessionPackage") {
+      return purchaseSessionPackage(data.payload);
+    } else if (action === "usePackageSession") {
+      return usePackageSession(data.payload);
+    } else if (action === "addManualPoints") {
+      return addManualPoints(data.payload);
     }
-    
+
     return jsonResponse({ error: "Invalid POST action" });
   } catch (error) {
     return jsonResponse({ error: error.toString() });
@@ -1449,6 +1461,9 @@ function savePackage(payload) {
         sheet.getRange(i + 1, 5).setValue(parseFloat(payload.bonusPoints) || 0);
         sheet.getRange(i + 1, 6).setValue(payload.description || "");
         sheet.getRange(i + 1, 7).setValue(payload.status || "ACTIVE");
+        sheet.getRange(i + 1, 9).setValue(payload.packageType || String(data[i][8] || "POINTS"));
+        sheet.getRange(i + 1, 10).setValue(parseInt(payload.sessionCount) || parseInt(data[i][9]) || 0);
+        sheet.getRange(i + 1, 11).setValue(parseInt(payload.expiryDays) || parseInt(data[i][10]) || 365);
         found = true;
         break;
       }
@@ -1457,7 +1472,7 @@ function savePackage(payload) {
 
   if (!found) {
     const newId = "PKG-" + new Date().getTime();
-    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date()]);
+    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date(), payload.packageType || "POINTS", parseInt(payload.sessionCount) || 0, parseInt(payload.expiryDays) || 365]);
   }
   return jsonResponse({ success: true });
 }
@@ -1684,6 +1699,34 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
+  } else if (sheetName === "Packages") {
+    // Backward-compat: add PackageType, SessionCount, ExpiryDays if missing
+    const pkgNewCols = [
+      { col: 9,  name: "PackageType"  },
+      { col: 10, name: "SessionCount" },
+      { col: 11, name: "ExpiryDays"   },
+    ];
+    pkgNewCols.forEach(function(c) {
+      const cell = sheet.getRange(1, c.col);
+      if (!cell.getValue() || cell.getValue() !== c.name) {
+        cell.setValue(c.name);
+        cell.setFontWeight("bold");
+      }
+    });
+  } else if (sheetName === "CustomerPackages") {
+    const CP_HEADERS = ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor"];
+    const cpH = sheet.getRange(1, 1, 1, CP_HEADERS.length).getValues()[0];
+    if (!cpH[0] || cpH[0] !== "ID") {
+      sheet.getRange(1, 1, 1, CP_HEADERS.length).setValues([CP_HEADERS]);
+      sheet.getRange(1, 1, 1, CP_HEADERS.length).setFontWeight("bold");
+    }
+  } else if (sheetName === "PackageUsage") {
+    const PU_HEADERS = ["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"];
+    const puH = sheet.getRange(1, 1, 1, PU_HEADERS.length).getValues()[0];
+    if (!puH[0] || puH[0] !== "ID") {
+      sheet.getRange(1, 1, 1, PU_HEADERS.length).setValues([PU_HEADERS]);
+      sheet.getRange(1, 1, 1, PU_HEADERS.length).setFontWeight("bold");
+    }
   } else if (sheetName === "Transactions") {
     const fullHeaders = ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"];
     const currentLastCol = Math.max(sheet.getLastColumn(), fullHeaders.length);
@@ -1729,6 +1772,162 @@ function readSheetData(sheetName) {
     rows.push(obj);
   }
   return rows;
+}
+
+// ─────────────────────────────────────────────────────
+// SESSION PACKAGE FUNCTIONS
+// ─────────────────────────────────────────────────────
+
+function purchaseSessionPackage(payload) {
+  const ss = getSpreadsheet();
+  const customerName = String(payload.customerName || "").trim();
+  const packageId    = String(payload.packageId    || "").trim();
+  if (!customerName) return jsonResponse({ error: "กรุณาระบุชื่อลูกค้า" });
+  if (!packageId)    return jsonResponse({ error: "กรุณาเลือกแพคเกจ" });
+
+  const pkgSheet = ss.getSheetByName("Packages");
+  if (!pkgSheet) return jsonResponse({ error: "ไม่พบชีท Packages" });
+  const pkgData = pkgSheet.getDataRange().getValues();
+
+  let pkgRow = null;
+  for (let i = 1; i < pkgData.length; i++) {
+    if (String(pkgData[i][0]).trim() === packageId) { pkgRow = pkgData[i]; break; }
+  }
+  if (!pkgRow) return jsonResponse({ error: "ไม่พบแพคเกจ" });
+
+  const packageType  = String(pkgRow[8] || "POINTS").trim() || "POINTS";
+  const sessionCount = parseInt(pkgRow[9]) || 0;
+  const expiryDays   = parseInt(pkgRow[10]) || 365;
+
+  if (packageType !== "SESSIONS") return jsonResponse({ error: "แพคเกจนี้ไม่ใช่แบบครั้ง" });
+  if (sessionCount <= 0)           return jsonResponse({ error: "จำนวนครั้งไม่ถูกต้อง (กรุณาตั้งค่า SessionCount ในแพคเกจ)" });
+
+  let cpSheet = ss.getSheetByName("CustomerPackages");
+  if (!cpSheet) {
+    cpSheet = ss.insertSheet("CustomerPackages");
+    cpSheet.appendRow(["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor"]);
+    cpSheet.getRange(1, 1, 1, 13).setFontWeight("bold");
+  }
+
+  const purchaseDate = new Date();
+  const expiryDate   = new Date(purchaseDate);
+  expiryDate.setDate(expiryDate.getDate() + expiryDays);
+
+  const newId = "CP-" + purchaseDate.getTime();
+  const actor = payload._actor ? payload._actor.username : "System";
+
+  cpSheet.appendRow([
+    newId,
+    customerName,
+    payload.phone || "",
+    packageId,
+    pkgRow[1],    // PackageName
+    "SESSIONS",
+    sessionCount,
+    0,            // UsedSessions
+    purchaseDate,
+    expiryDate,
+    "ACTIVE",
+    parseFloat(payload.paidAmount || pkgRow[2]) || 0,
+    actor
+  ]);
+
+  // Auto-save customer if not exists
+  saveCustomer({ name: customerName, phone: payload.phone || "" });
+
+  logActivity("Package", "Purchase Session Package", newId, payload._actor);
+  return jsonResponse({ success: true, customerPackageId: newId, totalSessions: sessionCount, expiryDate: expiryDate });
+}
+
+function usePackageSession(payload) {
+  const ss   = getSpreadsheet();
+  const cpId = String(payload.customerPackageId || "").trim();
+  const sessionsToUse = Math.max(1, parseInt(payload.sessionsUsed) || 1);
+  const note  = String(payload.note || "").trim();
+  if (!cpId) return jsonResponse({ error: "ไม่พบรหัสแพคเกจ" });
+
+  let cpSheet = ss.getSheetByName("CustomerPackages");
+  if (!cpSheet) return jsonResponse({ error: "ไม่พบข้อมูลแพคเกจลูกค้า กรุณารัน setup() ก่อน" });
+
+  const data = cpSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() !== cpId) continue;
+
+    const totalSessions = parseInt(data[i][6]) || 0;
+    const usedSessions  = parseInt(data[i][7]) || 0;
+    const status        = String(data[i][10]).trim();
+
+    if (status === "USED_UP")  return jsonResponse({ error: "แพคเกจนี้ใช้ครบแล้ว" });
+    if (status === "EXPIRED")  return jsonResponse({ error: "แพคเกจหมดอายุแล้ว" });
+    if (status !== "ACTIVE")   return jsonResponse({ error: "แพคเกจนี้ไม่ได้ใช้งาน (สถานะ: " + status + ")" });
+
+    // Check expiry
+    const expiryDate = data[i][9];
+    if (expiryDate && new Date(expiryDate) < new Date()) {
+      cpSheet.getRange(i + 1, 11).setValue("EXPIRED");
+      return jsonResponse({ error: "แพคเกจหมดอายุแล้ว" });
+    }
+
+    const remaining = totalSessions - usedSessions;
+    if (sessionsToUse > remaining) {
+      return jsonResponse({ error: "ครั้งคงเหลือไม่พอ (เหลือ " + remaining + " ครั้ง)" });
+    }
+
+    const newUsed   = usedSessions + sessionsToUse;
+    const newStatus = (newUsed >= totalSessions) ? "USED_UP" : "ACTIVE";
+
+    cpSheet.getRange(i + 1, 8).setValue(newUsed);
+    cpSheet.getRange(i + 1, 11).setValue(newStatus);
+
+    // Log usage
+    let usageSheet = ss.getSheetByName("PackageUsage");
+    if (!usageSheet) {
+      usageSheet = ss.insertSheet("PackageUsage");
+      usageSheet.appendRow(["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"]);
+      usageSheet.getRange(1, 1, 1, 8).setFontWeight("bold");
+    }
+    usageSheet.appendRow([
+      "PU-" + new Date().getTime(),
+      cpId,
+      data[i][1],  // CustomerName
+      new Date(),
+      sessionsToUse,
+      note,
+      payload.orderId || "",
+      payload._actor ? payload._actor.username : "System"
+    ]);
+
+    logActivity("Package", "Use Session x" + sessionsToUse, cpId, payload._actor);
+    return jsonResponse({
+      success: true,
+      usedSessions: newUsed,
+      remainingSessions: totalSessions - newUsed,
+      newStatus: newStatus
+    });
+  }
+  return jsonResponse({ error: "ไม่พบแพคเกจของลูกค้า (ID: " + cpId + ")" });
+}
+
+function addManualPoints(payload) {
+  const ss           = getSpreadsheet();
+  const customerName = String(payload.customerName || "").trim();
+  const points       = parseFloat(payload.points) || 0;
+  const reason       = String(payload.reason || "เพิ่มพ้อยโดย Staff").trim();
+
+  if (!customerName) return jsonResponse({ error: "กรุณาระบุชื่อลูกค้า" });
+  if (points === 0)  return jsonResponse({ error: "จำนวนพ้อยต้องไม่เป็นศูนย์" });
+
+  const actor      = payload._actor ? payload._actor.username : "System";
+  const type       = points > 0 ? "MANUAL_ADD" : "MANUAL_DEDUCT";
+  const newBalance = _adjustCustomerPoints(ss, customerName, points, type, reason, "", actor);
+
+  logActivity("Points", "Manual " + (points > 0 ? "Add" : "Deduct") + " Points", customerName, payload._actor);
+  return jsonResponse({
+    success: true,
+    pointsChanged: points,
+    newBalance: newBalance,
+    message: (points > 0 ? "เพิ่ม" : "หัก") + " " + Math.abs(points) + " พ้อยให้ " + customerName + " สำเร็จ"
+  });
 }
 
 // Utility: Return JSON Response with CORS headers
