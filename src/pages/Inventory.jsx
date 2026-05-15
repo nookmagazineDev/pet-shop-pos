@@ -311,7 +311,7 @@ export default function Inventory() {
         wholesalePrice: "", shopeePrice: "", lazadaPrice: "", linemanPrice: "",
         category: "ทั่วไป", lowStockThreshold: 5,
         packBarcode: "", packMultiplier: "", packBarcode2: "", packMultiplier2: "", packBarcode3: "", packMultiplier3: "",
-        hasExpiry: "YES", acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต"]
+        hasExpiry: "YES", acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต", "พ้อย"]
       });
       fetchProducts();
     } else {
