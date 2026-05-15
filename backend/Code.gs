@@ -12,7 +12,7 @@ function getSpreadsheet() {
 function setup() {
   const ss = getSpreadsheet();
   const sheets = {
-    "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments"],
+    "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments", "PackBarcode2", "PackMultiplier2", "PackBarcode3", "PackMultiplier3"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
@@ -1075,7 +1075,11 @@ function addProduct(payload) {
     payload.packBarcode || "",
     parseFloat(payload.packMultiplier) || 0,
     payload.hasExpiry !== undefined ? String(payload.hasExpiry).toUpperCase() : "YES",
-    payload.acceptedPayments || ""
+    payload.acceptedPayments || "",
+    payload.packBarcode2 || "",
+    parseFloat(payload.packMultiplier2) || 0,
+    payload.packBarcode3 || "",
+    parseFloat(payload.packMultiplier3) || 0
   ]);
 
   logActivity("Inventory", "Add Product", payload.barcode, payload._actor);
@@ -1107,6 +1111,10 @@ function updateProduct(payload) {
       if (payload.packMultiplier !== undefined) sheet.getRange(i + 1, 19).setValue(parseFloat(payload.packMultiplier) || 0);
       if (payload.hasExpiry !== undefined) sheet.getRange(i + 1, 20).setValue(String(payload.hasExpiry).toUpperCase());
       if (payload.acceptedPayments !== undefined) sheet.getRange(i + 1, 21).setValue(payload.acceptedPayments || "");
+      if (payload.packBarcode2 !== undefined) sheet.getRange(i + 1, 22).setValue(payload.packBarcode2 || "");
+      if (payload.packMultiplier2 !== undefined) sheet.getRange(i + 1, 23).setValue(parseFloat(payload.packMultiplier2) || 0);
+      if (payload.packBarcode3 !== undefined) sheet.getRange(i + 1, 24).setValue(payload.packBarcode3 || "");
+      if (payload.packMultiplier3 !== undefined) sheet.getRange(i + 1, 25).setValue(parseFloat(payload.packMultiplier3) || 0);
       logActivity("Inventory", "Edit Product", searchBarcode, payload._actor);
       return jsonResponse({ success: true, message: "Product updated" });
     }
@@ -1646,14 +1654,28 @@ function readSheetData(sheetName) {
       });
     }
   } else if (sheetName === "Products") {
-    const requiredHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments"];
+    const requiredHeaders = ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments", "PackBarcode2", "PackMultiplier2", "PackBarcode3", "PackMultiplier3"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];
     if (currentHeaderRow[0] !== "Barcode" || currentHeaderRow[10] !== "Quantity" || currentHeaderRow[16] !== "LowStockThreshold" || currentHeaderRow[17] !== "PackBarcode" || currentHeaderRow[19] !== "HasExpiry") {
+      // Sheet uninitialized — write all headers
       sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
-    } else if (!currentHeaderRow[20] || currentHeaderRow[20] !== "AcceptedPayments") {
-      sheet.getRange(1, 21).setValue("AcceptedPayments");
-      sheet.getRange(1, 21).setFontWeight("bold");
+    } else {
+      // Backward-compat: add any missing columns without touching existing data
+      const newCols = [
+        { col: 21, name: "AcceptedPayments" },
+        { col: 22, name: "PackBarcode2" },
+        { col: 23, name: "PackMultiplier2" },
+        { col: 24, name: "PackBarcode3" },
+        { col: 25, name: "PackMultiplier3" },
+      ];
+      newCols.forEach(function(c) {
+        const cell = sheet.getRange(1, c.col);
+        if (!cell.getValue() || cell.getValue() !== c.name) {
+          cell.setValue(c.name);
+          cell.setFontWeight("bold");
+        }
+      });
     }
   } else if (sheetName === "StoreStock") {
     const requiredHeaders = ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"];
