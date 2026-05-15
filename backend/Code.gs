@@ -16,7 +16,8 @@ function setup() {
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
-    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"],
+    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"],
+    "Pets": ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"],
     "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays"],
     "CustomerPackages": ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor"],
     "PackageUsage": ["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"],
@@ -250,6 +251,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("CustomerPackages"));
   } else if (action === "getPackageUsage") {
     return jsonResponse(readSheetData("PackageUsage"));
+  } else if (action === "getPets") {
+    return jsonResponse(readSheetData("Pets"));
   }
 
   return jsonResponse({ error: "Invalid action" });
@@ -319,6 +322,10 @@ function doPost(e) {
       return usePackageSession(data.payload);
     } else if (action === "addManualPoints") {
       return addManualPoints(data.payload);
+    } else if (action === "savePet") {
+      return savePet(data.payload);
+    } else if (action === "deletePet") {
+      return deletePet(data.payload);
     }
 
     return jsonResponse({ error: "Invalid POST action" });
@@ -1506,7 +1513,7 @@ function purchasePackage(payload) {
 function saveCustomer(payload) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName("Customers");
-  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt"];
+  const CUST_HEADERS = ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"];
   if (!sheet) {
     sheet = ss.insertSheet("Customers");
     sheet.appendRow(CUST_HEADERS);
@@ -1523,20 +1530,27 @@ function saveCustomer(payload) {
   }
 
   const data = sheet.getDataRange().getValues();
-  // col indexes: 0=CustomerID, 1=Name, 2=Phone, 3=TaxID, 4=TaxAddress, 5=Address, 6=Points, 7=LastInvoiceID, 8=LastInvoiceDate, 9=CreatedAt, 10=UpdatedAt
   let found = false;
 
   for (let i = 1; i < data.length; i++) {
-    const rowName = String(data[i][1]).trim(); // Name is col index 1
-    if (rowName === String(payload.name || "").trim()) {
-      if (payload.name)       sheet.getRange(i + 1, 2).setValue(payload.name);
-      if (payload.phone !== undefined) sheet.getRange(i + 1, 3).setValue(payload.phone);
-      if (payload.taxId !== undefined) sheet.getRange(i + 1, 4).setValue(payload.taxId);
+    // Match by CustomerID first, then fallback to Name
+    const rowId   = String(data[i][0]).trim();
+    const rowName = String(data[i][1]).trim();
+    const matchId   = payload.customerId && rowId === String(payload.customerId).trim();
+    const matchName = !payload.customerId && rowName === String(payload.name || "").trim();
+    if (matchId || matchName) {
+      if (payload.name       !== undefined) sheet.getRange(i + 1, 2).setValue(payload.name);
+      if (payload.phone      !== undefined) sheet.getRange(i + 1, 3).setValue(payload.phone);
+      if (payload.taxId      !== undefined) sheet.getRange(i + 1, 4).setValue(payload.taxId);
       if (payload.taxAddress !== undefined) sheet.getRange(i + 1, 5).setValue(payload.taxAddress);
-      if (payload.address !== undefined) sheet.getRange(i + 1, 6).setValue(payload.address);
-      if (payload.points !== undefined) sheet.getRange(i + 1, 7).setValue(parseFloat(payload.points) || 0);
-      if (payload.lastInvoiceId)   sheet.getRange(i + 1, 8).setValue(payload.lastInvoiceId);
-      if (payload.lastInvoiceDate) sheet.getRange(i + 1, 9).setValue(payload.lastInvoiceDate);
+      if (payload.address    !== undefined) sheet.getRange(i + 1, 6).setValue(payload.address);
+      if (payload.points     !== undefined) sheet.getRange(i + 1, 7).setValue(parseFloat(payload.points) || 0);
+      if (payload.lastInvoiceId)            sheet.getRange(i + 1, 8).setValue(payload.lastInvoiceId);
+      if (payload.lastInvoiceDate)          sheet.getRange(i + 1, 9).setValue(payload.lastInvoiceDate);
+      if (payload.email      !== undefined) sheet.getRange(i + 1, 13).setValue(payload.email);
+      if (payload.lineId     !== undefined) sheet.getRange(i + 1, 14).setValue(payload.lineId);
+      if (payload.notes      !== undefined) sheet.getRange(i + 1, 15).setValue(payload.notes);
+      if (payload.birthday   !== undefined) sheet.getRange(i + 1, 16).setValue(payload.birthday);
       sheet.getRange(i + 1, 11).setValue(new Date()); // UpdatedAt
       found = true;
       break;
@@ -1556,10 +1570,16 @@ function saveCustomer(payload) {
       payload.lastInvoiceId || "",
       payload.lastInvoiceDate || "",
       new Date(),
-      new Date()
+      new Date(),
+      new Date(),   // PointsUpdatedAt
+      payload.email    || "",
+      payload.lineId   || "",
+      payload.notes    || "",
+      payload.birthday || ""
     ]);
   }
 
+  logActivity("Members", "Save Customer", payload.name || payload.customerId, payload._actor);
   return jsonResponse({ success: true, message: "Customer saved" });
 }
 
@@ -1713,6 +1733,28 @@ function readSheetData(sheetName) {
         cell.setFontWeight("bold");
       }
     });
+  } else if (sheetName === "Customers") {
+    // Backward-compat: add Email, LineID, Notes, Birthday if missing
+    const custNewCols = [
+      { col: 13, name: "Email"   },
+      { col: 14, name: "LineID"  },
+      { col: 15, name: "Notes"   },
+      { col: 16, name: "Birthday"},
+    ];
+    custNewCols.forEach(function(c) {
+      const cell = sheet.getRange(1, c.col);
+      if (!cell.getValue() || cell.getValue() !== c.name) {
+        cell.setValue(c.name);
+        cell.setFontWeight("bold");
+      }
+    });
+  } else if (sheetName === "Pets") {
+    const PET_HEADERS = ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"];
+    const petH = sheet.getRange(1, 1, 1, PET_HEADERS.length).getValues()[0];
+    if (!petH[0] || petH[0] !== "PetID") {
+      sheet.getRange(1, 1, 1, PET_HEADERS.length).setValues([PET_HEADERS]);
+      sheet.getRange(1, 1, 1, PET_HEADERS.length).setFontWeight("bold");
+    }
   } else if (sheetName === "CustomerPackages") {
     const CP_HEADERS = ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor"];
     const cpH = sheet.getRange(1, 1, 1, CP_HEADERS.length).getValues()[0];
@@ -1772,6 +1814,97 @@ function readSheetData(sheetName) {
     rows.push(obj);
   }
   return rows;
+}
+
+// ─────────────────────────────────────────────────────
+// PET PROFILE FUNCTIONS
+// ─────────────────────────────────────────────────────
+
+function savePet(payload) {
+  const ss = getSpreadsheet();
+  const PET_HEADERS = ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"];
+  let sheet = ss.getSheetByName("Pets");
+  if (!sheet) {
+    sheet = ss.insertSheet("Pets");
+    sheet.appendRow(PET_HEADERS);
+    sheet.getRange(1, 1, 1, PET_HEADERS.length).setFontWeight("bold");
+  }
+
+  const data  = sheet.getDataRange().getValues();
+  const petId = String(payload.petId || "").trim();
+  const now   = new Date();
+
+  if (petId) {
+    // Update existing pet
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === petId) {
+        if (payload.petName        !== undefined) sheet.getRange(i + 1, 3).setValue(payload.petName);
+        if (payload.species        !== undefined) sheet.getRange(i + 1, 4).setValue(payload.species);
+        if (payload.breed          !== undefined) sheet.getRange(i + 1, 5).setValue(payload.breed);
+        if (payload.birthDate      !== undefined) sheet.getRange(i + 1, 6).setValue(payload.birthDate);
+        if (payload.weight         !== undefined) sheet.getRange(i + 1, 7).setValue(parseFloat(payload.weight) || 0);
+        if (payload.color          !== undefined) sheet.getRange(i + 1, 8).setValue(payload.color);
+        if (payload.vaccineDate    !== undefined) sheet.getRange(i + 1, 9).setValue(payload.vaccineDate);
+        if (payload.nextVaccineDate!== undefined) sheet.getRange(i + 1, 10).setValue(payload.nextVaccineDate);
+        if (payload.medicalNotes   !== undefined) sheet.getRange(i + 1, 11).setValue(payload.medicalNotes);
+        if (payload.allergies      !== undefined) sheet.getRange(i + 1, 12).setValue(payload.allergies);
+        if (payload.photoUrl       !== undefined) sheet.getRange(i + 1, 13).setValue(payload.photoUrl);
+        if (payload.notes          !== undefined) sheet.getRange(i + 1, 14).setValue(payload.notes);
+        sheet.getRange(i + 1, 17).setValue(now);
+        logActivity("Members", "Edit Pet", petId, payload._actor);
+        return jsonResponse({ success: true, petId: petId, message: "อัพเดทข้อมูลสัตว์เลี้ยงสำเร็จ" });
+      }
+    }
+  }
+
+  // New pet
+  const newId = "PET-" + now.getTime();
+  const customerName = String(payload.customerName || "").trim();
+  if (!customerName) return jsonResponse({ error: "กรุณาระบุชื่อลูกค้า" });
+  if (!String(payload.petName || "").trim()) return jsonResponse({ error: "กรุณาระบุชื่อสัตว์เลี้ยง" });
+
+  sheet.appendRow([
+    newId,
+    customerName,
+    payload.petName      || "",
+    payload.species      || "",
+    payload.breed        || "",
+    payload.birthDate    || "",
+    parseFloat(payload.weight) || 0,
+    payload.color        || "",
+    payload.vaccineDate  || "",
+    payload.nextVaccineDate || "",
+    payload.medicalNotes || "",
+    payload.allergies    || "",
+    payload.photoUrl     || "",
+    payload.notes        || "",
+    "ACTIVE",
+    now,
+    now
+  ]);
+
+  logActivity("Members", "Add Pet", newId, payload._actor);
+  return jsonResponse({ success: true, petId: newId, message: "เพิ่มข้อมูลสัตว์เลี้ยงสำเร็จ" });
+}
+
+function deletePet(payload) {
+  const ss    = getSpreadsheet();
+  const petId = String(payload.petId || "").trim();
+  if (!petId) return jsonResponse({ error: "ไม่พบรหัสสัตว์เลี้ยง" });
+
+  const sheet = ss.getSheetByName("Pets");
+  if (!sheet)  return jsonResponse({ error: "ไม่พบชีท Pets" });
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === petId) {
+      sheet.getRange(i + 1, 15).setValue("DELETED");
+      sheet.getRange(i + 1, 17).setValue(new Date());
+      logActivity("Members", "Delete Pet", petId, payload._actor);
+      return jsonResponse({ success: true, message: "ลบข้อมูลสัตว์เลี้ยงสำเร็จ" });
+    }
+  }
+  return jsonResponse({ error: "ไม่พบสัตว์เลี้ยง" });
 }
 
 // ─────────────────────────────────────────────────────
