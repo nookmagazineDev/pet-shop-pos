@@ -36,8 +36,11 @@ export default function Accounting() {
 
   const activeTxs = useMemo(() => filteredTransactions.filter(tx => (tx.Status || tx[13]) !== "CANCELLED"), [filteredTransactions]);
 
-  // Parse split-payment strings like "เงินสด:1000 + โอนเข้าบัญชี:650 + เครดิต:500"
-  // Returns only the real-cash portion (excludes store credit and บัตรเครดิต)
+  // Methods that are NOT real cash income (store credit, points, card settlement deferred)
+  const NON_CASH_METHODS = ["เครดิต", "พ้อย", "บัตรเครดิต"];
+
+  // Parse split-payment strings like "เงินสด:1000 + โอนเข้าบัญชี:650 + เครดิต:500 + พ้อย:200"
+  // Returns only the real-cash portion (เงินสด, โอน, QR)
   const getCashAmount = (tx) => {
     const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
     const method = (tx.PaymentMethod || tx[4] || "").trim();
@@ -45,11 +48,11 @@ export default function Accounting() {
       let cash = 0;
       method.split("+").forEach(part => {
         const [m, amt] = part.trim().split(":").map(s => s.trim());
-        if (m !== "เครดิต" && m !== "บัตรเครดิต") cash += parseFloat(amt) || 0;
+        if (!NON_CASH_METHODS.includes(m)) cash += parseFloat(amt) || 0;
       });
       return cash;
     }
-    if (method === "เครดิต" || method === "บัตรเครดิต") return 0;
+    if (NON_CASH_METHODS.includes(method)) return 0;
     return total;
   };
 

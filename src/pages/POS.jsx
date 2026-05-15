@@ -341,11 +341,12 @@ export default function POS() {
   const preVatDisplay = subtotalAfterDiscount - tax;
 
   // ── Split payment derived values ──
+  const NON_CASH_METHODS = ["เครดิต", "พ้อย"]; // methods that don't count as cash income
   const hasCashSplit   = splitPayments.some(p => p.method === "เงินสด");
-  const hasCreditSplit = splitPayments.some(p => p.method === "เครดิต");
+  const hasCreditSplit = splitPayments.some(p => NON_CASH_METHODS.includes(p.method));
   const totalPaid  = splitPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const cashPaid   = splitPayments.filter(p => p.method === "เงินสด").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const creditPaid = splitPayments.filter(p => p.method === "เครดิต").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const creditPaid = splitPayments.filter(p => NON_CASH_METHODS.includes(p.method)).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const remaining  = Math.max(0, total - totalPaid);
   const cashChange = (hasCashSplit && totalPaid >= total) ? Math.max(0, totalPaid - total) : 0;
   // Payment method string for receipt/backend
@@ -357,7 +358,7 @@ export default function POS() {
     if (active.length === 1) return active[0].method;
     return active.map(p => `${p.method}:${parseFloat(p.amount)}`).join(" + ");
   })();
-  // Credits: if single เครดิต with blank amount, treat as full total
+  // Credits/Points: if single non-cash method with blank amount, treat as full total
   const effectiveCreditPaid = (hasCreditSplit && splitPayments.length === 1 && !splitPayments[0].amount)
     ? total : creditPaid;
   // Checkout is complete when: non-cash single method (no amount needed), or totalPaid >= total
@@ -1095,21 +1096,26 @@ export default function POS() {
           {/* Payment rows */}
           <div className="space-y-2 mb-3">
             {splitPayments.map((entry, idx) => {
-              const isCashRow   = entry.method === "เงินสด";
-              const isCreditRow = entry.method === "เครดิต";
+              const isCashRow    = entry.method === "เงินสด";
+              const isCreditRow  = entry.method === "เครดิต";
+              const isPointsRow  = entry.method === "พ้อย";
+              const isNonCash    = NON_CASH_METHODS.includes(entry.method);
               const rowColor = isCashRow
                 ? "border-amber-300 bg-amber-50"
                 : isCreditRow
                   ? "border-yellow-400 bg-yellow-50"
-                  : entry.method === "บัตรเครดิต"
-                    ? "border-purple-300 bg-purple-50"
-                    : "border-blue-300 bg-blue-50";
+                  : isPointsRow
+                    ? "border-orange-300 bg-orange-50"
+                    : entry.method === "บัตรเครดิต"
+                      ? "border-purple-300 bg-purple-50"
+                      : "border-blue-300 bg-blue-50";
               const methodIcon = {
-                "เงินสด": <Banknote size={16} className="text-amber-600 shrink-0" />,
+                "เงินสด":        <Banknote size={16} className="text-amber-600 shrink-0" />,
                 "โอนเข้าบัญชี": <QrCode size={16} className="text-blue-600 shrink-0" />,
-                "สแกน QR": <QrCode size={16} className="text-blue-600 shrink-0" />,
-                "บัตรเครดิต": <CreditCard size={16} className="text-purple-600 shrink-0" />,
-                "เครดิต": <Star size={16} className="text-yellow-600 shrink-0" />,
+                "สแกน QR":       <QrCode size={16} className="text-blue-600 shrink-0" />,
+                "บัตรเครดิต":   <CreditCard size={16} className="text-purple-600 shrink-0" />,
+                "เครดิต":        <Star size={16} className="text-yellow-600 shrink-0" />,
+                "พ้อย":          <Gift size={16} className="text-orange-500 shrink-0" />,
               }[entry.method] || <Banknote size={16} className="shrink-0" />;
 
               const amountFilledBefore = splitPayments.slice(0, idx).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
@@ -1122,16 +1128,22 @@ export default function POS() {
                     value={entry.method}
                     onChange={e => {
                       const newMethod = e.target.value;
-                      if (newMethod === "เครดิต" && !customerName) {
-                        alert("กรุณาเลือกลูกค้าก่อนใช้เครดิต"); return;
+                      if (NON_CASH_METHODS.includes(newMethod) && !customerName) {
+                        alert("กรุณาเลือกลูกค้าก่อนใช้เครดิต/พ้อย"); return;
                       }
                       setSplitPayments(prev => prev.map((p, i) => i === idx ? { ...p, method: newMethod } : p));
                     }}
                     className="flex-1 bg-transparent border-0 font-semibold text-sm outline-none cursor-pointer min-w-0"
                   >
-                    {["เงินสด","โอนเข้าบัญชี","สแกน QR","บัตรเครดิต","เครดิต"].map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
+                    <optgroup label="── ทั่วไป ──">
+                      {["เงินสด","โอนเข้าบัญชี","สแกน QR","บัตรเครดิต"].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="── เครดิต/พ้อย ──">
+                      <option value="เครดิต">เครดิต (Store Credit)</option>
+                      <option value="พ้อย">พ้อย (Points)</option>
+                    </optgroup>
                   </select>
                   <input
                     type="number"
@@ -1158,7 +1170,7 @@ export default function POS() {
           <button
             onClick={() => setSplitPayments(prev => {
               const usedMethods = prev.map(p => p.method);
-              const next = ["โอนเข้าบัญชี","สแกน QR","เงินสด","บัตรเครดิต","เครดิต"].find(m => !usedMethods.includes(m)) || "โอนเข้าบัญชี";
+              const next = ["โอนเข้าบัญชี","สแกน QR","เงินสด","บัตรเครดิต","เครดิต","พ้อย"].find(m => !usedMethods.includes(m)) || "โอนเข้าบัญชี";
               return [...prev, { method: next, amount: "" }];
             })}
             className="w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-primary/40 hover:text-primary transition-colors flex items-center justify-center gap-1.5 mb-3"
@@ -1233,30 +1245,42 @@ export default function POS() {
             );
           })()}
 
-          {/* เครดิต balance info */}
+          {/* เครดิต / พ้อย balance info */}
           {hasCreditSplit && customerName && (() => {
             const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
             const available = parseFloat(custObj?.Points) || 0;
             const needed = Math.ceil(effectiveCreditPaid);
             const enough = available >= needed;
+            const hasCredit = splitPayments.some(p => p.method === "เครดิต");
+            const hasPoints = splitPayments.some(p => p.method === "พ้อย");
             return (
-              <div className="mb-3 p-3 bg-yellow-50 rounded-xl border border-yellow-100 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-yellow-800 font-medium">เครดิตคงเหลือ ({customerName})</span>
-                  <span className="font-bold text-yellow-700 flex items-center gap-1"><Star size={13} /> {available.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-yellow-700">ใช้เครดิต (1 เครดิต = ฿1)</span>
-                  <span className="font-bold">{needed.toLocaleString()} pts</span>
-                </div>
-                {!enough && (
-                  <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">
-                    เครดิตไม่พอ — ขาดอีก {(needed - available).toLocaleString()} เครดิต
+              <div className="mb-3 space-y-2">
+                {hasCredit && (
+                  <div className="p-3 bg-yellow-50 rounded-xl border border-yellow-100 space-y-1.5 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-yellow-800 font-semibold flex items-center gap-1"><Star size={13} /> เครดิตลูกค้า ({customerName})</span>
+                      <span className="font-bold text-yellow-700">{available.toLocaleString()} credit</span>
+                    </div>
+                    <div className="flex justify-between text-yellow-700 text-xs">
+                      <span>ใช้ไป (1 เครดิต = ฿1)</span>
+                      <span className="font-bold">{Math.ceil(splitPayments.filter(p=>p.method==="เครดิต").reduce((s,p)=>s+(parseFloat(p.amount)||0),0)).toLocaleString()}</span>
+                    </div>
+                    {!enough && needed > 0 && <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">เครดิตไม่พอ — ขาดอีก {(needed - available).toLocaleString()}</div>}
+                    {enough && needed > 0 && <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(available - needed).toLocaleString()}</div>}
                   </div>
                 )}
-                {enough && needed > 0 && (
-                  <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1">
-                    <CheckCircle size={12} /> เครดิตเพียงพอ — คงเหลือหลังชำระ {(available - needed).toLocaleString()}
+                {hasPoints && (
+                  <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 space-y-1.5 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-orange-800 font-semibold flex items-center gap-1"><Gift size={13} /> พ้อยลูกค้า ({customerName})</span>
+                      <span className="font-bold text-orange-700">{available.toLocaleString()} pts</span>
+                    </div>
+                    <div className="flex justify-between text-orange-700 text-xs">
+                      <span>ใช้ไป (1 พ้อย = ฿1)</span>
+                      <span className="font-bold">{Math.ceil(splitPayments.filter(p=>p.method==="พ้อย").reduce((s,p)=>s+(parseFloat(p.amount)||0),0)).toLocaleString()}</span>
+                    </div>
+                    {!enough && needed > 0 && <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">พ้อยไม่พอ — ขาดอีก {(needed - available).toLocaleString()}</div>}
+                    {enough && needed > 0 && <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(available - needed).toLocaleString()}</div>}
                   </div>
                 )}
               </div>
