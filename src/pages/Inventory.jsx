@@ -1852,8 +1852,8 @@ export default function Inventory() {
       {/* Edit Product Modal */}
       {editItem && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100 shrink-0">
               <div>
                 <h3 className="text-lg font-bold text-gray-900">แก้ไขข้อมูลสินค้า</h3>
                 <p className="text-xs text-gray-400 mt-0.5 font-mono">Barcode: {editItem.Barcode}</p>
@@ -1862,7 +1862,8 @@ export default function Inventory() {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleUpdateProduct} className="p-6 space-y-4">
+            <form onSubmit={handleUpdateProduct} className="flex flex-col min-h-0">
+              <div className="overflow-y-auto flex-1 p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อสินค้า *</label>
                 <input
@@ -2086,7 +2087,8 @@ export default function Inventory() {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-3 pt-2">
+              </div>{/* end scroll body */}
+              <div className="flex gap-3 p-6 pt-4 border-t border-gray-100 shrink-0">
                 <button type="button" onClick={() => setEditItem(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
                   ยกเลิก
                 </button>
