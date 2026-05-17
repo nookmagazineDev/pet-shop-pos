@@ -86,6 +86,35 @@ export default function POS() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, isInvoiceModalOpen, isLoadingProducts]);
 
+  // Auto-add FREE_ITEM coupon product to cart at ฿0 when selected
+  useEffect(() => {
+    if (selectedCoupon?.Type === "FREE_ITEM" && selectedCoupon?.FreeItemBarcode) {
+      const barcode  = String(selectedCoupon.FreeItemBarcode).trim();
+      const itemName = selectedCoupon.FreeItemName || barcode;
+      const prod     = products.find(p => String(p.Barcode || "").trim() === barcode);
+      const freeId   = `free-coupon-${selectedCoupon.ID}`;
+      setCart(prev => {
+        if (prev.find(i => i.id === freeId)) return prev; // already added
+        return [{
+          id:          freeId,
+          Barcode:     barcode,
+          Name:        `🎁 ${itemName}`,
+          name:        `🎁 ${itemName}`,
+          price:       0,
+          costPrice:   0,
+          image:       prod?.ImageURL || "https://placehold.co/300x300?text=Free",
+          vatStatus:   "NON VAT",
+          qty:         1,
+          isFreeItem:  true,
+        }, ...prev];
+      });
+    } else {
+      // Remove free-item cart entries when coupon is deselected
+      setCart(prev => prev.filter(i => !i.isFreeItem));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCoupon]);
+
   const addToCart = (product, qtyToAdd = 1) => {
     setCart(prev => {
       // Use Barcode as unique key (new unified schema has no ID)
@@ -305,13 +334,7 @@ export default function POS() {
     if (!selectedCoupon) return 0;
     const base = Math.max(0, subtotal - discountAmount);
     if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
-    if (selectedCoupon.Type === "FREE_ITEM") {
-      const freeBarcode = String(selectedCoupon.FreeItemBarcode || "").trim();
-      if (!freeBarcode) return 0;
-      const prod = products.find(p => String(p.Barcode || "").trim() === freeBarcode);
-      const freePrice = parseFloat(prod?.Price || prod?.price) || 0;
-      return Math.min(freePrice, base);
-    }
+    if (selectedCoupon.Type === "FREE_ITEM") return 0; // item already added to cart at ฿0
     return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
   })();
 
@@ -735,9 +758,29 @@ export default function POS() {
                 );
               })()}
               {cart.map(item => (
+                item.isFreeItem ? (
+                  /* FREE ITEM from coupon — show at ฿0, locked */
+                  <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border-2 border-green-200 bg-green-50">
+                    <div className="w-16 h-16 rounded-lg bg-green-100 flex items-center justify-center text-green-600 text-2xl shrink-0">🎁</div>
+                    <div className="flex-1 text-center sm:text-left">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-semibold text-green-800">{item.name}</h4>
+                        <span className="text-xs font-bold text-green-700 bg-green-200 rounded-full px-2 py-0.5">ของแถมจากแพคเกจ</span>
+                      </div>
+                      <p className="text-green-500 text-xs">{item.Barcode}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-green-700 text-lg">฿0.00</div>
+                      <div className="text-xs text-green-500">ฟรี</div>
+                    </div>
+                    <button onClick={() => { setSelectedCoupon(null); }} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-2" title="ยกเลิกของแถม">
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : (
                 <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-primary/30 transition-colors group bg-white shadow-sm hover:shadow-md">
                   <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover bg-gray-100" />
-                  
+
                   <div className="flex-1 text-center sm:text-left">
                     <div className="flex items-center gap-2">
                       <h4 className="font-semibold text-gray-900">{item.name}</h4>
@@ -767,6 +810,7 @@ export default function POS() {
                     <Trash2 size={20} />
                   </button>
                 </div>
+                )
               ))}
 
               {/* Free item lines from promotions */}
@@ -848,15 +892,21 @@ export default function POS() {
                  <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
-            {(couponDiscount > 0 || selectedCoupon) && (
+            {selectedCoupon && (
                <div className="flex justify-between text-amber-700 font-bold bg-amber-50 px-2 py-1 -mx-2 rounded-lg">
                  <span className="flex items-center gap-1.5">
                    <Ticket size={14} />
-                   {selectedCoupon?.Type === "FREE_ITEM"
-                     ? `🎁 ${selectedCoupon?.FreeItemName || selectedCoupon?.CouponName}`
-                     : `คูปอง: ${selectedCoupon?.CouponName}`}
+                   {selectedCoupon.Type === "FREE_ITEM"
+                     ? `🎁 ${selectedCoupon.FreeItemName || selectedCoupon.CouponName}`
+                     : `คูปอง: ${selectedCoupon.CouponName}`}
                  </span>
-                 <span>-฿{couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                 <span>
+                   {selectedCoupon.Type === "FREE_ITEM"
+                     ? "ราคา ฿0"
+                     : couponDiscount > 0
+                       ? `-฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                       : ""}
+                 </span>
                </div>
             )}
             <div className="flex justify-between text-gray-500">
@@ -1082,7 +1132,9 @@ export default function POS() {
                     <span className="text-green-700 font-bold">
                       {selectedCoupon.Type === "PERCENT"
                         ? `-${selectedCoupon.Value}%`
-                        : `-฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                        : selectedCoupon.Type === "FREE_ITEM"
+                          ? "ราคา ฿0"
+                          : `-฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                     </span>
                   </div>
                 )}

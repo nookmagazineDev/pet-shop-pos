@@ -13,7 +13,23 @@ const EMPTY_FORM = {
   name: "", price: "", points: "", bonusPoints: "",
   description: "", status: "ACTIVE",
   packageType: "POINTS", sessionCount: "", expiryDays: "365",
+  bonusSessions: "0", bonusServiceName: "", bonusServiceSessions: "0",
+  subtype: "GENERAL",
+  rewardType: "NONE", rewardRef: "", rewardName: "", rewardQty: "1",
 };
+
+const REWARD_TYPES = [
+  { k: "NONE",   label: "ไม่มี"      },
+  { k: "ITEM",   label: "สินค้าฟรี"  },
+  { k: "COUPON", label: "คูปอง"      },
+];
+
+const SUBTYPES = [
+  { k: "GENERAL",      label: "ทั่วไป"       },
+  { k: "GROOMING",     label: "Grooming"     },
+  { k: "HOTEL",        label: "Hotel"        },
+  { k: "SUBSCRIPTION", label: "Subscription" },
+];
 
 const MANUAL_REASONS = [
   "ซื้อแพคเกจพิเศษ",
@@ -89,6 +105,12 @@ export default function Packages() {
   const [useForm, setUseForm] = useState({ sessionsUsed: "1", note: "" });
   const [isUsing, setIsUsing] = useState(false);
 
+  // extend expiry modal
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [extendTarget, setExtendTarget] = useState(null);
+  const [extendDate, setExtendDate] = useState("");
+  const [isExtending, setIsExtending] = useState(false);
+
   // ── load data ──────────────────────────────────────────
   const loadAll = () => {
     setIsLoading(true);
@@ -163,15 +185,23 @@ export default function Packages() {
   const openEdit = pkg => {
     setEditPkg(pkg);
     setForm({
-      name:        pkg.Name || "",
-      price:       String(pkg.Price || ""),
-      points:      String(pkg.Points || ""),
-      bonusPoints: String(pkg.BonusPoints || "0"),
-      description: pkg.Description || "",
-      status:      pkg.Status || "ACTIVE",
-      packageType: pkg.PackageType || "POINTS",
-      sessionCount: String(pkg.SessionCount || ""),
-      expiryDays:  String(pkg.ExpiryDays || "365"),
+      name:               pkg.Name || "",
+      price:              String(pkg.Price || ""),
+      points:             String(pkg.Points || ""),
+      bonusPoints:        String(pkg.BonusPoints || "0"),
+      description:        pkg.Description || "",
+      status:             pkg.Status || "ACTIVE",
+      packageType:        pkg.PackageType || "POINTS",
+      sessionCount:       String(pkg.SessionCount || ""),
+      expiryDays:         String(pkg.ExpiryDays || "365"),
+      bonusSessions:      String(pkg.BonusSessions || "0"),
+      bonusServiceName:   pkg.BonusServiceName || "",
+      bonusServiceSessions: String(pkg.BonusServiceSessions || "0"),
+      subtype:            pkg.Subtype || "GENERAL",
+      rewardType:         pkg.RewardType || "NONE",
+      rewardRef:          pkg.RewardRef || "",
+      rewardName:         pkg.RewardName || "",
+      rewardQty:          String(pkg.RewardQty || "1"),
     });
     setShowForm(true);
   };
@@ -186,16 +216,24 @@ export default function Packages() {
     const res = await postApi({
       action: "savePackage",
       payload: {
-        packageId:    editPkg?.PackageID || "",
-        name:         form.name.trim(),
-        price:        parseFloat(form.price),
-        points:       form.packageType === "POINTS" ? parseFloat(form.points) : 0,
-        bonusPoints:  form.packageType === "POINTS" ? parseFloat(form.bonusPoints) || 0 : 0,
-        description:  form.description.trim(),
-        status:       form.status,
-        packageType:  form.packageType,
-        sessionCount: form.packageType === "SESSIONS" ? parseInt(form.sessionCount) : 0,
-        expiryDays:   parseInt(form.expiryDays) || 365,
+        packageId:            editPkg?.PackageID || "",
+        name:                 form.name.trim(),
+        price:                parseFloat(form.price),
+        points:               form.packageType === "POINTS" ? parseFloat(form.points) : 0,
+        bonusPoints:          form.packageType === "POINTS" ? parseFloat(form.bonusPoints) || 0 : 0,
+        description:          form.description.trim(),
+        status:               form.status,
+        packageType:          form.packageType,
+        sessionCount:         form.packageType === "SESSIONS" ? parseInt(form.sessionCount) : 0,
+        expiryDays:           parseInt(form.expiryDays) || 365,
+        bonusSessions:        parseInt(form.bonusSessions) || 0,
+        bonusServiceName:     form.bonusServiceName.trim(),
+        bonusServiceSessions: parseInt(form.bonusServiceSessions) || 0,
+        subtype:              form.subtype || "GENERAL",
+        rewardType:           form.rewardType || "NONE",
+        rewardRef:            form.rewardRef.trim(),
+        rewardName:           form.rewardName.trim(),
+        rewardQty:            parseInt(form.rewardQty) || 1,
       },
     });
     setIsSaving(false);
@@ -264,6 +302,13 @@ export default function Packages() {
     setIsBuying(false);
     if (res.success) {
       toast.success(`ซื้อแพคเกจครั้งสำเร็จ — ${res.totalSessions} ครั้ง`);
+      if (res.rewardIssued) {
+        if (res.rewardIssued.type === "ITEM") {
+          toast.success(`🎁 ออกคูปองสินค้าฟรีให้ลูกค้าแล้ว: ${res.rewardIssued.name} x${res.rewardIssued.qty} (ใช้ได้หน้า POS)`, { duration: 5000 });
+        } else {
+          toast.success(`🎁 ออกคูปองแถม: ${res.rewardIssued.name} x${res.rewardIssued.qty}`, { duration: 4000 });
+        }
+      }
       invalidateCache("getCustomerPackages");
       invalidateCache("getCustomers");
       const updated = await fetchApi("getCustomerPackages", { skipCache: true });
@@ -300,6 +345,35 @@ export default function Packages() {
       setShowUseModal(false);
     } else {
       toast.error(res.error || "บันทึกไม่สำเร็จ");
+    }
+  };
+
+  // ── extend expiry ──────────────────────────────────────
+  const openExtendModal = cp => {
+    setExtendTarget(cp);
+    // Default: 30 days from current expiry or today
+    const base = cp.ExpiryDate ? new Date(cp.ExpiryDate) : new Date();
+    base.setDate(base.getDate() + 30);
+    setExtendDate(base.toISOString().split("T")[0]);
+    setShowExtendModal(true);
+  };
+
+  const handleExtendExpiry = async () => {
+    if (!extendTarget || !extendDate) { toast.error("กรุณาระบุวันหมดอายุใหม่"); return; }
+    setIsExtending(true);
+    const res = await postApi({
+      action: "extendPackageExpiry",
+      payload: { id: extendTarget.ID, newExpiryDate: extendDate },
+    });
+    setIsExtending(false);
+    if (res.success) {
+      toast.success("ต่ออายุแพคเกจสำเร็จ");
+      invalidateCache("getCustomerPackages");
+      const updated = await fetchApi("getCustomerPackages", { skipCache: true });
+      setCustomerPackages(Array.isArray(updated) ? [...updated].reverse() : []);
+      setShowExtendModal(false);
+    } else {
+      toast.error(res.error || "ต่ออายุไม่สำเร็จ");
     }
   };
 
@@ -427,12 +501,26 @@ export default function Packages() {
                             {parseFloat(pkg.BonusPoints) > 0 && <span className="text-yellow-500">(+{Number(pkg.BonusPoints).toLocaleString()} bonus)</span>}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-100 px-2.5 py-1 rounded-full text-xs font-bold">
-                            <Scissors size={11} /> {Number(pkg.SessionCount || 0).toLocaleString()} ครั้ง
-                          </span>
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-100 px-2.5 py-1 rounded-full text-xs font-bold">
+                              <Scissors size={11} /> {Number(pkg.SessionCount || 0).toLocaleString()} ครั้ง
+                              {Number(pkg.BonusSessions) > 0 && <span className="text-violet-400">(แถม {Number(pkg.BonusSessions)} ครั้ง)</span>}
+                            </span>
+                            {pkg.BonusServiceName && (
+                              <div className="text-xs text-amber-600 font-medium">+ {pkg.BonusServiceName} {Number(pkg.BonusServiceSessions || 0)} ครั้ง</div>
+                            )}
+                          </div>
                         )}
                       </td>
-                      <td className="py-4 px-4 text-right text-gray-500 text-xs">{Number(pkg.ExpiryDays || 365).toLocaleString()} วัน</td>
+                      <td className="py-4 px-4 text-right text-gray-500 text-xs">
+                        <div>{Number(pkg.ExpiryDays || 365).toLocaleString()} วัน</div>
+                        {pkg.RewardType && pkg.RewardType !== "NONE" && pkg.RewardRef && (
+                          <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded-full">
+                            <Gift size={9} />
+                            {pkg.RewardType === "COUPON" ? "คูปอง" : "สินค้า"}: {String(pkg.RewardRef).substring(0, 18)}{String(pkg.RewardRef).length > 18 ? "…" : ""} x{Number(pkg.RewardQty || 1)}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-4 px-4 text-center">
                         <button onClick={() => toggleStatus(pkg)} title={isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}>
                           {isActive
@@ -545,13 +633,22 @@ export default function Packages() {
                           </td>
                           <td className="py-3.5 px-4 text-center">{statusBadge(status)}</td>
                           <td className="py-3.5 px-4 text-center">
-                            <button
-                              onClick={() => openUseModal(cp)}
-                              disabled={status !== "ACTIVE" || remaining === 0}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                            >
-                              <MinusCircle size={12} /> ใช้ครั้ง
-                            </button>
+                            <div className="flex items-center gap-1.5 justify-center">
+                              <button
+                                onClick={() => openUseModal(cp)}
+                                disabled={status !== "ACTIVE" || remaining === 0}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                              >
+                                <MinusCircle size={12} /> ใช้ครั้ง
+                              </button>
+                              <button
+                                onClick={() => openExtendModal(cp)}
+                                title="ต่ออายุ"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                              >
+                                <Calendar size={12} /> ต่ออายุ
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -734,12 +831,125 @@ export default function Packages() {
 
               {/* Sessions-specific */}
               {form.packageType === "SESSIONS" && (
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">จำนวนครั้ง <span className="text-red-500">*</span></label>
-                  <input type="number" value={form.sessionCount} onChange={e => setForm(p => ({ ...p, sessionCount: e.target.value }))}
-                    placeholder="5" min="1" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
+                <div className="space-y-3">
+                  {/* Subtype */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1.5 block">ประเภทบริการ</label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {SUBTYPES.map(s => (
+                        <button key={s.k} type="button" onClick={() => setForm(p => ({ ...p, subtype: s.k }))}
+                          className={`py-2 rounded-lg text-xs font-semibold border-2 transition-all ${form.subtype === s.k ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Session count + Bonus sessions */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1.5 block">จำนวนครั้ง (รวมทั้งหมด) <span className="text-red-500">*</span></label>
+                      <input type="number" value={form.sessionCount} onChange={e => setForm(p => ({ ...p, sessionCount: e.target.value }))}
+                        placeholder="11" min="1" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
+                      <p className="text-[10px] text-gray-400 mt-0.5">เช่น ซื้อ 10 แถม 1 = ใส่ 11</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1.5 block">ครั้งโบนัส (แถม)</label>
+                      <input type="number" value={form.bonusSessions} onChange={e => setForm(p => ({ ...p, bonusSessions: e.target.value }))}
+                        placeholder="1" min="0" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
+                      <p className="text-[10px] text-gray-400 mt-0.5">แถมกี่ครั้ง</p>
+                    </div>
+                  </div>
+
+                  {/* Bonus service */}
+                  <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl space-y-2">
+                    <p className="text-xs font-semibold text-amber-700">บริการเสริมโบนัส (ไม่บังคับ)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">ชื่อบริการโบนัส</label>
+                        <input value={form.bonusServiceName} onChange={e => setForm(p => ({ ...p, bonusServiceName: e.target.value }))}
+                          placeholder="เช่น แปรงฟัน" className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-amber-400" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">จำนวนครั้งโบนัส</label>
+                        <input type="number" value={form.bonusServiceSessions} onChange={e => setForm(p => ({ ...p, bonusServiceSessions: e.target.value }))}
+                          placeholder="5" min="0" className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-amber-400" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* ── Purchase Reward ─────────────────────────── */}
+              <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-2">
+                <p className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
+                  <Gift size={13} /> ของแถมเมื่อซื้อแพคเกจ (ไม่บังคับ)
+                </p>
+                {/* Reward type selector */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {REWARD_TYPES.map(r => (
+                    <button key={r.k} type="button"
+                      onClick={() => setForm(p => ({ ...p, rewardType: r.k, rewardRef: "", rewardName: "" }))}
+                      className={`py-2 rounded-lg text-xs font-semibold border-2 transition-all ${form.rewardType === r.k ? "border-purple-500 bg-purple-100 text-purple-800" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}>
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ITEM: barcode + name + qty */}
+                {form.rewardType === "ITEM" && (
+                  <div className="space-y-2 pt-1">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <label className="text-xs font-semibold text-gray-600 mb-1 block">บาร์โค้ดสินค้า</label>
+                        <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                          placeholder="เช่น 8851234100036"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวน (ชิ้น)</label>
+                        <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                          placeholder="1" min="1"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อสินค้า (แสดงในใบเสร็จ)</label>
+                      <input value={form.rewardName} onChange={e => setForm(p => ({ ...p, rewardName: e.target.value }))}
+                        placeholder="เช่น แชมพูอาบน้ำสุนัข Bio Groom"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                    </div>
+                    {form.rewardRef && form.rewardName && (
+                      <div className="text-[10px] text-purple-700 bg-purple-100 px-2 py-1.5 rounded-lg flex items-center gap-1">
+                        <Gift size={10} /> เมื่อซื้อ จะออก "คูปองสินค้าฟรี" เข้าบัญชีลูกค้าอัตโนมัติ — ใช้ได้ที่หน้า POS ราคา ฿0
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* COUPON: coupon ID/name + qty */}
+                {form.rewardType === "COUPON" && (
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">ID / ชื่อคูปอง (จากหน้าคูปอง)</label>
+                      <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                        placeholder="เช่น CPT-xxx หรือ ส่วนลด 10%"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวน</label>
+                      <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                        placeholder="1" min="1"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                    </div>
+                    {form.rewardRef && (
+                      <div className="col-span-3 text-[10px] text-purple-600 bg-purple-100 px-2 py-1 rounded-lg">
+                        เมื่อซื้อ จะออกคูปองนี้ให้ลูกค้าโดยอัตโนมัติ
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Expiry */}
               <div>
@@ -838,6 +1048,32 @@ export default function Packages() {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-violet-400" />
               </div>
 
+              {/* Reward preview */}
+              {(() => {
+                const selPkg = packages.find(p => p.PackageID === buyForm.packageId);
+                if (!selPkg || !selPkg.RewardType || selPkg.RewardType === "NONE" || !selPkg.RewardRef) return null;
+                const rewardLabel = selPkg.RewardType === "ITEM"
+                  ? (selPkg.RewardName || selPkg.RewardRef)
+                  : selPkg.RewardRef;
+                return (
+                  <div className="flex items-start gap-2 bg-purple-50 border border-purple-100 rounded-xl px-3 py-2.5 text-xs">
+                    <Gift size={14} className="text-purple-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold text-purple-700">ของแถมที่ลูกค้าจะได้รับ: </span>
+                      <span className="text-purple-600 font-medium">
+                        {selPkg.RewardType === "ITEM" ? "🎁 " : "🎟 "}{rewardLabel} x{Number(selPkg.RewardQty || 1)}
+                      </span>
+                      {selPkg.RewardType === "ITEM" && (
+                        <div className="text-purple-400 mt-0.5">ระบบจะออกคูปองสินค้าฟรีเข้าบัญชีลูกค้าอัตโนมัติ — ใช้ได้ที่ POS ราคา ฿0</div>
+                      )}
+                      {selPkg.RewardType === "COUPON" && (
+                        <div className="text-purple-400 mt-0.5">จะออกคูปองอัตโนมัติเมื่อยืนยัน</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <button onClick={handleBuySession} disabled={isBuying}
                 className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
                 {isBuying ? <><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</> : <><Check size={16} /> ยืนยันซื้อแพคเกจ</>}
@@ -909,6 +1145,36 @@ export default function Packages() {
           </div>
         );
       })()}
+
+      {/* ══ MODAL: Extend Expiry ═══════════════════════════ */}
+      {showExtendModal && extendTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Calendar size={18} className="text-blue-600" /> ต่ออายุแพคเกจ
+              </h3>
+              <button onClick={() => setShowExtendModal(false)} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1 text-sm">
+                <div className="font-bold text-blue-800">{extendTarget.CustomerName}</div>
+                <div className="text-blue-600">{extendTarget.PackageName}</div>
+                <div className="text-gray-500 text-xs mt-1">อายุปัจจุบัน: {fmt(extendTarget.ExpiryDate)}</div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">วันหมดอายุใหม่ <span className="text-red-500">*</span></label>
+                <input type="date" value={extendDate} onChange={e => setExtendDate(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400" />
+              </div>
+              <button onClick={handleExtendExpiry} disabled={isExtending}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
+                {isExtending ? <><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</> : <><Check size={16} /> ยืนยันต่ออายุ</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

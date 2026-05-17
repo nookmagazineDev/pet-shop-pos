@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Ticket, Plus, Edit2, ToggleLeft, ToggleRight,
   X, Check, Loader2, Gift, Users, Star, ChevronDown,
+  Banknote, Search, Calendar, Phone, AlertCircle, RefreshCw,
 } from "lucide-react";
-import { fetchApi, postApi } from "../api";
+import { fetchApi, postApi, invalidateCache } from "../api";
+import toast from "react-hot-toast";
 
 const EMPTY_FORM = {
   name: "",
@@ -15,7 +17,23 @@ const EMPTY_FORM = {
   status: "ACTIVE",
   freeItemBarcode: "",
   freeItemName: "",
+  expiryDays: "365",
 };
+
+const EMPTY_CASH_FORM = {
+  customerName: "",
+  phone: "",
+  templateId: "",
+  paidAmount: "",
+  bonusAmount: "",
+  expiryDays: "365",
+};
+
+function fmt(val) {
+  if (!val) return "-";
+  const d = new Date(val);
+  return isNaN(d) ? String(val) : d.toLocaleDateString("th-TH", { dateStyle: "medium" });
+}
 
 function Badge({ active }) {
   return active ? (
@@ -30,10 +48,11 @@ function Badge({ active }) {
 }
 
 export default function Coupons() {
-  const [tab, setTab] = useState("coupons"); // "coupons" | "issue"
+  const [tab, setTab] = useState("coupons"); // "coupons" | "issue" | "cash"
   const [templates, setTemplates] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [cashCoupons, setCashCoupons] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Add/edit modal
@@ -50,17 +69,32 @@ export default function Coupons() {
   const [issueSuccess, setIssueSuccess] = useState("");
   const [issueError, setIssueError] = useState("");
 
+  // Cash coupon tab
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [cashForm, setCashForm] = useState(EMPTY_CASH_FORM);
+  const [cashSuggestions, setCashSuggestions] = useState([]);
+  const [showCashSugg, setShowCashSugg] = useState(false);
+  const [isBuyingCash, setIsBuyingCash] = useState(false);
+  const [cashSearch, setCashSearch] = useState("");
+  const [cashStatus, setCashStatus] = useState("ACTIVE");
+  const [showUseModal, setShowUseModal] = useState(false);
+  const [useTarget, setUseTarget] = useState(null);
+  const [useAmount, setUseAmount] = useState("");
+  const [isUsingCash, setIsUsingCash] = useState(false);
+
   // ---- Load data ----
   const loadAll = async () => {
     setIsLoading(true);
-    const [tmpl, custs, prods] = await Promise.all([
+    const [tmpl, custs, prods, cash] = await Promise.all([
       fetchApi("getCoupons"),
       fetchApi("getCustomers"),
       fetchApi("getProducts"),
+      fetchApi("getCashCoupons", { skipCache: true }),
     ]);
     setTemplates(Array.isArray(tmpl) ? tmpl : []);
     setCustomers(Array.isArray(custs) ? custs : []);
     setProducts(Array.isArray(prods) ? prods : []);
+    setCashCoupons(Array.isArray(cash) ? [...cash].reverse() : []);
     setIsLoading(false);
   };
 
@@ -97,6 +131,7 @@ export default function Coupons() {
       status: item.Status || "ACTIVE",
       freeItemBarcode: item.FreeItemBarcode || "",
       freeItemName: item.FreeItemName || "",
+      expiryDays: String(item.ExpiryDays || "365"),
     });
     setShowModal(true);
   };
@@ -205,6 +240,94 @@ export default function Coupons() {
     }
   };
 
+  // ---- Cash coupon handlers ----
+  const onCashCustomerInput = val => {
+    setCashForm(p => ({ ...p, customerName: val }));
+    if (val.trim().length > 0) {
+      const q = val.toLowerCase();
+      setCashSuggestions(customers.filter(c =>
+        String(c.Name || "").toLowerCase().includes(q) ||
+        String(c.Phone || "").includes(q)
+      ).slice(0, 6));
+      setShowCashSugg(true);
+    } else setShowCashSugg(false);
+  };
+
+  const selectCashCustomer = c => {
+    setCashForm(p => ({ ...p, customerName: c.Name, phone: c.Phone || "" }));
+    setShowCashSugg(false);
+  };
+
+  const handleBuyCashCoupon = async () => {
+    if (!cashForm.customerName.trim()) { toast.error("กรุณาระบุชื่อลูกค้า"); return; }
+    const paid  = parseFloat(cashForm.paidAmount) || 0;
+    const bonus = parseFloat(cashForm.bonusAmount) || 0;
+    if (paid <= 0) { toast.error("กรุณากรอกจำนวนเงินที่รับชำระ"); return; }
+    setIsBuyingCash(true);
+    const res = await postApi({
+      action: "purchaseCashCoupon",
+      payload: {
+        customerName: cashForm.customerName.trim(),
+        phone: cashForm.phone,
+        templateName: cashForm.templateId || "คูปองเงินสด",
+        paidAmount: paid,
+        bonusAmount: bonus,
+        expiryDays: parseInt(cashForm.expiryDays) || 365,
+      },
+    });
+    setIsBuyingCash(false);
+    if (res.success) {
+      toast.success(`ขายคูปองเงินสดสำเร็จ — เครดิต ฿${(paid + bonus).toLocaleString()}`);
+      invalidateCache("getCashCoupons");
+      const updated = await fetchApi("getCashCoupons", { skipCache: true });
+      setCashCoupons(Array.isArray(updated) ? [...updated].reverse() : []);
+      setShowCashModal(false);
+      setCashForm(EMPTY_CASH_FORM);
+    } else {
+      toast.error(res.error || "บันทึกไม่สำเร็จ");
+    }
+  };
+
+  const openUseModal = cc => {
+    setUseTarget(cc);
+    setUseAmount("");
+    setShowUseModal(true);
+  };
+
+  const handleUseCash = async () => {
+    if (!useTarget) return;
+    const amount = parseFloat(useAmount) || 0;
+    if (amount <= 0) { toast.error("กรุณากรอกจำนวนเงิน"); return; }
+    setIsUsingCash(true);
+    const res = await postApi({
+      action: "useCashCoupon",
+      payload: { id: useTarget.ID, amountToUse: amount },
+    });
+    setIsUsingCash(false);
+    if (res.success) {
+      toast.success(`ใช้เครดิต ฿${amount.toLocaleString()} — เหลือ ฿${res.remainingCredit?.toLocaleString()}`);
+      invalidateCache("getCashCoupons");
+      const updated = await fetchApi("getCashCoupons", { skipCache: true });
+      setCashCoupons(Array.isArray(updated) ? [...updated].reverse() : []);
+      setShowUseModal(false);
+    } else {
+      toast.error(res.error || "บันทึกไม่สำเร็จ");
+    }
+  };
+
+  const filteredCash = useMemo(() => {
+    return cashCoupons.filter(cc => {
+      if (cashStatus !== "all" && cc.Status !== cashStatus) return false;
+      if (cashSearch.trim()) {
+        const q = cashSearch.toLowerCase();
+        return String(cc.CustomerName || "").toLowerCase().includes(q) ||
+               String(cc.Phone || "").includes(q) ||
+               String(cc.TemplateName || "").toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [cashCoupons, cashSearch, cashStatus]);
+
   // ---- Type label helper ----
   const typeLabel = (type) =>
     type === "PERCENT" ? "ลด%" : type === "FIXED_AMOUNT" ? "ลดเงิน" : type === "FREE_ITEM" ? "ของแถม" : type || "-";
@@ -222,31 +345,36 @@ export default function Coupons() {
           </p>
         </div>
 
-        {tab === "coupons" && (
-          <button
-            onClick={openAdd}
-            className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold text-sm transition-colors shadow-sm flex items-center gap-2"
-          >
-            <Plus size={16} /> สร้างคูปองใหม่
+        <div className="flex gap-2">
+          {tab === "coupons" && (
+            <button onClick={openAdd}
+              className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold text-sm transition-colors shadow-sm flex items-center gap-2">
+              <Plus size={16} /> สร้างคูปองใหม่
+            </button>
+          )}
+          {tab === "cash" && (
+            <button onClick={() => { setCashForm(EMPTY_CASH_FORM); setShowCashModal(true); }}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors shadow-sm flex items-center gap-2">
+              <Plus size={16} /> ขายคูปองเงินสด
+            </button>
+          )}
+          <button onClick={loadAll} className="px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors flex items-center gap-1">
+            <RefreshCw size={14} /> รีเฟรช
           </button>
-        )}
+        </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         {[
           { key: "coupons", label: "คูปอง", icon: <Ticket size={15} /> },
-          { key: "issue", label: "ออกคูปอง", icon: <Gift size={15} /> },
+          { key: "issue",   label: "ออกคูปอง", icon: <Gift size={15} /> },
+          { key: "cash",    label: `คูปองเงินสด (${cashCoupons.filter(c => c.Status === "ACTIVE").length})`, icon: <Banknote size={15} /> },
         ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-1.5 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
-              tab === t.key
-                ? "bg-white shadow text-violet-700"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
+              tab === t.key ? "bg-white shadow text-violet-700" : "text-gray-500 hover:text-gray-700"
+            }`}>
             {t.icon} {t.label}
           </button>
         ))}
@@ -533,6 +661,135 @@ export default function Coupons() {
         </div>
       )}
 
+      {/* ── TAB: CASH COUPON ── */}
+      {tab === "cash" && (
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input value={cashSearch} onChange={e => setCashSearch(e.target.value)}
+                placeholder="ค้นหาชื่อลูกค้า / เบอร์โทร..."
+                className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400" />
+              {cashSearch && <button onClick={() => setCashSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>}
+            </div>
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+              {[{ k: "all", l: "ทั้งหมด" }, { k: "ACTIVE", l: "ใช้งาน" }, { k: "USED_UP", l: "ใช้หมด" }, { k: "EXPIRED", l: "หมดอายุ" }].map(s => (
+                <button key={s.k} onClick={() => setCashStatus(s.k)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${cashStatus === s.k ? "bg-white shadow text-emerald-600" : "text-gray-500 hover:text-gray-700"}`}>
+                  {s.l}
+                </button>
+              ))}
+            </div>
+            <div className="text-sm text-gray-400">{filteredCash.length} รายการ</div>
+          </div>
+
+          {/* Summary */}
+          {cashCoupons.length > 0 && (() => {
+            const active = cashCoupons.filter(c => c.Status === "ACTIVE");
+            const totalPaid = active.reduce((s, c) => s + (parseFloat(c.PaidAmount) || 0), 0);
+            const totalBonus = active.reduce((s, c) => s + (parseFloat(c.BonusAmount) || 0), 0);
+            const totalRemaining = active.reduce((s, c) => s + (parseFloat(c.RemainingCredit) || 0), 0);
+            return (
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "ยอดรับชำระรวม", val: `฿${totalPaid.toLocaleString()}`, cls: "text-emerald-600" },
+                  { label: "โบนัสเครดิตรวม", val: `฿${totalBonus.toLocaleString()}`, cls: "text-amber-600" },
+                  { label: "เครดิตคงเหลือรวม", val: `฿${totalRemaining.toLocaleString()}`, cls: "text-blue-600" },
+                ].map(s => (
+                  <div key={s.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+                    <div className={`text-lg font-bold ${s.cls}`}>{s.val}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* Table */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {filteredCash.length === 0 ? (
+              <div className="py-16 text-center text-gray-400">
+                <Banknote size={40} className="mx-auto mb-3 opacity-20" />
+                <p className="text-sm">{cashCoupons.length === 0 ? "ยังไม่มีคูปองเงินสด" : "ไม่พบรายการที่ตรงเงื่อนไข"}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[800px]">
+                  <thead className="bg-emerald-50/60 border-b border-emerald-100 font-semibold text-emerald-800 sticky top-0">
+                    <tr>
+                      <th className="py-3 px-5">ลูกค้า</th>
+                      <th className="py-3 px-4">แผนคูปอง</th>
+                      <th className="py-3 px-4 text-right">จ่ายจริง</th>
+                      <th className="py-3 px-4 text-right">โบนัส</th>
+                      <th className="py-3 px-4 text-right">เครดิตรวม</th>
+                      <th className="py-3 px-4 text-right">ใช้แล้ว</th>
+                      <th className="py-3 px-4 text-right">คงเหลือ</th>
+                      <th className="py-3 px-4">หมดอายุ</th>
+                      <th className="py-3 px-4 text-center">สถานะ</th>
+                      <th className="py-3 px-4 text-center">จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredCash.map((cc, i) => {
+                      const remaining = parseFloat(cc.RemainingCredit) || 0;
+                      const total     = parseFloat(cc.TotalCredit)     || 0;
+                      const used      = parseFloat(cc.UsedCredit)       || 0;
+                      const pct       = total > 0 ? Math.round((used / total) * 100) : 0;
+                      const isExpired = cc.ExpiryDate && new Date(cc.ExpiryDate) < new Date();
+                      const status    = isExpired && cc.Status === "ACTIVE" ? "EXPIRED" : cc.Status;
+                      const statusMap = { ACTIVE: "bg-green-50 text-green-700 border-green-100 ใช้งาน", USED_UP: "bg-gray-100 text-gray-500 border-gray-200 ใช้หมดแล้ว", EXPIRED: "bg-red-50 text-red-600 border-red-100 หมดอายุ" };
+                      const [sCls, sLabel] = (statusMap[status] || statusMap.ACTIVE).split(" ").slice(0, -1).join(" ").split(/(?=ใช้)/).concat([(statusMap[status] || "ใช้งาน").split(" ").pop()]);
+                      return (
+                        <tr key={i} className="hover:bg-gray-50/60 transition-colors">
+                          <td className="py-3.5 px-5">
+                            <div className="font-semibold text-gray-900">{cc.CustomerName || "-"}</div>
+                            <div className="text-xs text-gray-400 flex items-center gap-1"><Phone size={10} /> {cc.Phone || "-"}</div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="text-gray-700 text-xs">{cc.TemplateName || "-"}</div>
+                            <div className="text-[10px] text-gray-300">{fmt(cc.PurchaseDate)}</div>
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-semibold text-gray-700">฿{Number(cc.PaidAmount || 0).toLocaleString()}</td>
+                          <td className="py-3.5 px-4 text-right text-amber-600 font-semibold">
+                            {Number(cc.BonusAmount || 0) > 0 ? `+฿${Number(cc.BonusAmount).toLocaleString()}` : "-"}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-bold text-emerald-700">฿{Number(total).toLocaleString()}</td>
+                          <td className="py-3.5 px-4 text-right text-red-500 text-xs">{used > 0 ? `฿${Number(used).toLocaleString()}` : "-"}</td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className={`font-bold ${remaining === 0 ? "text-gray-400" : remaining < total * 0.2 ? "text-red-500" : "text-emerald-700"}`}>
+                              ฿{Number(remaining).toLocaleString()}
+                            </div>
+                            <div className="w-16 ml-auto mt-0.5 bg-gray-100 rounded-full h-1 overflow-hidden">
+                              <div className={`h-full rounded-full ${pct >= 100 ? "bg-gray-300" : pct >= 80 ? "bg-red-400" : "bg-emerald-500"}`} style={{ width: `${100 - pct}%` }} />
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-xs">
+                            <span className={isExpired ? "text-red-500 font-medium" : "text-gray-500"}>{fmt(cc.ExpiryDate)}</span>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status === "ACTIVE" ? "bg-green-50 text-green-700 border-green-100" : status === "USED_UP" ? "bg-gray-100 text-gray-500 border-gray-200" : "bg-red-50 text-red-600 border-red-100"}`}>
+                              {status === "ACTIVE" ? "ใช้งาน" : status === "USED_UP" ? "ใช้หมด" : "หมดอายุ"}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <button onClick={() => openUseModal(cc)}
+                              disabled={status !== "ACTIVE" || remaining === 0}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                              <Banknote size={12} /> ใช้เครดิต
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── ADD / EDIT MODAL ── */}
       {showModal && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -764,6 +1021,155 @@ export default function Coupons() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ── MODAL: Buy Cash Coupon ── */}
+      {showCashModal && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-emerald-50/50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <Banknote size={20} />
+                </div>
+                <h3 className="text-base font-bold text-gray-900">ขายคูปองเงินสด</h3>
+              </div>
+              <button onClick={() => setShowCashModal(false)} className="p-2 hover:bg-gray-200 rounded-full text-gray-500"><X size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Customer autocomplete */}
+              <div className="relative">
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">ชื่อลูกค้า <span className="text-red-400">*</span></label>
+                <div className="relative">
+                  <Users size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <input value={cashForm.customerName} onChange={e => onCashCustomerInput(e.target.value)}
+                    onBlur={() => setTimeout(() => setShowCashSugg(false), 150)}
+                    placeholder="ค้นหาหรือพิมพ์ชื่อลูกค้า..."
+                    className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400" />
+                </div>
+                {showCashSugg && cashSuggestions.length > 0 && (
+                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                    {cashSuggestions.map((c, i) => (
+                      <button key={i} onMouseDown={() => selectCashCustomer(c)}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-emerald-50 flex items-center justify-between">
+                        <span className="font-medium text-gray-900">{c.Name}</span>
+                        <span className="text-xs text-gray-400"><Phone size={11} className="inline mr-1" />{c.Phone || "-"}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">เบอร์โทร</label>
+                <div className="relative">
+                  <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <input value={cashForm.phone} onChange={e => setCashForm(p => ({ ...p, phone: e.target.value }))}
+                    placeholder="0812345678" className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400" />
+                </div>
+              </div>
+
+              {/* Template name */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">ชื่อแผนคูปอง</label>
+                <input value={cashForm.templateId} onChange={e => setCashForm(p => ({ ...p, templateId: e.target.value }))}
+                  placeholder="เช่น ซื้อ 1,000 รับ 1,100 บาท"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400" />
+              </div>
+
+              {/* Paid + Bonus */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">ยอดที่รับชำระ (฿) <span className="text-red-400">*</span></label>
+                  <input type="number" value={cashForm.paidAmount} onChange={e => setCashForm(p => ({ ...p, paidAmount: e.target.value }))}
+                    placeholder="1000" min="0"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">โบนัสเครดิต (฿)</label>
+                  <input type="number" value={cashForm.bonusAmount} onChange={e => setCashForm(p => ({ ...p, bonusAmount: e.target.value }))}
+                    placeholder="100" min="0"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400" />
+                </div>
+              </div>
+
+              {/* Expiry days */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">อายุการใช้งาน (วัน)</label>
+                <input type="number" value={cashForm.expiryDays} onChange={e => setCashForm(p => ({ ...p, expiryDays: e.target.value }))}
+                  placeholder="365" min="1"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400" />
+              </div>
+
+              {/* Preview */}
+              {(parseFloat(cashForm.paidAmount) > 0 || parseFloat(cashForm.bonusAmount) > 0) && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-sm space-y-1">
+                  <div className="font-bold text-emerald-800">สรุป</div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>รับชำระ:</span><span className="font-semibold">฿{Number(parseFloat(cashForm.paidAmount)||0).toLocaleString()}</span>
+                  </div>
+                  {parseFloat(cashForm.bonusAmount) > 0 && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>โบนัส:</span><span className="font-semibold">+฿{Number(parseFloat(cashForm.bonusAmount)||0).toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-emerald-700 font-bold border-t border-emerald-200 pt-1 mt-1">
+                    <span>เครดิตที่ลูกค้าได้รับ:</span>
+                    <span>฿{((parseFloat(cashForm.paidAmount)||0) + (parseFloat(cashForm.bonusAmount)||0)).toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+
+              <button onClick={handleBuyCashCoupon} disabled={isBuyingCash}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-colors">
+                {isBuyingCash ? <><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</> : <><Check size={16} /> ยืนยันขายคูปองเงินสด</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Use Cash Coupon ── */}
+      {showUseModal && useTarget && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 shrink-0">
+              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Banknote size={18} className="text-emerald-600" /> ใช้เครดิตคูปองเงินสด
+              </h3>
+              <button onClick={() => setShowUseModal(false)} className="p-2 hover:bg-gray-200 rounded-full text-gray-500"><X size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-sm space-y-1.5">
+                <div className="font-bold text-emerald-800 text-base">{useTarget.CustomerName}</div>
+                <div className="text-emerald-600 text-xs">{useTarget.TemplateName || "คูปองเงินสด"}</div>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-gray-500">เครดิตคงเหลือ</span>
+                  <span className="font-bold text-xl text-emerald-700">฿{Number(useTarget.RemainingCredit || 0).toLocaleString()}</span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-gray-400">
+                  <Calendar size={11} /> หมดอายุ: {fmt(useTarget.ExpiryDate)}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">จำนวนเงินที่ใช้ (฿) <span className="text-red-400">*</span></label>
+                <input type="number" value={useAmount} onChange={e => setUseAmount(e.target.value)}
+                  placeholder={`สูงสุด ฿${Number(useTarget.RemainingCredit || 0).toLocaleString()}`}
+                  min="1" max={parseFloat(useTarget.RemainingCredit) || 0}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400" />
+              </div>
+              {parseFloat(useAmount) > parseFloat(useTarget.RemainingCredit || 0) && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                  <AlertCircle size={13} /> จำนวนเกินเครดิตที่เหลืออยู่
+                </div>
+              )}
+              <button onClick={handleUseCash} disabled={isUsingCash || !useAmount}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-colors">
+                {isUsingCash ? <><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</> : <><Check size={16} /> ยืนยันใช้ ฿{Number(parseFloat(useAmount)||0).toLocaleString()}</>}
+              </button>
+            </div>
           </div>
         </div>
       )}
