@@ -1978,9 +1978,10 @@ function purchaseSessionPackage(payload) {
   const packageType  = String(pkgRow[8] || "POINTS").trim() || "POINTS";
   const sessionCount = parseInt(pkgRow[9]) || 0;
   const expiryDays   = parseInt(pkgRow[10]) || 365;
+  const rewardType   = String(pkgRow[15] || "NONE").trim() || "NONE";
 
   if (packageType !== "SESSIONS") return jsonResponse({ error: "แพคเกจนี้ไม่ใช่แบบครั้ง" });
-  if (sessionCount <= 0)           return jsonResponse({ error: "จำนวนครั้งไม่ถูกต้อง (กรุณาตั้งค่า SessionCount ในแพคเกจ)" });
+  if (sessionCount <= 0 && rewardType === "NONE") return jsonResponse({ error: "แพคเกจนี้ยังไม่ได้กำหนดสินค้าหรือคูปอง" });
 
   let cpSheet = ss.getSheetByName("CustomerPackages");
   if (!cpSheet) {
@@ -1997,7 +1998,6 @@ function purchaseSessionPackage(payload) {
   const actor          = payload._actor ? payload._actor.username : "System";
   const bonusSvcName   = String(pkgRow[12] || "").trim();
   const bonusSvcSess   = parseInt(pkgRow[13]) || 0;
-  const rewardType     = String(pkgRow[15] || "NONE").trim() || "NONE";
   const rewardRef      = String(pkgRow[16] || "").trim();  // barcode for ITEM, couponId for COUPON
   const rewardQty      = Math.max(1, parseInt(pkgRow[17]) || 1);
   const rewardName     = String(pkgRow[18] || "").trim();  // product name for ITEM type
