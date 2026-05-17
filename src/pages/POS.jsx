@@ -94,8 +94,9 @@ export default function POS() {
       const prod      = products.find(p => String(p.Barcode || "").trim() === barcode);
       const realPrice = parseFloat(prod?.Price || prod?.price || 0);
       const freeId    = `free-coupon-${selectedCoupon.ID}`;
+      // Always replace any existing free-item entry so price is always correct
       setCart(prev => {
-        if (prev.find(i => i.id === freeId)) return prev; // already added
+        const withoutFree = prev.filter(i => !i.isFreeItem);
         return [{
           id:          freeId,
           Barcode:     barcode,
@@ -107,7 +108,7 @@ export default function POS() {
           vatStatus:   prod?.VatStatus || prod?.vatStatus || "NON VAT",
           qty:         1,
           isFreeItem:  true,
-        }, ...prev];
+        }, ...withoutFree];
       });
     } else {
       // Remove free-item cart entries when coupon is deselected
@@ -336,9 +337,14 @@ export default function POS() {
     const base = Math.max(0, subtotal - discountAmount);
     if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
     if (selectedCoupon.Type === "FREE_ITEM") {
-      const freeId   = `free-coupon-${selectedCoupon.ID}`;
-      const freeItem = cart.find(i => i.id === freeId);
-      return freeItem ? freeItem.price * freeItem.qty : 0;
+      const freeId    = `free-coupon-${selectedCoupon.ID}`;
+      const freeItem  = cart.find(i => i.id === freeId);
+      if (!freeItem) return 0;
+      // Use cart item price; fallback to product lookup if somehow 0
+      if (freeItem.price > 0) return freeItem.price * freeItem.qty;
+      const barcode   = String(selectedCoupon.FreeItemBarcode || "").trim();
+      const prod      = barcode ? products.find(p => String(p.Barcode || "").trim() === barcode) : null;
+      return parseFloat(prod?.Price || prod?.price || 0);
     }
     return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
   })();
