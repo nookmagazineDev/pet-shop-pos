@@ -86,7 +86,7 @@ export default function POS() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, isInvoiceModalOpen, isLoadingProducts]);
 
-  // Auto-add FREE_ITEM coupon product to cart at real price when selected
+  // Handle FREE_ITEM coupon — add to cart only if barcode not already there
   useEffect(() => {
     if (selectedCoupon?.Type === "FREE_ITEM" && selectedCoupon?.FreeItemBarcode) {
       const barcode   = String(selectedCoupon.FreeItemBarcode).trim();
@@ -94,24 +94,30 @@ export default function POS() {
       const prod      = products.find(p => String(p.Barcode || "").trim() === barcode);
       const realPrice = parseFloat(prod?.Price || prod?.price || 0);
       const freeId    = `free-coupon-${selectedCoupon.ID}`;
-      // Always replace any existing free-item entry so price is always correct
+
       setCart(prev => {
+        // Remove any old isFreeItem entries first
         const withoutFree = prev.filter(i => !i.isFreeItem);
+        // If the same barcode is already in cart as a regular item → don't add duplicate
+        const alreadyInCart = withoutFree.some(
+          i => String(i.Barcode || i.id || "").trim() === barcode
+        );
+        if (alreadyInCart) return withoutFree; // couponDiscount will pick it up by barcode
+        // Otherwise add the free item
         return [{
-          id:          freeId,
-          Barcode:     barcode,
-          Name:        `🎁 ${itemName}`,
-          name:        `🎁 ${itemName}`,
-          price:       realPrice,
-          costPrice:   realPrice,
-          image:       prod?.ImageURL || "https://placehold.co/300x300?text=Free",
-          vatStatus:   prod?.VatStatus || prod?.vatStatus || "NON VAT",
-          qty:         1,
-          isFreeItem:  true,
+          id:        freeId,
+          Barcode:   barcode,
+          Name:      `🎁 ${itemName}`,
+          name:      `🎁 ${itemName}`,
+          price:     realPrice,
+          costPrice: realPrice,
+          image:     prod?.ImageURL || "https://placehold.co/300x300?text=Free",
+          vatStatus: prod?.VatStatus || prod?.vatStatus || "NON VAT",
+          qty:       1,
+          isFreeItem: true,
         }, ...withoutFree];
       });
     } else {
-      // Remove free-item cart entries when coupon is deselected
       setCart(prev => prev.filter(i => !i.isFreeItem));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,13 +343,17 @@ export default function POS() {
     const base = Math.max(0, subtotal - discountAmount);
     if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
     if (selectedCoupon.Type === "FREE_ITEM") {
-      const freeId    = `free-coupon-${selectedCoupon.ID}`;
-      const freeItem  = cart.find(i => i.id === freeId);
-      if (!freeItem) return 0;
-      // Use cart item price; fallback to product lookup if somehow 0
-      if (freeItem.price > 0) return freeItem.price * freeItem.qty;
-      const barcode   = String(selectedCoupon.FreeItemBarcode || "").trim();
-      const prod      = barcode ? products.find(p => String(p.Barcode || "").trim() === barcode) : null;
+      const barcode  = String(selectedCoupon.FreeItemBarcode || "").trim();
+      if (!barcode) return 0;
+      // 1. Dedicated free-item entry (added by coupon when barcode wasn't in cart)
+      const freeId   = `free-coupon-${selectedCoupon.ID}`;
+      const freeItem = cart.find(i => i.id === freeId);
+      if (freeItem && freeItem.price > 0) return freeItem.price * freeItem.qty;
+      // 2. Regular item already in cart with same barcode → discount its price (1 unit)
+      const existing = cart.find(i => !i.isFreeItem && String(i.Barcode || i.id || "").trim() === barcode);
+      if (existing) return existing.price; // discount 1 unit (qty:1 coupon)
+      // 3. Fallback: product lookup
+      const prod = products.find(p => String(p.Barcode || "").trim() === barcode);
       return parseFloat(prod?.Price || prod?.price || 0);
     }
     return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
