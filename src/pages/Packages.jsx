@@ -15,7 +15,14 @@ const EMPTY_FORM = {
   packageType: "POINTS", sessionCount: "", expiryDays: "365",
   bonusSessions: "0", bonusServiceName: "", bonusServiceSessions: "0",
   subtype: "GENERAL",
+  rewardType: "NONE", rewardRef: "", rewardQty: "1",
 };
+
+const REWARD_TYPES = [
+  { k: "NONE",   label: "ไม่มี"   },
+  { k: "COUPON", label: "คูปอง"   },
+  { k: "ITEM",   label: "สินค้า"  },
+];
 
 const SUBTYPES = [
   { k: "GENERAL",      label: "ทั่วไป"       },
@@ -191,6 +198,9 @@ export default function Packages() {
       bonusServiceName:   pkg.BonusServiceName || "",
       bonusServiceSessions: String(pkg.BonusServiceSessions || "0"),
       subtype:            pkg.Subtype || "GENERAL",
+      rewardType:         pkg.RewardType || "NONE",
+      rewardRef:          pkg.RewardRef || "",
+      rewardQty:          String(pkg.RewardQty || "1"),
     });
     setShowForm(true);
   };
@@ -219,6 +229,9 @@ export default function Packages() {
         bonusServiceName:     form.bonusServiceName.trim(),
         bonusServiceSessions: parseInt(form.bonusServiceSessions) || 0,
         subtype:              form.subtype || "GENERAL",
+        rewardType:           form.rewardType || "NONE",
+        rewardRef:            form.rewardRef.trim(),
+        rewardQty:            parseInt(form.rewardQty) || 1,
       },
     });
     setIsSaving(false);
@@ -287,6 +300,11 @@ export default function Packages() {
     setIsBuying(false);
     if (res.success) {
       toast.success(`ซื้อแพคเกจครั้งสำเร็จ — ${res.totalSessions} ครั้ง`);
+      if (res.rewardIssued) {
+        toast.success(`🎁 ออกคูปองแถม: ${res.rewardIssued.name} x${res.rewardIssued.qty}`, { duration: 4000 });
+      } else if (res.rewardType === "ITEM" && res.rewardQty > 0) {
+        toast(`🎁 อย่าลืมมอบสินค้าแถม: ${res.rewardRef} x${res.rewardQty}`, { duration: 5000, icon: "🎁" });
+      }
       invalidateCache("getCustomerPackages");
       invalidateCache("getCustomers");
       const updated = await fetchApi("getCustomerPackages", { skipCache: true });
@@ -490,7 +508,15 @@ export default function Packages() {
                           </div>
                         )}
                       </td>
-                      <td className="py-4 px-4 text-right text-gray-500 text-xs">{Number(pkg.ExpiryDays || 365).toLocaleString()} วัน</td>
+                      <td className="py-4 px-4 text-right text-gray-500 text-xs">
+                        <div>{Number(pkg.ExpiryDays || 365).toLocaleString()} วัน</div>
+                        {pkg.RewardType && pkg.RewardType !== "NONE" && pkg.RewardRef && (
+                          <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded-full">
+                            <Gift size={9} />
+                            {pkg.RewardType === "COUPON" ? "คูปอง" : "สินค้า"}: {String(pkg.RewardRef).substring(0, 18)}{String(pkg.RewardRef).length > 18 ? "…" : ""} x{Number(pkg.RewardQty || 1)}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-4 px-4 text-center">
                         <button onClick={() => toggleStatus(pkg)} title={isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}>
                           {isActive
@@ -850,6 +876,51 @@ export default function Packages() {
                 </div>
               )}
 
+              {/* ── Purchase Reward ─────────────────────────── */}
+              <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-2">
+                <p className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
+                  <Gift size={13} /> รางวัลเมื่อซื้อ (ไม่บังคับ)
+                </p>
+                {/* Reward type selector */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {REWARD_TYPES.map(r => (
+                    <button key={r.k} type="button" onClick={() => setForm(p => ({ ...p, rewardType: r.k, rewardRef: r.k === "NONE" ? "" : p.rewardRef }))}
+                      className={`py-2 rounded-lg text-xs font-semibold border-2 transition-all ${form.rewardType === r.k ? "border-purple-500 bg-purple-100 text-purple-800" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}>
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                {form.rewardType !== "NONE" && (
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                        {form.rewardType === "COUPON" ? "ชื่อ / ID คูปอง" : "บาร์โค้ด / ชื่อสินค้า"}
+                      </label>
+                      <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                        placeholder={form.rewardType === "COUPON" ? "เช่น CPT-xxx หรือ ส่วนลด 10%" : "เช่น 8851234100036"}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวน</label>
+                      <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                        placeholder="1" min="1"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                    </div>
+                  </div>
+                )}
+                {form.rewardType === "COUPON" && form.rewardRef && (
+                  <p className="text-[10px] text-purple-600 bg-purple-100 px-2 py-1 rounded-lg">
+                    เมื่อซื้อ จะออกคูปองนี้ให้ลูกค้าโดยอัตโนมัติ
+                  </p>
+                )}
+                {form.rewardType === "ITEM" && form.rewardRef && (
+                  <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">
+                    ระบบจะแจ้งเตือนให้มอบสินค้าแถมให้ลูกค้าเมื่อซื้อ
+                  </p>
+                )}
+              </div>
+
               {/* Expiry */}
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1.5 block">อายุการใช้งาน (วัน)</label>
@@ -946,6 +1017,30 @@ export default function Packages() {
                   placeholder="0" min="0"
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-violet-400" />
               </div>
+
+              {/* Reward preview */}
+              {(() => {
+                const selPkg = packages.find(p => p.PackageID === buyForm.packageId);
+                if (!selPkg || !selPkg.RewardType || selPkg.RewardType === "NONE" || !selPkg.RewardRef) return null;
+                return (
+                  <div className="flex items-start gap-2 bg-purple-50 border border-purple-100 rounded-xl px-3 py-2.5 text-xs">
+                    <Gift size={14} className="text-purple-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold text-purple-700">รางวัลที่ลูกค้าจะได้รับ: </span>
+                      <span className="text-purple-600">
+                        {selPkg.RewardType === "COUPON" ? `คูปอง "${selPkg.RewardRef}"` : `สินค้า "${selPkg.RewardRef}"`}
+                        {" "}x{Number(selPkg.RewardQty || 1)}
+                      </span>
+                      {selPkg.RewardType === "COUPON" && (
+                        <div className="text-purple-400 mt-0.5">จะออกคูปองอัตโนมัติเมื่อยืนยัน</div>
+                      )}
+                      {selPkg.RewardType === "ITEM" && (
+                        <div className="text-amber-500 mt-0.5">⚠️ กรุณามอบสินค้าให้ลูกค้าด้วย</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <button onClick={handleBuySession} disabled={isBuying}
                 className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
