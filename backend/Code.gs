@@ -18,8 +18,9 @@ function setup() {
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
     "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"],
     "Pets": ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"],
-    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays"],
-    "CustomerPackages": ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor"],
+    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays", "BonusSessions", "BonusServiceName", "BonusServiceSessions", "Subtype"],
+    "CustomerPackages": ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor", "BonusServiceName", "BonusServiceSessions", "BonusServiceUsed"],
+    "CashCoupons": ["ID", "CustomerName", "Phone", "TemplateName", "PaidAmount", "BonusAmount", "TotalCredit", "UsedCredit", "RemainingCredit", "PurchaseDate", "ExpiryDate", "Status", "Actor"],
     "PackageUsage": ["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"],
     "PointsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"],
     "Coupons": ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt", "FreeItemBarcode", "FreeItemName"],
@@ -253,6 +254,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("PackageUsage"));
   } else if (action === "getPets") {
     return jsonResponse(readSheetData("Pets"));
+  } else if (action === "getCashCoupons") {
+    return jsonResponse(readSheetData("CashCoupons"));
   }
 
   return jsonResponse({ error: "Invalid action" });
@@ -326,6 +329,14 @@ function doPost(e) {
       return savePet(data.payload);
     } else if (action === "deletePet") {
       return deletePet(data.payload);
+    } else if (action === "purchaseCashCoupon") {
+      return purchaseCashCoupon(data.payload);
+    } else if (action === "useCashCoupon") {
+      return useCashCoupon(data.payload);
+    } else if (action === "extendPackageExpiry") {
+      return extendPackageExpiry(data.payload);
+    } else if (action === "useBonusService") {
+      return useBonusService(data.payload);
     }
 
     return jsonResponse({ error: "Invalid POST action" });
@@ -1471,6 +1482,10 @@ function savePackage(payload) {
         sheet.getRange(i + 1, 9).setValue(payload.packageType || String(data[i][8] || "POINTS"));
         sheet.getRange(i + 1, 10).setValue(parseInt(payload.sessionCount) || parseInt(data[i][9]) || 0);
         sheet.getRange(i + 1, 11).setValue(parseInt(payload.expiryDays) || parseInt(data[i][10]) || 365);
+        sheet.getRange(i + 1, 12).setValue(parseInt(payload.bonusSessions) || 0);
+        sheet.getRange(i + 1, 13).setValue(payload.bonusServiceName || "");
+        sheet.getRange(i + 1, 14).setValue(parseInt(payload.bonusServiceSessions) || 0);
+        sheet.getRange(i + 1, 15).setValue(payload.subtype || "GENERAL");
         found = true;
         break;
       }
@@ -1479,7 +1494,7 @@ function savePackage(payload) {
 
   if (!found) {
     const newId = "PKG-" + new Date().getTime();
-    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date(), payload.packageType || "POINTS", parseInt(payload.sessionCount) || 0, parseInt(payload.expiryDays) || 365]);
+    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date(), payload.packageType || "POINTS", parseInt(payload.sessionCount) || 0, parseInt(payload.expiryDays) || 365, parseInt(payload.bonusSessions) || 0, payload.bonusServiceName || "", parseInt(payload.bonusServiceSessions) || 0, payload.subtype || "GENERAL"]);
   }
   return jsonResponse({ success: true });
 }
@@ -1720,11 +1735,15 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight("bold");
     }
   } else if (sheetName === "Packages") {
-    // Backward-compat: add PackageType, SessionCount, ExpiryDays if missing
+    // Backward-compat: add all Packages columns if missing
     const pkgNewCols = [
-      { col: 9,  name: "PackageType"  },
-      { col: 10, name: "SessionCount" },
-      { col: 11, name: "ExpiryDays"   },
+      { col: 9,  name: "PackageType"          },
+      { col: 10, name: "SessionCount"          },
+      { col: 11, name: "ExpiryDays"            },
+      { col: 12, name: "BonusSessions"         },
+      { col: 13, name: "BonusServiceName"      },
+      { col: 14, name: "BonusServiceSessions"  },
+      { col: 15, name: "Subtype"               },
     ];
     pkgNewCols.forEach(function(c) {
       const cell = sheet.getRange(1, c.col);
@@ -1756,11 +1775,31 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, PET_HEADERS.length).setFontWeight("bold");
     }
   } else if (sheetName === "CustomerPackages") {
-    const CP_HEADERS = ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor"];
+    const CP_HEADERS = ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor", "BonusServiceName", "BonusServiceSessions", "BonusServiceUsed"];
     const cpH = sheet.getRange(1, 1, 1, CP_HEADERS.length).getValues()[0];
     if (!cpH[0] || cpH[0] !== "ID") {
       sheet.getRange(1, 1, 1, CP_HEADERS.length).setValues([CP_HEADERS]);
       sheet.getRange(1, 1, 1, CP_HEADERS.length).setFontWeight("bold");
+    } else {
+      // Migrate: add bonus service cols if missing
+      const bsCols = [
+        { col: 14, name: "BonusServiceName"      },
+        { col: 15, name: "BonusServiceSessions"  },
+        { col: 16, name: "BonusServiceUsed"      },
+      ];
+      bsCols.forEach(function(c) {
+        const cell = sheet.getRange(1, c.col);
+        if (!cell.getValue() || cell.getValue() !== c.name) {
+          cell.setValue(c.name); cell.setFontWeight("bold");
+        }
+      });
+    }
+  } else if (sheetName === "CashCoupons") {
+    const CC_HEADERS = ["ID","CustomerName","Phone","TemplateName","PaidAmount","BonusAmount","TotalCredit","UsedCredit","RemainingCredit","PurchaseDate","ExpiryDate","Status","Actor"];
+    const ccH = sheet.getRange(1, 1, 1, CC_HEADERS.length).getValues()[0];
+    if (!ccH[0] || ccH[0] !== "ID") {
+      sheet.getRange(1, 1, 1, CC_HEADERS.length).setValues([CC_HEADERS]);
+      sheet.getRange(1, 1, 1, CC_HEADERS.length).setFontWeight("bold");
     }
   } else if (sheetName === "PackageUsage") {
     const PU_HEADERS = ["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"];
@@ -1946,8 +1985,10 @@ function purchaseSessionPackage(payload) {
   const expiryDate   = new Date(purchaseDate);
   expiryDate.setDate(expiryDate.getDate() + expiryDays);
 
-  const newId = "CP-" + purchaseDate.getTime();
-  const actor = payload._actor ? payload._actor.username : "System";
+  const newId          = "CP-" + purchaseDate.getTime();
+  const actor          = payload._actor ? payload._actor.username : "System";
+  const bonusSvcName   = String(pkgRow[12] || "").trim();
+  const bonusSvcSess   = parseInt(pkgRow[13]) || 0;
 
   cpSheet.appendRow([
     newId,
@@ -1962,7 +2003,10 @@ function purchaseSessionPackage(payload) {
     expiryDate,
     "ACTIVE",
     parseFloat(payload.paidAmount || pkgRow[2]) || 0,
-    actor
+    actor,
+    bonusSvcName,   // BonusServiceName (col 14)
+    bonusSvcSess,   // BonusServiceSessions (col 15)
+    0               // BonusServiceUsed (col 16)
   ]);
 
   // Auto-save customer if not exists
@@ -2061,6 +2105,161 @@ function addManualPoints(payload) {
     newBalance: newBalance,
     message: (points > 0 ? "เพิ่ม" : "หัก") + " " + Math.abs(points) + " พ้อยให้ " + customerName + " สำเร็จ"
   });
+}
+
+// ─────────────────────────────────────────────────────
+// CASH COUPON FUNCTIONS
+// ─────────────────────────────────────────────────────
+
+function purchaseCashCoupon(payload) {
+  const ss           = getSpreadsheet();
+  const customerName = String(payload.customerName || "").trim();
+  const phone        = String(payload.phone || "").trim();
+  const templateName = String(payload.templateName || "").trim();
+  const paidAmount   = parseFloat(payload.paidAmount)   || 0;
+  const bonusAmount  = parseFloat(payload.bonusAmount)  || 0;
+  const expiryDays   = parseInt(payload.expiryDays)     || 365;
+
+  if (!customerName) return jsonResponse({ error: "กรุณาระบุชื่อลูกค้า" });
+  if (paidAmount <= 0) return jsonResponse({ error: "จำนวนเงินต้องมากกว่า 0" });
+
+  let sheet = ss.getSheetByName("CashCoupons");
+  if (!sheet) {
+    sheet = ss.insertSheet("CashCoupons");
+    const CC_HDR = ["ID","CustomerName","Phone","TemplateName","PaidAmount","BonusAmount","TotalCredit","UsedCredit","RemainingCredit","PurchaseDate","ExpiryDate","Status","Actor"];
+    sheet.appendRow(CC_HDR);
+    sheet.getRange(1, 1, 1, CC_HDR.length).setFontWeight("bold");
+  }
+
+  const now        = new Date();
+  const expiryDate = new Date(now);
+  expiryDate.setDate(expiryDate.getDate() + expiryDays);
+  const totalCredit = paidAmount + bonusAmount;
+  const newId       = "CCB-" + now.getTime();
+  const actor       = payload._actor ? payload._actor.username : "System";
+
+  sheet.appendRow([newId, customerName, phone, templateName, paidAmount, bonusAmount, totalCredit, 0, totalCredit, now, expiryDate, "ACTIVE", actor]);
+
+  // Auto-save customer
+  saveCustomer({ name: customerName, phone: phone });
+
+  logActivity("CashCoupon", "Purchase", newId, payload._actor);
+  return jsonResponse({ success: true, id: newId, totalCredit: totalCredit, expiryDate: expiryDate });
+}
+
+function useCashCoupon(payload) {
+  const ss           = getSpreadsheet();
+  const id           = String(payload.id || "").trim();
+  const amountToUse  = parseFloat(payload.amountToUse) || 0;
+  const orderId      = String(payload.orderId || "").trim();
+
+  if (!id)          return jsonResponse({ error: "ไม่พบรหัสคูปองเงินสด" });
+  if (amountToUse <= 0) return jsonResponse({ error: "จำนวนเงินต้องมากกว่า 0" });
+
+  const sheet = ss.getSheetByName("CashCoupons");
+  if (!sheet) return jsonResponse({ error: "ไม่พบชีท CashCoupons" });
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() !== id) continue;
+
+    const status        = String(data[i][11]).trim();
+    const expiryDate    = data[i][10];
+    const remaining     = parseFloat(data[i][8]) || 0;
+    const usedCredit    = parseFloat(data[i][7]) || 0;
+
+    if (status === "USED_UP") return jsonResponse({ error: "คูปองเงินสดนี้ใช้ครบแล้ว" });
+    if (status === "EXPIRED")  return jsonResponse({ error: "คูปองเงินสดหมดอายุแล้ว" });
+    if (status !== "ACTIVE")   return jsonResponse({ error: "คูปองเงินสดนี้ไม่ได้ใช้งาน" });
+    if (expiryDate && new Date(expiryDate) < new Date()) {
+      sheet.getRange(i + 1, 12).setValue("EXPIRED");
+      return jsonResponse({ error: "คูปองเงินสดหมดอายุแล้ว" });
+    }
+    if (amountToUse > remaining) return jsonResponse({ error: "เครดิตคงเหลือไม่พอ (เหลือ ฿" + remaining.toLocaleString() + ")" });
+
+    const newUsed      = usedCredit + amountToUse;
+    const newRemaining = remaining  - amountToUse;
+    const newStatus    = newRemaining <= 0 ? "USED_UP" : "ACTIVE";
+
+    sheet.getRange(i + 1, 8).setValue(newUsed);
+    sheet.getRange(i + 1, 9).setValue(newRemaining);
+    sheet.getRange(i + 1, 12).setValue(newStatus);
+
+    logActivity("CashCoupon", "Use ฿" + amountToUse, id, payload._actor);
+    return jsonResponse({ success: true, usedAmount: amountToUse, remainingCredit: newRemaining, newStatus: newStatus });
+  }
+  return jsonResponse({ error: "ไม่พบคูปองเงินสดนี้" });
+}
+
+// ─────────────────────────────────────────────────────
+// PACKAGE MANAGEMENT FUNCTIONS
+// ─────────────────────────────────────────────────────
+
+function extendPackageExpiry(payload) {
+  const ss           = getSpreadsheet();
+  const id           = String(payload.id || "").trim();
+  const newExpiryDate = String(payload.newExpiryDate || "").trim();
+
+  if (!id)            return jsonResponse({ error: "ไม่พบรหัสแพคเกจลูกค้า" });
+  if (!newExpiryDate) return jsonResponse({ error: "กรุณาระบุวันหมดอายุใหม่" });
+
+  const sheet = ss.getSheetByName("CustomerPackages");
+  if (!sheet) return jsonResponse({ error: "ไม่พบชีท CustomerPackages" });
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() !== id) continue;
+
+    sheet.getRange(i + 1, 10).setValue(new Date(newExpiryDate));
+    // If was EXPIRED, revert to ACTIVE
+    if (String(data[i][10]).trim() === "EXPIRED") {
+      sheet.getRange(i + 1, 11).setValue("ACTIVE");
+    }
+    logActivity("Package", "Extend Expiry", id, payload._actor);
+    return jsonResponse({ success: true, message: "ต่ออายุแพคเกจสำเร็จ" });
+  }
+  return jsonResponse({ error: "ไม่พบแพคเกจของลูกค้า" });
+}
+
+function useBonusService(payload) {
+  const ss    = getSpreadsheet();
+  const id    = String(payload.id || "").trim();
+  const count = parseInt(payload.count) || 1;
+
+  if (!id) return jsonResponse({ error: "ไม่พบรหัสแพคเกจ" });
+
+  const sheet = ss.getSheetByName("CustomerPackages");
+  if (!sheet) return jsonResponse({ error: "ไม่พบชีท CustomerPackages" });
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() !== id) continue;
+
+    const totalBonus = parseInt(data[i][14]) || 0;  // BonusServiceSessions col 15 (0-based 14)
+    const usedBonus  = parseInt(data[i][15]) || 0;  // BonusServiceUsed col 16 (0-based 15)
+    const remaining  = totalBonus - usedBonus;
+
+    if (remaining <= 0) return jsonResponse({ error: "บริการโบนัสใช้ครบแล้ว" });
+    if (count > remaining) return jsonResponse({ error: "บริการโบนัสคงเหลือไม่พอ (เหลือ " + remaining + " ครั้ง)" });
+
+    sheet.getRange(i + 1, 16).setValue(usedBonus + count);
+    logActivity("Package", "Use Bonus Service x" + count, id, payload._actor);
+    return jsonResponse({ success: true, usedBonus: usedBonus + count, remainingBonus: remaining - count });
+  }
+  return jsonResponse({ error: "ไม่พบแพคเกจของลูกค้า" });
+}
+
+// Also update purchaseSessionPackage to save BonusService fields
+// (patches new rows to include cols 14-16 from the package template)
+function _ensureCashCouponsSheet(ss) {
+  let sheet = ss.getSheetByName("CashCoupons");
+  if (!sheet) {
+    sheet = ss.insertSheet("CashCoupons");
+    const h = ["ID","CustomerName","Phone","TemplateName","PaidAmount","BonusAmount","TotalCredit","UsedCredit","RemainingCredit","PurchaseDate","ExpiryDate","Status","Actor"];
+    sheet.appendRow(h);
+    sheet.getRange(1,1,1,h.length).setFontWeight("bold");
+  }
+  return sheet;
 }
 
 // Utility: Return JSON Response with CORS headers
