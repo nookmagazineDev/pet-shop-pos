@@ -19,9 +19,8 @@ const EMPTY_FORM = {
 };
 
 const REWARD_TYPES = [
-  { k: "NONE",   label: "ไม่มี"      },
-  { k: "ITEM",   label: "สินค้าฟรี"  },
-  { k: "COUPON", label: "คูปอง"      },
+  { k: "ITEM",   label: "🎁 สินค้าฟรี" },
+  { k: "COUPON", label: "🎟 คูปอง"     },
 ];
 
 const SUBTYPES = [
@@ -881,70 +880,91 @@ export default function Packages() {
               )}
 
               {/* ── Purchase Reward ─────────────────────────── */}
-              <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-2">
-                <p className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
-                  <Gift size={13} /> ของแถมเมื่อซื้อแพคเกจ (ไม่บังคับ)
-                </p>
-                {/* Reward type selector */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  {REWARD_TYPES.map(r => (
-                    <button key={r.k} type="button"
-                      onClick={() => setForm(p => ({ ...p, rewardType: r.k, rewardRef: "", rewardName: "" }))}
-                      className={`py-2 rounded-lg text-xs font-semibold border-2 transition-all ${form.rewardType === r.k ? "border-purple-500 bg-purple-100 text-purple-800" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}>
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="border border-purple-200 rounded-xl overflow-hidden">
+                {/* Header row with toggle */}
+                <button type="button"
+                  onClick={() => setForm(p => ({
+                    ...p,
+                    rewardType: p.rewardType === "NONE" ? "ITEM" : "NONE",
+                    rewardRef: "", rewardName: "", rewardQty: "1",
+                  }))}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-purple-50 hover:bg-purple-100/70 transition-colors">
+                  <span className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
+                    <Gift size={13} /> ของแถมเมื่อซื้อแพคเกจ
+                  </span>
+                  {/* Toggle pill */}
+                  <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.rewardType !== "NONE" ? "bg-purple-500" : "bg-gray-300"}`}>
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${form.rewardType !== "NONE" ? "translate-x-4" : "translate-x-1"}`} />
+                  </span>
+                </button>
 
-                {/* ITEM: barcode + name + qty */}
-                {form.rewardType === "ITEM" && (
-                  <div className="space-y-2 pt-1">
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="col-span-2">
-                        <label className="text-xs font-semibold text-gray-600 mb-1 block">บาร์โค้ดสินค้า</label>
-                        <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
-                          placeholder="เช่น 8851234100036"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวน (ชิ้น)</label>
-                        <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
-                          placeholder="1" min="1"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
-                      </div>
+                {/* Expanded content */}
+                {form.rewardType !== "NONE" && (
+                  <div className="p-4 space-y-3 bg-white">
+                    {/* Type tabs */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {REWARD_TYPES.map(r => (
+                        <button key={r.k} type="button"
+                          onClick={() => setForm(p => ({ ...p, rewardType: r.k, rewardRef: "", rewardName: "" }))}
+                          className={`py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${form.rewardType === r.k ? "border-purple-500 bg-purple-50 text-purple-800" : "border-gray-200 text-gray-500 hover:border-purple-200 hover:text-purple-600"}`}>
+                          {r.label}
+                        </button>
+                      ))}
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อสินค้า (แสดงในใบเสร็จ)</label>
-                      <input value={form.rewardName} onChange={e => setForm(p => ({ ...p, rewardName: e.target.value }))}
-                        placeholder="เช่น แชมพูอาบน้ำสุนัข Bio Groom"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
-                    </div>
-                    {form.rewardRef && form.rewardName && (
-                      <div className="text-[10px] text-purple-700 bg-purple-100 px-2 py-1.5 rounded-lg flex items-center gap-1">
-                        <Gift size={10} /> เมื่อซื้อ จะออก "คูปองสินค้าฟรี" เข้าบัญชีลูกค้าอัตโนมัติ — ใช้ได้ที่หน้า POS ราคา ฿0
+
+                    {/* ITEM fields */}
+                    {form.rewardType === "ITEM" && (
+                      <div className="space-y-2.5">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2">
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">บาร์โค้ดสินค้า</label>
+                            <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                              placeholder="เช่น 8851234100036"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">จำนวน (ชิ้น)</label>
+                            <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                              placeholder="1" min="1"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อสินค้า (แสดงในใบเสร็จ)</label>
+                          <input value={form.rewardName} onChange={e => setForm(p => ({ ...p, rewardName: e.target.value }))}
+                            placeholder="เช่น แชมพูอาบน้ำสุนัข Bio Groom"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                        </div>
+                        {form.rewardRef && form.rewardName && (
+                          <div className="text-xs text-purple-700 bg-purple-50 border border-purple-100 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                            <Gift size={12} /> เมื่อซื้อแพคเกจ ระบบจะออกคูปองสินค้าฟรีเข้าบัญชีลูกค้าทันที — ใช้ที่ POS ราคา ฿0
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                {/* COUPON: coupon ID/name + qty */}
-                {form.rewardType === "COUPON" && (
-                  <div className="grid grid-cols-3 gap-2 pt-1">
-                    <div className="col-span-2">
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">ID / ชื่อคูปอง (จากหน้าคูปอง)</label>
-                      <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
-                        placeholder="เช่น CPT-xxx หรือ ส่วนลด 10%"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวน</label>
-                      <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
-                        placeholder="1" min="1"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
-                    </div>
-                    {form.rewardRef && (
-                      <div className="col-span-3 text-[10px] text-purple-600 bg-purple-100 px-2 py-1 rounded-lg">
-                        เมื่อซื้อ จะออกคูปองนี้ให้ลูกค้าโดยอัตโนมัติ
+                    {/* COUPON fields */}
+                    {form.rewardType === "COUPON" && (
+                      <div className="space-y-2.5">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2">
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">ID / ชื่อคูปอง</label>
+                            <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                              placeholder="เช่น CPT-xxx หรือ ส่วนลด 10%"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">จำนวน</label>
+                            <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                              placeholder="1" min="1"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                          </div>
+                        </div>
+                        {form.rewardRef && (
+                          <div className="text-xs text-purple-700 bg-purple-50 border border-purple-100 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                            <Gift size={12} /> เมื่อซื้อแพคเกจ ระบบจะออกคูปองนี้ให้ลูกค้าโดยอัตโนมัติ
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
