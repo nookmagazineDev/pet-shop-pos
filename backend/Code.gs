@@ -903,10 +903,11 @@ function receiveGoods(payload) {
   let updatedCount = 0;
   let addedCount = 0;
 
-  items.forEach(item => {
+  for (let itemIdx = 0; itemIdx < items.length; itemIdx++) {
+    const item = items[itemIdx];
     const searchBarcode = String(item.barcode || "").trim();
     const searchName = String(item.productName || "").trim();
-    
+
     // Log to receipt history
     receiptSheet.appendRow([
       timestamp,
@@ -934,7 +935,7 @@ function receiveGoods(payload) {
     for (let i = 1; i < data.length; i++) {
       const rowBarcode = String(data[i][0]).trim();
       const rowName = String(data[i][1]).trim();
-      
+
       // Match by Barcode (if provided) else by Name
       if ((searchBarcode && rowBarcode === searchBarcode) || (!searchBarcode && rowName === searchName)) {
         let currentQty = parseFloat(data[i][10]) || 0;
@@ -961,7 +962,7 @@ function receiveGoods(payload) {
         if (item.lotNumber) sheet.getRange(i + 1, 13).setValue(item.lotNumber); // LotNumber
         if (item.expiryDate) sheet.getRange(i + 1, 14).setValue(item.expiryDate); // ExpiryDate
         if (item.receivingDate) sheet.getRange(i + 1, 15).setValue(item.receivingDate); // ReceivingDate
-        
+
         // Log to StockMovements
         if (moveSheet) {
           const refNo = receiptId
@@ -977,11 +978,11 @@ function receiveGoods(payload) {
       }
     }
 
-    // Not found: return error
+    // Not found: return error immediately (do not process remaining items)
     if (!found) {
-      return jsonResponse({ success: false, error: `ไม่พบสินค้าบาร์โค้ด ${item.barcode} ในคลัง กรุณาสร้างสินค้าก่อนรับเข้า` });
+      return jsonResponse({ success: false, error: "ไม่พบสินค้าบาร์โค้ด " + item.barcode + " ในคลัง กรุณาสร้างสินค้าก่อนรับเข้า" });
     }
-  });
+  }
   
   let fileUrl = "";
   if (payload.fileData && payload.fileName) {
@@ -1205,28 +1206,6 @@ function closeShift(payload) {
   return jsonResponse({ error: "No open shift found" });
 }
 
-
-function updateTransactionPayment(payload) {
-  const sheet = getSpreadsheet().getSheetByName("Transactions");
-  const data = sheet.getDataRange().getValues();
-  const searchOrderId = String(payload.orderId || "").trim();
-  const newPaymentMethod = String(payload.paymentMethod || "").trim();
-  
-  if (!searchOrderId || !newPaymentMethod) {
-    return jsonResponse({ error: "Missing orderId or paymentMethod" });
-  }
-  
-  for (let i = 1; i < data.length; i++) {
-    const rowOrderId = String(data[i][0]).trim();
-    if (rowOrderId === searchOrderId) {
-      sheet.getRange(i + 1, 5).setValue(newPaymentMethod); // Col 5 = PaymentMethod
-      logActivity("Accounting", "Update PaymentMethod", searchOrderId, payload._actor);
-      return jsonResponse({ success: true, message: "Payment status updated" });
-    }
-  }
-  
-  return jsonResponse({ error: "Transaction not found" });
-}
 
 function addExpense(payload) {
   const ss = getSpreadsheet();
@@ -1982,6 +1961,7 @@ function purchaseSessionPackage(payload) {
 
   if (packageType !== "SESSIONS") return jsonResponse({ error: "แพคเกจนี้ไม่ใช่แบบครั้ง" });
   if (sessionCount <= 0 && rewardType === "NONE") return jsonResponse({ error: "แพคเกจนี้ยังไม่ได้กำหนดสินค้าหรือคูปอง" });
+  if (rewardType !== "NONE" && !String(pkgRow[16] || "").trim()) return jsonResponse({ error: "แพคเกจนี้มีประเภทของแถมแต่ยังไม่ได้เลือกสินค้า / คูปอง" });
 
   let cpSheet = ss.getSheetByName("CustomerPackages");
   if (!cpSheet) {
