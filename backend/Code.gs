@@ -18,7 +18,7 @@ function setup() {
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
     "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"],
     "Pets": ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"],
-    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays", "BonusSessions", "BonusServiceName", "BonusServiceSessions", "Subtype"],
+    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays", "BonusSessions", "BonusServiceName", "BonusServiceSessions", "Subtype", "RewardType", "RewardRef", "RewardQty"],
     "CustomerPackages": ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor", "BonusServiceName", "BonusServiceSessions", "BonusServiceUsed"],
     "CashCoupons": ["ID", "CustomerName", "Phone", "TemplateName", "PaidAmount", "BonusAmount", "TotalCredit", "UsedCredit", "RemainingCredit", "PurchaseDate", "ExpiryDate", "Status", "Actor"],
     "PackageUsage": ["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"],
@@ -1486,6 +1486,9 @@ function savePackage(payload) {
         sheet.getRange(i + 1, 13).setValue(payload.bonusServiceName || "");
         sheet.getRange(i + 1, 14).setValue(parseInt(payload.bonusServiceSessions) || 0);
         sheet.getRange(i + 1, 15).setValue(payload.subtype || "GENERAL");
+        sheet.getRange(i + 1, 16).setValue(payload.rewardType || "NONE");
+        sheet.getRange(i + 1, 17).setValue(payload.rewardRef || "");
+        sheet.getRange(i + 1, 18).setValue(parseInt(payload.rewardQty) || 0);
         found = true;
         break;
       }
@@ -1494,7 +1497,7 @@ function savePackage(payload) {
 
   if (!found) {
     const newId = "PKG-" + new Date().getTime();
-    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date(), payload.packageType || "POINTS", parseInt(payload.sessionCount) || 0, parseInt(payload.expiryDays) || 365, parseInt(payload.bonusSessions) || 0, payload.bonusServiceName || "", parseInt(payload.bonusServiceSessions) || 0, payload.subtype || "GENERAL"]);
+    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date(), payload.packageType || "POINTS", parseInt(payload.sessionCount) || 0, parseInt(payload.expiryDays) || 365, parseInt(payload.bonusSessions) || 0, payload.bonusServiceName || "", parseInt(payload.bonusServiceSessions) || 0, payload.subtype || "GENERAL", payload.rewardType || "NONE", payload.rewardRef || "", parseInt(payload.rewardQty) || 0]);
   }
   return jsonResponse({ success: true });
 }
@@ -1744,6 +1747,9 @@ function readSheetData(sheetName) {
       { col: 13, name: "BonusServiceName"      },
       { col: 14, name: "BonusServiceSessions"  },
       { col: 15, name: "Subtype"               },
+      { col: 16, name: "RewardType"            },
+      { col: 17, name: "RewardRef"             },
+      { col: 18, name: "RewardQty"             },
     ];
     pkgNewCols.forEach(function(c) {
       const cell = sheet.getRange(1, c.col);
@@ -1989,6 +1995,9 @@ function purchaseSessionPackage(payload) {
   const actor          = payload._actor ? payload._actor.username : "System";
   const bonusSvcName   = String(pkgRow[12] || "").trim();
   const bonusSvcSess   = parseInt(pkgRow[13]) || 0;
+  const rewardType     = String(pkgRow[15] || "NONE").trim() || "NONE";
+  const rewardRef      = String(pkgRow[16] || "").trim();
+  const rewardQty      = Math.max(1, parseInt(pkgRow[17]) || 1);
 
   cpSheet.appendRow([
     newId,
@@ -2012,8 +2021,34 @@ function purchaseSessionPackage(payload) {
   // Auto-save customer if not exists
   saveCustomer({ name: customerName, phone: payload.phone || "" });
 
+  // Auto-issue purchase reward
+  var rewardIssued = null;
+  if (rewardType === "COUPON" && rewardRef) {
+    // Try to find coupon template by ID or Name, then issue it
+    var cpnSheet = ss.getSheetByName("Coupons");
+    if (cpnSheet) {
+      var cpnData = cpnSheet.getDataRange().getValues();
+      var cpnRow = null;
+      for (var ci = 1; ci < cpnData.length; ci++) {
+        var matchById   = String(cpnData[ci][0]).trim() === rewardRef;
+        var matchByName = String(cpnData[ci][1]).trim().toLowerCase() === rewardRef.toLowerCase();
+        if (matchById || matchByName) { cpnRow = cpnData[ci]; break; }
+      }
+      if (cpnRow) {
+        var issueResult = issueCoupon({
+          customerName: customerName,
+          couponId: String(cpnRow[0]).trim(),
+          quantity: rewardQty,
+          price: 0,
+          _actor: payload._actor,
+        });
+        rewardIssued = { type: "COUPON", name: cpnRow[1], qty: rewardQty };
+      }
+    }
+  }
+
   logActivity("Package", "Purchase Session Package", newId, payload._actor);
-  return jsonResponse({ success: true, customerPackageId: newId, totalSessions: sessionCount, expiryDate: expiryDate });
+  return jsonResponse({ success: true, customerPackageId: newId, totalSessions: sessionCount, expiryDate: expiryDate, rewardIssued: rewardIssued, rewardType: rewardType, rewardRef: rewardRef, rewardQty: rewardType !== "NONE" ? rewardQty : 0 });
 }
 
 function usePackageSession(payload) {
