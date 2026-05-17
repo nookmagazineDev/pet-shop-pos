@@ -18,7 +18,7 @@ function setup() {
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
     "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"],
     "Pets": ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"],
-    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays", "BonusSessions", "BonusServiceName", "BonusServiceSessions", "Subtype", "RewardType", "RewardRef", "RewardQty"],
+    "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays", "BonusSessions", "BonusServiceName", "BonusServiceSessions", "Subtype", "RewardType", "RewardRef", "RewardQty", "RewardName"],
     "CustomerPackages": ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor", "BonusServiceName", "BonusServiceSessions", "BonusServiceUsed"],
     "CashCoupons": ["ID", "CustomerName", "Phone", "TemplateName", "PaidAmount", "BonusAmount", "TotalCredit", "UsedCredit", "RemainingCredit", "PurchaseDate", "ExpiryDate", "Status", "Actor"],
     "PackageUsage": ["ID", "CustomerPackageID", "CustomerName", "Date", "SessionsUsed", "Note", "OrderID", "Actor"],
@@ -1489,6 +1489,7 @@ function savePackage(payload) {
         sheet.getRange(i + 1, 16).setValue(payload.rewardType || "NONE");
         sheet.getRange(i + 1, 17).setValue(payload.rewardRef || "");
         sheet.getRange(i + 1, 18).setValue(parseInt(payload.rewardQty) || 0);
+        sheet.getRange(i + 1, 19).setValue(payload.rewardName || "");
         found = true;
         break;
       }
@@ -1497,7 +1498,7 @@ function savePackage(payload) {
 
   if (!found) {
     const newId = "PKG-" + new Date().getTime();
-    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date(), payload.packageType || "POINTS", parseInt(payload.sessionCount) || 0, parseInt(payload.expiryDays) || 365, parseInt(payload.bonusSessions) || 0, payload.bonusServiceName || "", parseInt(payload.bonusServiceSessions) || 0, payload.subtype || "GENERAL", payload.rewardType || "NONE", payload.rewardRef || "", parseInt(payload.rewardQty) || 0]);
+    sheet.appendRow([newId, payload.name || "", parseFloat(payload.price) || 0, parseFloat(payload.points) || 0, parseFloat(payload.bonusPoints) || 0, payload.description || "", payload.status || "ACTIVE", new Date(), payload.packageType || "POINTS", parseInt(payload.sessionCount) || 0, parseInt(payload.expiryDays) || 365, parseInt(payload.bonusSessions) || 0, payload.bonusServiceName || "", parseInt(payload.bonusServiceSessions) || 0, payload.subtype || "GENERAL", payload.rewardType || "NONE", payload.rewardRef || "", parseInt(payload.rewardQty) || 0, payload.rewardName || ""]);
   }
   return jsonResponse({ success: true });
 }
@@ -1750,6 +1751,7 @@ function readSheetData(sheetName) {
       { col: 16, name: "RewardType"            },
       { col: 17, name: "RewardRef"             },
       { col: 18, name: "RewardQty"             },
+      { col: 19, name: "RewardName"            },
     ];
     pkgNewCols.forEach(function(c) {
       const cell = sheet.getRange(1, c.col);
@@ -1996,8 +1998,9 @@ function purchaseSessionPackage(payload) {
   const bonusSvcName   = String(pkgRow[12] || "").trim();
   const bonusSvcSess   = parseInt(pkgRow[13]) || 0;
   const rewardType     = String(pkgRow[15] || "NONE").trim() || "NONE";
-  const rewardRef      = String(pkgRow[16] || "").trim();
+  const rewardRef      = String(pkgRow[16] || "").trim();  // barcode for ITEM, couponId for COUPON
   const rewardQty      = Math.max(1, parseInt(pkgRow[17]) || 1);
+  const rewardName     = String(pkgRow[18] || "").trim();  // product name for ITEM type
 
   cpSheet.appendRow([
     newId,
@@ -2023,8 +2026,9 @@ function purchaseSessionPackage(payload) {
 
   // Auto-issue purchase reward
   var rewardIssued = null;
+
   if (rewardType === "COUPON" && rewardRef) {
-    // Try to find coupon template by ID or Name, then issue it
+    // Find coupon template by ID or Name, then issue to customer
     var cpnSheet = ss.getSheetByName("Coupons");
     if (cpnSheet) {
       var cpnData = cpnSheet.getDataRange().getValues();
@@ -2035,16 +2039,50 @@ function purchaseSessionPackage(payload) {
         if (matchById || matchByName) { cpnRow = cpnData[ci]; break; }
       }
       if (cpnRow) {
-        var issueResult = issueCoupon({
-          customerName: customerName,
-          couponId: String(cpnRow[0]).trim(),
-          quantity: rewardQty,
-          price: 0,
-          _actor: payload._actor,
-        });
+        issueCoupon({ customerName: customerName, couponId: String(cpnRow[0]).trim(), quantity: rewardQty, price: 0, _actor: payload._actor });
         rewardIssued = { type: "COUPON", name: cpnRow[1], qty: rewardQty };
       }
     }
+
+  } else if (rewardType === "ITEM" && rewardRef) {
+    // Issue FREE_ITEM coupons (one per qty) into CustomerCoupons
+    // RewardRef = barcode, RewardName = product name
+    var itemName = rewardName || rewardRef;
+    // Try to resolve name from Products if not stored
+    if (!itemName || itemName === rewardRef) {
+      var prodSheet2 = ss.getSheetByName("Products");
+      if (prodSheet2) {
+        var prodData2 = prodSheet2.getDataRange().getValues();
+        for (var pi = 1; pi < prodData2.length; pi++) {
+          if (String(prodData2[pi][0]).trim() === rewardRef) {
+            itemName = String(prodData2[pi][1]).trim() || rewardRef;
+            break;
+          }
+        }
+      }
+    }
+    var CC_HDRS = ["ID","CustomerName","CouponID","CouponName","Type","Value","MinOrderAmount","Price","Status","IssuedAt","ExpiryDate","UsedAt","OrderID","IssuedBy","FreeItemBarcode","FreeItemName"];
+    var ccSheet2 = ss.getSheetByName("CustomerCoupons");
+    if (!ccSheet2) {
+      ccSheet2 = ss.insertSheet("CustomerCoupons");
+      ccSheet2.appendRow(CC_HDRS);
+      ccSheet2.getRange(1, 1, 1, CC_HDRS.length).setFontWeight("bold");
+    }
+    // Ensure headers
+    var ccHdrsCheck = ccSheet2.getRange(1, 1, 1, CC_HDRS.length).getValues()[0];
+    CC_HDRS.forEach(function(h, i) { if (!ccHdrsCheck[i] || ccHdrsCheck[i] !== h) ccSheet2.getRange(1, i + 1).setValue(h); });
+
+    var actor2    = payload._actor ? payload._actor.username : "System";
+    var couponIds = [];
+    for (var qi = 0; qi < rewardQty; qi++) {
+      var freeExpiryDate = new Date(purchaseDate);
+      freeExpiryDate.setDate(freeExpiryDate.getDate() + expiryDays);
+      var ccId = "CC-FREE-" + purchaseDate.getTime() + "-" + qi;
+      ccSheet2.appendRow([ccId, customerName, newId, "ของแถม: " + itemName, "FREE_ITEM", 0, 0, 0, "ACTIVE", purchaseDate, freeExpiryDate, "", "", actor2, rewardRef, itemName]);
+      couponIds.push(ccId);
+      if (qi < rewardQty - 1) Utilities.sleep(5);
+    }
+    rewardIssued = { type: "ITEM", barcode: rewardRef, name: itemName, qty: rewardQty, couponIds: couponIds };
   }
 
   logActivity("Package", "Purchase Session Package", newId, payload._actor);
