@@ -245,8 +245,8 @@ export default function Packages() {
   const handleSave = async () => {
     if (!form.name.trim() || !form.price) { toast.error("กรุณากรอกชื่อและราคา"); return; }
     if (form.packageType === "POINTS" && !form.points) { toast.error("กรุณากรอกจำนวนเครดิต"); return; }
-    if (form.packageType === "SESSIONS" && (!form.sessionCount || parseInt(form.sessionCount) < 1)) {
-      toast.error("กรุณากรอกจำนวนครั้ง (อย่างน้อย 1)"); return;
+    if (form.packageType === "SESSIONS" && form.rewardType !== "NONE" && !form.rewardRef.trim()) {
+      toast.error("กรุณาเลือกสินค้าหรือคูปองที่จะแถม"); return;
     }
     setIsSaving(true);
     const res = await postApi({
