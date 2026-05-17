@@ -95,7 +95,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
     // Coupon discount row
     const couponRow = couponDiscount > 0 ? `
       <tr style="color:#d97706; font-weight:bold;">
-        <td colspan="3">🎟 คูปอง${couponName ? ` (${couponName})` : ""}</td>
+        <td colspan="3">${couponName || "ส่วนลดจากคูปอง"}</td>
         <td style="text-align:right">-${couponDiscount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
       </tr>
     ` : "";
@@ -259,7 +259,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
               {couponDiscount > 0 && (
                 <tr className="border-b border-amber-100 bg-amber-50">
                   <td className="py-2 text-sm text-amber-700 font-semibold" colSpan={3}>
-                    🎟 คูปอง{couponName ? ` (${couponName})` : ""}
+                    {couponName || "ส่วนลดจากคูปอง"}
                   </td>
                   <td className="py-2 text-right text-sm text-amber-700 font-bold">-{couponDiscount.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
                 </tr>
