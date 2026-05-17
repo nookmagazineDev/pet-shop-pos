@@ -15,13 +15,13 @@ const EMPTY_FORM = {
   packageType: "POINTS", sessionCount: "", expiryDays: "365",
   bonusSessions: "0", bonusServiceName: "", bonusServiceSessions: "0",
   subtype: "GENERAL",
-  rewardType: "NONE", rewardRef: "", rewardQty: "1",
+  rewardType: "NONE", rewardRef: "", rewardName: "", rewardQty: "1",
 };
 
 const REWARD_TYPES = [
-  { k: "NONE",   label: "ไม่มี"   },
-  { k: "COUPON", label: "คูปอง"   },
-  { k: "ITEM",   label: "สินค้า"  },
+  { k: "NONE",   label: "ไม่มี"      },
+  { k: "ITEM",   label: "สินค้าฟรี"  },
+  { k: "COUPON", label: "คูปอง"      },
 ];
 
 const SUBTYPES = [
@@ -200,6 +200,7 @@ export default function Packages() {
       subtype:            pkg.Subtype || "GENERAL",
       rewardType:         pkg.RewardType || "NONE",
       rewardRef:          pkg.RewardRef || "",
+      rewardName:         pkg.RewardName || "",
       rewardQty:          String(pkg.RewardQty || "1"),
     });
     setShowForm(true);
@@ -231,6 +232,7 @@ export default function Packages() {
         subtype:              form.subtype || "GENERAL",
         rewardType:           form.rewardType || "NONE",
         rewardRef:            form.rewardRef.trim(),
+        rewardName:           form.rewardName.trim(),
         rewardQty:            parseInt(form.rewardQty) || 1,
       },
     });
@@ -301,9 +303,11 @@ export default function Packages() {
     if (res.success) {
       toast.success(`ซื้อแพคเกจครั้งสำเร็จ — ${res.totalSessions} ครั้ง`);
       if (res.rewardIssued) {
-        toast.success(`🎁 ออกคูปองแถม: ${res.rewardIssued.name} x${res.rewardIssued.qty}`, { duration: 4000 });
-      } else if (res.rewardType === "ITEM" && res.rewardQty > 0) {
-        toast(`🎁 อย่าลืมมอบสินค้าแถม: ${res.rewardRef} x${res.rewardQty}`, { duration: 5000, icon: "🎁" });
+        if (res.rewardIssued.type === "ITEM") {
+          toast.success(`🎁 ออกคูปองสินค้าฟรีให้ลูกค้าแล้ว: ${res.rewardIssued.name} x${res.rewardIssued.qty} (ใช้ได้หน้า POS)`, { duration: 5000 });
+        } else {
+          toast.success(`🎁 ออกคูปองแถม: ${res.rewardIssued.name} x${res.rewardIssued.qty}`, { duration: 4000 });
+        }
       }
       invalidateCache("getCustomerPackages");
       invalidateCache("getCustomers");
@@ -879,26 +883,57 @@ export default function Packages() {
               {/* ── Purchase Reward ─────────────────────────── */}
               <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-2">
                 <p className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
-                  <Gift size={13} /> รางวัลเมื่อซื้อ (ไม่บังคับ)
+                  <Gift size={13} /> ของแถมเมื่อซื้อแพคเกจ (ไม่บังคับ)
                 </p>
                 {/* Reward type selector */}
                 <div className="grid grid-cols-3 gap-1.5">
                   {REWARD_TYPES.map(r => (
-                    <button key={r.k} type="button" onClick={() => setForm(p => ({ ...p, rewardType: r.k, rewardRef: r.k === "NONE" ? "" : p.rewardRef }))}
+                    <button key={r.k} type="button"
+                      onClick={() => setForm(p => ({ ...p, rewardType: r.k, rewardRef: "", rewardName: "" }))}
                       className={`py-2 rounded-lg text-xs font-semibold border-2 transition-all ${form.rewardType === r.k ? "border-purple-500 bg-purple-100 text-purple-800" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}>
                       {r.label}
                     </button>
                   ))}
                 </div>
 
-                {form.rewardType !== "NONE" && (
+                {/* ITEM: barcode + name + qty */}
+                {form.rewardType === "ITEM" && (
+                  <div className="space-y-2 pt-1">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <label className="text-xs font-semibold text-gray-600 mb-1 block">บาร์โค้ดสินค้า</label>
+                        <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                          placeholder="เช่น 8851234100036"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวน (ชิ้น)</label>
+                        <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                          placeholder="1" min="1"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อสินค้า (แสดงในใบเสร็จ)</label>
+                      <input value={form.rewardName} onChange={e => setForm(p => ({ ...p, rewardName: e.target.value }))}
+                        placeholder="เช่น แชมพูอาบน้ำสุนัข Bio Groom"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
+                    </div>
+                    {form.rewardRef && form.rewardName && (
+                      <div className="text-[10px] text-purple-700 bg-purple-100 px-2 py-1.5 rounded-lg flex items-center gap-1">
+                        <Gift size={10} /> เมื่อซื้อ จะออก "คูปองสินค้าฟรี" เข้าบัญชีลูกค้าอัตโนมัติ — ใช้ได้ที่หน้า POS ราคา ฿0
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* COUPON: coupon ID/name + qty */}
+                {form.rewardType === "COUPON" && (
                   <div className="grid grid-cols-3 gap-2 pt-1">
                     <div className="col-span-2">
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                        {form.rewardType === "COUPON" ? "ชื่อ / ID คูปอง" : "บาร์โค้ด / ชื่อสินค้า"}
-                      </label>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">ID / ชื่อคูปอง (จากหน้าคูปอง)</label>
                       <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
-                        placeholder={form.rewardType === "COUPON" ? "เช่น CPT-xxx หรือ ส่วนลด 10%" : "เช่น 8851234100036"}
+                        placeholder="เช่น CPT-xxx หรือ ส่วนลด 10%"
                         className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
                     </div>
                     <div>
@@ -907,17 +942,12 @@ export default function Packages() {
                         placeholder="1" min="1"
                         className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-purple-400" />
                     </div>
+                    {form.rewardRef && (
+                      <div className="col-span-3 text-[10px] text-purple-600 bg-purple-100 px-2 py-1 rounded-lg">
+                        เมื่อซื้อ จะออกคูปองนี้ให้ลูกค้าโดยอัตโนมัติ
+                      </div>
+                    )}
                   </div>
-                )}
-                {form.rewardType === "COUPON" && form.rewardRef && (
-                  <p className="text-[10px] text-purple-600 bg-purple-100 px-2 py-1 rounded-lg">
-                    เมื่อซื้อ จะออกคูปองนี้ให้ลูกค้าโดยอัตโนมัติ
-                  </p>
-                )}
-                {form.rewardType === "ITEM" && form.rewardRef && (
-                  <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">
-                    ระบบจะแจ้งเตือนให้มอบสินค้าแถมให้ลูกค้าเมื่อซื้อ
-                  </p>
                 )}
               </div>
 
@@ -1022,20 +1052,22 @@ export default function Packages() {
               {(() => {
                 const selPkg = packages.find(p => p.PackageID === buyForm.packageId);
                 if (!selPkg || !selPkg.RewardType || selPkg.RewardType === "NONE" || !selPkg.RewardRef) return null;
+                const rewardLabel = selPkg.RewardType === "ITEM"
+                  ? (selPkg.RewardName || selPkg.RewardRef)
+                  : selPkg.RewardRef;
                 return (
                   <div className="flex items-start gap-2 bg-purple-50 border border-purple-100 rounded-xl px-3 py-2.5 text-xs">
                     <Gift size={14} className="text-purple-500 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-semibold text-purple-700">รางวัลที่ลูกค้าจะได้รับ: </span>
-                      <span className="text-purple-600">
-                        {selPkg.RewardType === "COUPON" ? `คูปอง "${selPkg.RewardRef}"` : `สินค้า "${selPkg.RewardRef}"`}
-                        {" "}x{Number(selPkg.RewardQty || 1)}
+                      <span className="font-semibold text-purple-700">ของแถมที่ลูกค้าจะได้รับ: </span>
+                      <span className="text-purple-600 font-medium">
+                        {selPkg.RewardType === "ITEM" ? "🎁 " : "🎟 "}{rewardLabel} x{Number(selPkg.RewardQty || 1)}
                       </span>
+                      {selPkg.RewardType === "ITEM" && (
+                        <div className="text-purple-400 mt-0.5">ระบบจะออกคูปองสินค้าฟรีเข้าบัญชีลูกค้าอัตโนมัติ — ใช้ได้ที่ POS ราคา ฿0</div>
+                      )}
                       {selPkg.RewardType === "COUPON" && (
                         <div className="text-purple-400 mt-0.5">จะออกคูปองอัตโนมัติเมื่อยืนยัน</div>
-                      )}
-                      {selPkg.RewardType === "ITEM" && (
-                        <div className="text-amber-500 mt-0.5">⚠️ กรุณามอบสินค้าให้ลูกค้าด้วย</div>
                       )}
                     </div>
                   </div>
