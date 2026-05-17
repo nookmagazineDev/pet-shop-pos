@@ -164,6 +164,7 @@ export default function Coupons() {
         status: form.status,
         freeItemBarcode: form.freeItemBarcode.trim(),
         freeItemName: form.freeItemName.trim(),
+        expiryDays: parseInt(form.expiryDays) || 365,
       },
     });
     setIsSaving(false);
@@ -944,20 +945,36 @@ export default function Coupons() {
                 </div>
               </div>
 
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                  รายละเอียด
-                </label>
-                <input
-                  type="text"
-                  value={form.description}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, description: e.target.value }))
-                  }
-                  placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
-                />
+              {/* Description + ExpiryDays */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    รายละเอียด
+                  </label>
+                  <input
+                    type="text"
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, description: e.target.value }))
+                    }
+                    placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    อายุการใช้งาน (วัน) <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.expiryDays}
+                    onChange={(e) => setForm((p) => ({ ...p, expiryDays: e.target.value }))}
+                    placeholder="365"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">นับจากวันที่ออกคูปองให้ลูกค้า</p>
+                </div>
               </div>
 
               {/* Status */}
