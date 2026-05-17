@@ -12,7 +12,7 @@ import toast from "react-hot-toast";
 const EMPTY_FORM = {
   name: "", price: "", points: "", bonusPoints: "",
   description: "", status: "ACTIVE",
-  packageType: "POINTS", sessionCount: "", expiryDays: "365",
+  packageType: "POINTS", sessionCount: "0", expiryDays: "365",
   bonusSessions: "0", bonusServiceName: "", bonusServiceSessions: "0",
   subtype: "GENERAL",
   rewardType: "NONE", rewardRef: "", rewardName: "", rewardQty: "1",
@@ -786,7 +786,7 @@ export default function Packages() {
                   {[{ k: "POINTS", icon: <Star size={14} />, label: "เครดิต", desc: "ลูกค้าได้รับพ้อยสะสม" },
                     { k: "SESSIONS", icon: <Scissors size={14} />, label: "ครั้ง", desc: "Grooming / Hotel ตัดครั้ง" }
                   ].map(t => (
-                    <button key={t.k} type="button" onClick={() => setForm(p => ({ ...p, packageType: t.k }))}
+                    <button key={t.k} type="button" onClick={() => setForm(p => ({ ...p, packageType: t.k, ...(t.k === "SESSIONS" && p.rewardType === "NONE" ? { rewardType: "ITEM" } : {}) }))}
                       className={`flex flex-col items-start gap-1 p-3 rounded-xl border-2 text-left transition-all ${form.packageType === t.k ? "border-primary bg-primary/5 text-primary" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}>
                       <div className="flex items-center gap-1.5 font-semibold text-sm">{t.icon} {t.label}</div>
                       <div className="text-xs text-gray-400">{t.desc}</div>
@@ -828,80 +828,16 @@ export default function Packages() {
                 </div>
               )}
 
-              {/* Sessions-specific */}
-              {form.packageType === "SESSIONS" && (
-                <div className="space-y-3">
-                  {/* Subtype */}
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1.5 block">ประเภทบริการ</label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {SUBTYPES.map(s => (
-                        <button key={s.k} type="button" onClick={() => setForm(p => ({ ...p, subtype: s.k }))}
-                          className={`py-2 rounded-lg text-xs font-semibold border-2 transition-all ${form.subtype === s.k ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Session count + Bonus sessions */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1.5 block">จำนวนครั้ง (รวมทั้งหมด) <span className="text-red-500">*</span></label>
-                      <input type="number" value={form.sessionCount} onChange={e => setForm(p => ({ ...p, sessionCount: e.target.value }))}
-                        placeholder="11" min="1" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
-                      <p className="text-[10px] text-gray-400 mt-0.5">เช่น ซื้อ 10 แถม 1 = ใส่ 11</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1.5 block">ครั้งโบนัส (แถม)</label>
-                      <input type="number" value={form.bonusSessions} onChange={e => setForm(p => ({ ...p, bonusSessions: e.target.value }))}
-                        placeholder="1" min="0" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary" />
-                      <p className="text-[10px] text-gray-400 mt-0.5">แถมกี่ครั้ง</p>
-                    </div>
-                  </div>
-
-                  {/* Bonus service */}
-                  <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl space-y-2">
-                    <p className="text-xs font-semibold text-amber-700">บริการเสริมโบนัส (ไม่บังคับ)</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">ชื่อบริการโบนัส</label>
-                        <input value={form.bonusServiceName} onChange={e => setForm(p => ({ ...p, bonusServiceName: e.target.value }))}
-                          placeholder="เช่น แปรงฟัน" className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-amber-400" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">จำนวนครั้งโบนัส</label>
-                        <input type="number" value={form.bonusServiceSessions} onChange={e => setForm(p => ({ ...p, bonusServiceSessions: e.target.value }))}
-                          placeholder="5" min="0" className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-amber-400" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* ── Purchase Reward ─────────────────────────── */}
-              <div className="border border-purple-200 rounded-xl overflow-hidden">
-                {/* Header row with toggle */}
-                <button type="button"
-                  onClick={() => setForm(p => ({
-                    ...p,
-                    rewardType: p.rewardType === "NONE" ? "ITEM" : "NONE",
-                    rewardRef: "", rewardName: "", rewardQty: "1",
-                  }))}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-purple-50 hover:bg-purple-100/70 transition-colors">
-                  <span className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
-                    <Gift size={13} /> ของแถมเมื่อซื้อแพคเกจ
-                  </span>
-                  {/* Toggle pill */}
-                  <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.rewardType !== "NONE" ? "bg-purple-500" : "bg-gray-300"}`}>
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${form.rewardType !== "NONE" ? "translate-x-4" : "translate-x-1"}`} />
-                  </span>
-                </button>
-
-                {/* Expanded content */}
-                {form.rewardType !== "NONE" && (
+              {form.packageType === "SESSIONS" ? (
+                // SESSIONS: always visible, no toggle, with ITEM/COUPON tabs
+                <div className="border border-purple-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-3 bg-purple-50 flex items-center gap-1.5">
+                    <Gift size={13} className="text-purple-700" />
+                    <span className="text-xs font-semibold text-purple-700">สินค้า / คูปองที่ลูกค้าจะได้รับ</span>
+                  </div>
                   <div className="p-4 space-y-3 bg-white">
-                    {/* Type tabs */}
+                    {/* Type tabs - always visible for SESSIONS */}
                     <div className="grid grid-cols-2 gap-2">
                       {REWARD_TYPES.map(r => (
                         <button key={r.k} type="button"
@@ -968,8 +904,100 @@ export default function Packages() {
                       </div>
                     )}
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                // POINTS: existing toggle behavior
+                <div className="border border-purple-200 rounded-xl overflow-hidden">
+                  {/* Header row with toggle */}
+                  <button type="button"
+                    onClick={() => setForm(p => ({
+                      ...p,
+                      rewardType: p.rewardType === "NONE" ? "ITEM" : "NONE",
+                      rewardRef: "", rewardName: "", rewardQty: "1",
+                    }))}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-purple-50 hover:bg-purple-100/70 transition-colors">
+                    <span className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
+                      <Gift size={13} /> ของแถมเมื่อซื้อแพคเกจ
+                    </span>
+                    {/* Toggle pill */}
+                    <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.rewardType !== "NONE" ? "bg-purple-500" : "bg-gray-300"}`}>
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${form.rewardType !== "NONE" ? "translate-x-4" : "translate-x-1"}`} />
+                    </span>
+                  </button>
+
+                  {/* Expanded content */}
+                  {form.rewardType !== "NONE" && (
+                    <div className="p-4 space-y-3 bg-white">
+                      {/* Type tabs */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {REWARD_TYPES.map(r => (
+                          <button key={r.k} type="button"
+                            onClick={() => setForm(p => ({ ...p, rewardType: r.k, rewardRef: "", rewardName: "" }))}
+                            className={`py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${form.rewardType === r.k ? "border-purple-500 bg-purple-50 text-purple-800" : "border-gray-200 text-gray-500 hover:border-purple-200 hover:text-purple-600"}`}>
+                            {r.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* ITEM fields */}
+                      {form.rewardType === "ITEM" && (
+                        <div className="space-y-2.5">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">บาร์โค้ดสินค้า</label>
+                              <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                                placeholder="เช่น 8851234100036"
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">จำนวน (ชิ้น)</label>
+                              <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                                placeholder="1" min="1"
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อสินค้า (แสดงในใบเสร็จ)</label>
+                            <input value={form.rewardName} onChange={e => setForm(p => ({ ...p, rewardName: e.target.value }))}
+                              placeholder="เช่น แชมพูอาบน้ำสุนัข Bio Groom"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                          </div>
+                          {form.rewardRef && form.rewardName && (
+                            <div className="text-xs text-purple-700 bg-purple-50 border border-purple-100 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                              <Gift size={12} /> เมื่อซื้อแพคเกจ ระบบจะออกคูปองสินค้าฟรีเข้าบัญชีลูกค้าทันที — ใช้ที่ POS ราคา ฿0
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* COUPON fields */}
+                      {form.rewardType === "COUPON" && (
+                        <div className="space-y-2.5">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">ID / ชื่อคูปอง</label>
+                              <input value={form.rewardRef} onChange={e => setForm(p => ({ ...p, rewardRef: e.target.value }))}
+                                placeholder="เช่น CPT-xxx หรือ ส่วนลด 10%"
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-500 mb-1 block">จำนวน</label>
+                              <input type="number" value={form.rewardQty} onChange={e => setForm(p => ({ ...p, rewardQty: e.target.value }))}
+                                placeholder="1" min="1"
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                            </div>
+                          </div>
+                          {form.rewardRef && (
+                            <div className="text-xs text-purple-700 bg-purple-50 border border-purple-100 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                              <Gift size={12} /> เมื่อซื้อแพคเกจ ระบบจะออกคูปองนี้ให้ลูกค้าโดยอัตโนมัติ
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Expiry */}
               <div>
