@@ -1439,11 +1439,20 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
 function savePackage(payload) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName("Packages");
-  const PKG_HEADERS = ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt"];
+  const FULL_PKG_HEADERS = ["PackageID","Name","Price","Points","BonusPoints","Description","Status","CreatedAt","PackageType","SessionCount","ExpiryDays","BonusSessions","BonusServiceName","BonusServiceSessions","Subtype","RewardType","RewardRef","RewardQty","RewardName"];
   if (!sheet) {
     sheet = ss.insertSheet("Packages");
-    sheet.appendRow(PKG_HEADERS);
-    sheet.getRange(1, 1, 1, PKG_HEADERS.length).setFontWeight("bold");
+    sheet.appendRow(FULL_PKG_HEADERS);
+    sheet.getRange(1, 1, 1, FULL_PKG_HEADERS.length).setFontWeight("bold");
+  } else {
+    // Ensure all columns have headers (migration for old sheets)
+    FULL_PKG_HEADERS.forEach(function(h, i) {
+      const cell = sheet.getRange(1, i + 1);
+      if (!cell.getValue() || cell.getValue() !== h) {
+        cell.setValue(h);
+        cell.setFontWeight("bold");
+      }
+    });
   }
   const data = sheet.getDataRange().getValues();
   const pkgId = String(payload.packageId || "").trim();
