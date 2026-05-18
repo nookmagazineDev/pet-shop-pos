@@ -234,7 +234,7 @@ export default function Packages() {
       bonusServiceName:   pkg.BonusServiceName || "",
       bonusServiceSessions: String(pkg.BonusServiceSessions || "0"),
       subtype:            pkg.Subtype || "GENERAL",
-      rewardType:         pkg.RewardType || "NONE",
+      rewardType:         (pkg.PackageType || "POINTS") === "SESSIONS" && (!pkg.RewardType || pkg.RewardType === "NONE") ? "ITEM" : (pkg.RewardType || "NONE"),
       rewardRef:          pkg.RewardRef || "",
       rewardName:         pkg.RewardName || "",
       rewardQty:          String(pkg.RewardQty || "1"),
@@ -654,25 +654,28 @@ export default function Packages() {
                             {parseFloat(pkg.BonusPoints) > 0 && <span className="text-yellow-500">(+{Number(pkg.BonusPoints).toLocaleString()} bonus)</span>}
                           </span>
                         ) : (
-                          <div className="space-y-0.5">
-                            <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-100 px-2.5 py-1 rounded-full text-xs font-bold">
-                              <Scissors size={11} /> {Number(pkg.SessionCount || 0).toLocaleString()} ครั้ง
-                              {Number(pkg.BonusSessions) > 0 && <span className="text-violet-400">(แถม {Number(pkg.BonusSessions)} ครั้ง)</span>}
-                            </span>
+                          <div className="space-y-1">
+                            {Number(pkg.SessionCount || 0) > 0 && (
+                              <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-100 px-2.5 py-1 rounded-full text-xs font-bold">
+                                <Scissors size={11} /> {Number(pkg.SessionCount || 0).toLocaleString()} ครั้ง
+                                {Number(pkg.BonusSessions) > 0 && <span className="text-violet-400">(แถม {Number(pkg.BonusSessions)} ครั้ง)</span>}
+                              </span>
+                            )}
                             {pkg.BonusServiceName && (
                               <div className="text-xs text-amber-600 font-medium">+ {pkg.BonusServiceName} {Number(pkg.BonusServiceSessions || 0)} ครั้ง</div>
+                            )}
+                            {pkg.RewardType && pkg.RewardType !== "NONE" && (pkg.RewardName || pkg.RewardRef) && (
+                              <div className="inline-flex items-center gap-1 text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100 px-2.5 py-1 rounded-full">
+                                <Gift size={11} />
+                                {pkg.RewardType === "COUPON" ? "🎟" : "🎁"} {pkg.RewardName || pkg.RewardRef}
+                                {Number(pkg.RewardQty || 1) > 1 && <span className="text-purple-400 font-normal">x{Number(pkg.RewardQty)}</span>}
+                              </div>
                             )}
                           </div>
                         )}
                       </td>
                       <td className="py-4 px-4 text-right text-gray-500 text-xs">
-                        <div>{Number(pkg.ExpiryDays || 365).toLocaleString()} วัน</div>
-                        {pkg.RewardType && pkg.RewardType !== "NONE" && pkg.RewardRef && (
-                          <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded-full">
-                            <Gift size={9} />
-                            {pkg.RewardType === "COUPON" ? "คูปอง" : "สินค้า"}: {String(pkg.RewardRef).substring(0, 18)}{String(pkg.RewardRef).length > 18 ? "…" : ""} x{Number(pkg.RewardQty || 1)}
-                          </div>
-                        )}
+                        {Number(pkg.ExpiryDays || 365).toLocaleString()} วัน
                       </td>
                       <td className="py-4 px-4 text-center">
                         <button onClick={() => toggleStatus(pkg)} title={isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}>
