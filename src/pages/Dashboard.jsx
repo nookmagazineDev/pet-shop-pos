@@ -9,6 +9,56 @@ import {
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
 
+const MAIN_PAYMENT_KEYS = ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "รูดบัตร", "เครดิต", "พ้อย"];
+const PAYMENT_COLORS = {
+  "เงินสด":       "#3B82F6",
+  "โอนเข้าบัญชี": "#10B981",
+  "สแกน QR":      "#F59E0B",
+  "รูดบัตร":      "#EF4444",
+  "เครดิต":       "#FBBF24",
+  "พ้อย":         "#8B5CF6",
+};
+
+const PAYMENT_PATTERNS = [
+  { key: "เงินสด",       patterns: ["เงินสด"] },
+  { key: "โอนเข้าบัญชี", patterns: ["โอนเข้าบัญชี", "เงินโอน", "Shopee"] },
+  { key: "สแกน QR",      patterns: ["สแกน QR", "สแกนQR", "QR"] },
+  { key: "รูดบัตร",      patterns: ["รูดบัตร"] },
+  { key: "เครดิต",       patterns: ["เครดิต", "บัตรเครดิต"] },
+  { key: "พ้อย",         patterns: ["แต้ม", "Points", "พ้อย"] },
+];
+
+function resolvePaymentKey(label) {
+  const found = PAYMENT_PATTERNS.find(c => c.patterns.some(p => label.includes(p)));
+  return found ? found.key : null;
+}
+
+function normalizePayment(paymentMethod, totalAmount) {
+  const result = {};
+  if (!paymentMethod) return result;
+  if (paymentMethod.includes(":")) {
+    paymentMethod.split("+").forEach(part => {
+      const ci = part.indexOf(":");
+      if (ci >= 0) {
+        const key = resolvePaymentKey(part.substring(0, ci).trim());
+        const amt = parseFloat(part.substring(ci + 1).trim()) || 0;
+        if (key) result[key] = (result[key] || 0) + amt;
+      }
+    });
+  } else if (paymentMethod.includes("+")) {
+    const parts = paymentMethod.split("+").map(p => p.trim());
+    const share = totalAmount / parts.length;
+    parts.forEach(part => {
+      const key = resolvePaymentKey(part);
+      if (key) result[key] = (result[key] || 0) + share;
+    });
+  } else {
+    const key = resolvePaymentKey(paymentMethod);
+    if (key) result[key] = totalAmount;
+  }
+  return result;
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState([
     { id: "sales", name: "ยอดขายวันนี้", value: "฿0", change: "กำลังโหลด...", icon: <DollarSign size={24} />, color: "bg-blue-50 text-blue-600 border-blue-200" },
@@ -24,7 +74,7 @@ export default function Dashboard() {
   const [todayTransactions, setTodayTransactions] = useState([]);
   const [attentionProducts, setAttentionProducts] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
-  const [todaySalesBreakdown, setTodaySalesBreakdown] = useState({ cash: 0, transfer: 0, credit: 0 });
+  const [todaySalesBreakdown, setTodaySalesBreakdown] = useState(Object.fromEntries(MAIN_PAYMENT_KEYS.map(k => [k, 0])));
   const [lowStoreStock, setLowStoreStock] = useState([]);
 
   // Chart Data State
@@ -57,7 +107,7 @@ export default function Dashboard() {
       };
     });
 
-    const paymentStats = { "เงินสด": 0, "เงินโอน": 0, "บัตรเครดิต": 0 };
+    const paymentStats = Object.fromEntries(MAIN_PAYMENT_KEYS.map(k => [k, 0]));
     const categoryStats = {};
 
     transactions.forEach(tx => {
@@ -66,8 +116,10 @@ export default function Dashboard() {
       if (txDate >= sDate && txDate <= eDate) {
         const dayMatch = dateRangeArr.find(d => d.fullDate === txDate.toDateString());
         if (dayMatch) dayMatch.sales += txAmt;
-        if (paymentStats[tx.PaymentMethod] !== undefined) paymentStats[tx.PaymentMethod] += txAmt;
-        else if (tx.PaymentMethod) paymentStats[tx.PaymentMethod] = txAmt;
+        const breakdown = normalizePayment(tx.PaymentMethod, txAmt);
+        Object.entries(breakdown).forEach(([k, v]) => {
+          if (paymentStats[k] !== undefined) paymentStats[k] += v;
+        });
         try {
           const items = JSON.parse(tx.CartDetails || "[]");
           items.forEach(item => {
@@ -81,7 +133,9 @@ export default function Dashboard() {
 
     setChartDataDaily(dateRangeArr);
     setChartDataPayment(
-      Object.entries(paymentStats).filter(([_, v]) => v > 0).map(([name, value]) => ({ name, value }))
+      MAIN_PAYMENT_KEYS
+        .filter(k => paymentStats[k] > 0)
+        .map(k => ({ name: k, value: paymentStats[k], color: PAYMENT_COLORS[k] }))
     );
     setChartDataCategory(
       Object.entries(categoryStats)
@@ -110,8 +164,9 @@ export default function Dashboard() {
       setRawTransactions(sortedTxs);
 
       const todayStr = new Date().toDateString();
-      let todaySales = 0, todayOrders = 0, cashTotal = 0, transferTotal = 0, creditTotal = 0;
+      let todaySales = 0, todayOrders = 0;
       const todayTxs = [];
+      const todayBreakdown = Object.fromEntries(MAIN_PAYMENT_KEYS.map(k => [k, 0]));
 
       sortedTxs.forEach(tx => {
         const txDate = new Date(tx.Date);
@@ -120,14 +175,15 @@ export default function Dashboard() {
           todaySales += txAmt;
           todayOrders++;
           todayTxs.push(tx);
-          if (tx.PaymentMethod === "เงินสด") cashTotal += txAmt;
-          else if (tx.PaymentMethod === "เงินโอน") transferTotal += txAmt;
-          else if (tx.PaymentMethod === "บัตรเครดิต") creditTotal += txAmt;
+          const breakdown = normalizePayment(tx.PaymentMethod, txAmt);
+          Object.entries(breakdown).forEach(([k, v]) => {
+            if (todayBreakdown[k] !== undefined) todayBreakdown[k] += v;
+          });
         }
       });
 
       setTodayTransactions(todayTxs);
-      setTodaySalesBreakdown({ cash: cashTotal, transfer: transferTotal, credit: creditTotal });
+      setTodaySalesBreakdown(todayBreakdown);
 
       const attentionList = [];
       const now = new Date();
@@ -236,10 +292,14 @@ export default function Dashboard() {
               {selectedCard === "sales" && (<>
                 <thead className="bg-blue-50 border-b border-blue-100 text-blue-700 font-medium sticky top-0">
                   <tr><th colSpan="4" className="py-3 px-6 bg-blue-100/50 border-b border-blue-100">
-                    <div className="flex gap-8 text-sm">
-                      <div><span className="text-gray-500">เงินสด:</span> <span className="font-bold text-gray-900">฿{todaySalesBreakdown.cash.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-                      <div><span className="text-gray-500">เงินโอน:</span> <span className="font-bold text-gray-900">฿{todaySalesBreakdown.transfer.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-                      <div><span className="text-gray-500">บัตรเครดิต:</span> <span className="font-bold text-gray-900">฿{todaySalesBreakdown.credit.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+                    <div className="flex flex-wrap gap-4 text-sm">
+                      {MAIN_PAYMENT_KEYS.filter(k => todaySalesBreakdown[k] > 0).map(k => (
+                        <div key={k} className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: PAYMENT_COLORS[k] }}></span>
+                          <span className="text-gray-500">{k}:</span>
+                          <span className="font-bold text-gray-900">฿{todaySalesBreakdown[k].toLocaleString(undefined,{minimumFractionDigits:2})}</span>
+                        </div>
+                      ))}
                     </div>
                   </th></tr>
                   <tr>
@@ -392,13 +452,6 @@ export default function Dashboard() {
                   <Tooltip
                     content={({ active, payload, label }) => {
                       if (!active || !payload || !payload.length) return null;
-                      const dayDate = chartDataDaily.find(d => d.date === label);
-                      // build per-payment breakdown for this day
-                      const dayStr = dayDate ? dayDate.fullDate : null;
-                      const breakdown = { เงินสด: 0, เงินโอน: 0, บัตรเครดิต: 0 };
-                      if (dayStr) {
-                        // we can compute from todayTransactions only for today; for other days we just show total
-                      }
                       return (
                         <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.15)', padding: '12px 16px', minWidth: 160 }}>
                           <p style={{ fontWeight: 700, color: '#111827', marginBottom: 6 }}>{label}</p>
@@ -457,7 +510,7 @@ export default function Dashboard() {
                 {chartDataPayment.map((item, index) => (
                   <div key={index} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color || COLORS[index % COLORS.length] }}></span>
                       <span className="text-sm text-gray-600 font-medium">{item.name}</span>
                     </div>
                     <div className="text-right">
@@ -486,7 +539,7 @@ export default function Dashboard() {
                     dataKey="value"
                   >
                     {chartDataPayment.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip
