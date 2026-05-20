@@ -51,8 +51,7 @@ async function printReceipt(settings, isTest = false) {
     return;
   }
 
-  const win = window.open("", "_blank", "width=400,height=600");
-  win.document.write(`<!DOCTYPE html><html><head>
+  const printHtml = `<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
     <title>ใบเสร็จ${isTest ? " (ทดสอบ)" : ""}</title>
     <style>
@@ -107,10 +106,22 @@ async function printReceipt(settings, isTest = false) {
     <div class="hr"></div>
     <div class="footer">${settings.footerNote}</div>
     ${isTest ? `<div class="footer" style="color:#666;margin-top:6px">--- ทดสอบระบบพิมพ์ ---</div>` : ""}
-  </body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
+  </body></html>`;
+
+  // Use hidden iframe to avoid popup blocker
+  let iframe = document.getElementById("pos-print-frame");
+  if (!iframe) {
+    iframe = document.createElement("iframe");
+    iframe.id = "pos-print-frame";
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;";
+    document.body.appendChild(iframe);
+  }
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+  iframeDoc.open();
+  iframeDoc.write(printHtml);
+  iframeDoc.close();
+  iframe.contentWindow.focus();
+  setTimeout(() => iframe.contentWindow.print(), 400);
 }
 
 export { printReceipt };
