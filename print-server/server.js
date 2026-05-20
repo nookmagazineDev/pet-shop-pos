@@ -141,9 +141,9 @@ app.listen(port, "0.0.0.0", () => {
       if (net.family === "IPv4" && !net.internal) lanIps.push(net.address);
     }
   }
-  console.log("\n✅  Print Server เริ่มทำงานแล้ว!");
+  console.log("\n  Print Server started!");
   console.log(`    Local  : http://localhost:${port}`);
-  lanIps.forEach(ip => console.log(`    Network: http://${ip}:${port}  ← ใช้ IP นี้บนมือถือ`));
-  console.log("\n📱  เปิดแอป → ตั้งค่าปริ้นเตอร์ → Print Server URL → วาง IP บรรทัดบน");
-  console.log("🖨️   ตั้งค่า IP เครื่องพิมพ์ให้ตรงกับ IP จริงของ Thermal Printer ด้วย\n");
+  lanIps.forEach(ip => console.log(`    Network: http://${ip}:${port}  <-- use this IP on mobile`));
+  console.log("\n  App -> Printer Settings -> Print Server URL -> paste Network IP above");
+  console.log("  Set Printer IP to match the actual IP of your Thermal Printer\n");
 });
