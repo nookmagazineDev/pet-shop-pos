@@ -151,8 +151,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
 
       <div class="flex-between"><span>รวม</span><span>${fmt(subtotal)}</span></div>
 
-      ${hasDiscounts ? `<div class="hr"></div>${promoDiscRows}${billDiscRow}${couponRow}` : ""}
-
       <div class="hr"></div>
       <div class="flex-between"><span>NonVAT</span><span>${fmt(nonVatAdjusted)}</span></div>
       <div class="flex-between"><span>VATable</span><span>${fmt(vatableAdjusted)}</span></div>
@@ -164,6 +162,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       <div class="hr"></div>
 
       ${payRows}
+
+      ${hasDiscounts ? `<div class="hr"></div>${promoDiscRows}${billDiscRow}${couponRow}` : ""}
 
       <div class="hr"></div>
       <div class="flex-between"><span>พนักงาน</span><span>${empName}</span></div>
@@ -254,31 +254,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
               <span>{fmt(subtotal)}</span>
             </div>
 
-            {/* Discount section */}
-            {hasDiscounts && (
-              <>
-                <hr className="border-dashed border-gray-400 my-1.5" />
-                {freeItemLines.map((fi, idx) => (
-                  <div key={idx} className="flex justify-between text-[11px] text-green-700">
-                    <span className="flex-1 pr-2">🎁 {fi.name}{fi.promoName ? ` (${fi.promoName})` : ""}</span>
-                    <span>-{fmt(fi.price * fi.qty)}</span>
-                  </div>
-                ))}
-                {discountAmount > 0 && (
-                  <div className="flex justify-between text-[11px] text-purple-700">
-                    <span>ส่วนลดโปรโมชั่น</span>
-                    <span>-{fmt(discountAmount)}</span>
-                  </div>
-                )}
-                {couponDiscount > 0 && (
-                  <div className="flex justify-between text-[11px] text-amber-700">
-                    <span className="flex-1 pr-2">{couponName || "ส่วนลดจากคูปอง"}</span>
-                    <span>-{fmt(couponDiscount)}</span>
-                  </div>
-                )}
-              </>
-            )}
-
             <hr className="border-dashed border-gray-400 my-1.5" />
 
             {/* VAT breakdown */}
@@ -308,6 +283,31 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
                 <span>{fmt(p.amount > 0 ? p.amount : total)}</span>
               </div>
             ))}
+
+            {/* Discount section — after payment rows */}
+            {hasDiscounts && (
+              <>
+                <hr className="border-dashed border-gray-400 my-1.5" />
+                {freeItemLines.map((fi, idx) => (
+                  <div key={idx} className="flex justify-between text-[11px] text-green-700">
+                    <span className="flex-1 pr-2">🎁 {fi.name}{fi.promoName ? ` (${fi.promoName})` : ""}</span>
+                    <span>-{fmt(fi.price * fi.qty)}</span>
+                  </div>
+                ))}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-[11px] text-purple-700">
+                    <span>ส่วนลดโปรโมชั่น</span>
+                    <span>-{fmt(discountAmount)}</span>
+                  </div>
+                )}
+                {couponDiscount > 0 && (
+                  <div className="flex justify-between text-[11px] text-amber-700">
+                    <span className="flex-1 pr-2">{couponName || "ส่วนลดจากคูปอง"}</span>
+                    <span>-{fmt(couponDiscount)}</span>
+                  </div>
+                )}
+              </>
+            )}
 
             <hr className="border-dashed border-gray-400 my-1.5" />
 
