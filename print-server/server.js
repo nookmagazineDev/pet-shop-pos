@@ -2,6 +2,24 @@ const express = require("express");
 const cors = require("cors");
 const ThermalPrinter = require("node-thermal-printer").printer;
 const PrinterTypes = require("node-thermal-printer").types;
+const http  = require("http");
+const https = require("https");
+const fs    = require("fs");
+const path  = require("path");
+const os    = require("os");
+
+async function downloadImage(url) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https") ? https : http;
+    const tmpPath = path.join(os.tmpdir(), "pos_logo_tmp.png");
+    const file = fs.createWriteStream(tmpPath);
+    client.get(url, (res) => {
+      if (res.statusCode !== 200) return reject(new Error("HTTP " + res.statusCode));
+      res.pipe(file);
+      file.on("finish", () => { file.close(); resolve(tmpPath); });
+    }).on("error", (err) => { fs.unlink(tmpPath, () => {}); reject(err); });
+  });
+}
 
 const app = express();
 const port = 3001;
@@ -43,6 +61,7 @@ app.post("/print", async (req, res) => {
       receiptType, paymentMethod, customerInfo, empName, recNo,
       nonVatAdjusted, vatableAdjusted,
       discountAmount, freeItemLines, couponDiscount, couponName,
+      logoUrl,
     } = req.body;
 
     const ip = req.body.ip || req.body.printerIp;
@@ -64,6 +83,18 @@ app.post("/print", async (req, res) => {
 
     // ── Header ────────────────────────────────────────────────
     printer.alignCenter();
+
+    // Logo
+    if (logoUrl && !isTest) {
+      try {
+        const tmpPath = await downloadImage(logoUrl);
+        await printer.printImage(tmpPath);
+        printer.newLine();
+      } catch (e) {
+        console.log("Logo skipped:", e.message);
+      }
+    }
+
     printer.bold(true);
     printer.setTextSize(1, 1);
     printer.println(shopName || "Receipt");
@@ -74,7 +105,12 @@ app.post("/print", async (req, res) => {
     if (shopTaxId)   printer.println("Tax ID: " + shopTaxId + (shopBranch ? ` (${shopBranch})` : ""));
 
     printer.println(sep);
-    printer.println(isTest ? "** TEST PRINT **" : (receiptType === "ใบกำกับภาษี" ? "Tax Invoice (Full)" : "ABB Tax Invoice"));
+    const headerTitle = isTest
+      ? "** TEST PRINT **"
+      : receiptType === "ใบกำกับภาษี"
+        ? "ใบเสร็จรับเงิน/ใบกำกับภาษี"
+        : "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ";
+    printer.println(headerTitle);
 
     printer.alignLeft();
     printer.println("Date: " + new Date().toLocaleString("en-GB"));

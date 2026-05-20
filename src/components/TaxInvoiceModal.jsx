@@ -52,6 +52,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
             receiptType, paymentMethod, customerInfo,
             empName, recNo, nonVatAdjusted, vatableAdjusted,
             discountAmount, freeItemLines, couponDiscount, couponName,
+            logoUrl: window.location.origin + "/logo.png",
           }),
         });
         const data = await response.json();

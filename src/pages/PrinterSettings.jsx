@@ -36,7 +36,8 @@ async function printReceipt(settings, isTest = false) {
           tax,
           total,
           isTest,
-          receiptType: "ใบกำกับภาษีอย่างย่อ"
+          receiptType: "ใบกำกับภาษีอย่างย่อ",
+          logoUrl: window.location.origin + "/logo.png",
         })
       });
       const data = await response.json();
