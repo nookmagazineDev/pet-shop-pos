@@ -24,9 +24,9 @@ async function printReceipt(settings, isTest = false) {
     </tr>`).join("");
 
   if (settings.enableDirectPrint) {
-    // Send to Node.js local bridge
+    const serverUrl = (settings.printServerUrl || "http://localhost:3001").replace(/\/$/, "");
     try {
-      const response = await fetch("http://localhost:3001/print", {
+      const response = await fetch(`${serverUrl}/print`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -46,7 +46,7 @@ async function printReceipt(settings, isTest = false) {
         toast.success("ส่งคำสั่งพิมพ์เรียบร้อย");
       }
     } catch (e) {
-      toast.error("ไม่สามารถเชื่อมต่อโปรแกรม Print Server ได้ (localhost:3001)");
+      toast.error(`เชื่อมต่อ Print Server ไม่ได้ (${serverUrl}) — เปิด .bat ค้างไว้หรือยัง?`);
     }
     return;
   }
@@ -201,10 +201,27 @@ export default function PrinterSettings() {
               </div>
               <div className="flex flex-col">
                 <span className="text-sm font-bold text-gray-800">เปิดใช้งานเสิร์ฟเวอร์ปริ้นจิ๋ว (Direct Print Port 9100)</span>
-                <span className="text-xs text-gray-500">พิมพ์ตรงหน้าต่างไม่เด้ง (ต้องเปิดโปรแกรมหลังบ้าน print-server ทิ้งไว้)</span>
+                <span className="text-xs text-gray-500">พิมพ์ตรงไม่มี dialog เด้ง — ต้องเปิด .bat ทิ้งไว้ก่อน</span>
               </div>
             </label>
           </div>
+
+          {form.enableDirectPrint && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Print Server URL</label>
+              <input
+                type="text"
+                value={form.printServerUrl || "http://localhost:3001"}
+                onChange={handleChange("printServerUrl")}
+                placeholder="http://localhost:3001"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm font-mono"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                ใช้จากคอมเดียวกัน → <code className="bg-gray-100 px-1 rounded">http://localhost:3001</code><br/>
+                ใช้จากมือถือ → ดู IP ที่ขึ้นใน cmd เมื่อเปิด .bat แล้วใส่ เช่น <code className="bg-gray-100 px-1 rounded">http://192.168.1.5:3001</code>
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">ขนาดกระดาษใบเสร็จ</label>

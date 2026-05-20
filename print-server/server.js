@@ -127,7 +127,23 @@ app.post("/print", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Print Bridge Server is running at http://localhost:${port}`);
-  console.log("Send POST requests to /print with printer JSON data to perform direct printing.");
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", message: "Print server is running" });
+});
+
+app.listen(port, "0.0.0.0", () => {
+  const os = require("os");
+  const nets = os.networkInterfaces();
+  const lanIps = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === "IPv4" && !net.internal) lanIps.push(net.address);
+    }
+  }
+  console.log("\n✅  Print Server เริ่มทำงานแล้ว!");
+  console.log(`    Local  : http://localhost:${port}`);
+  lanIps.forEach(ip => console.log(`    Network: http://${ip}:${port}  ← ใช้ IP นี้บนมือถือ`));
+  console.log("\n📱  เปิดแอป → ตั้งค่าปริ้นเตอร์ → Print Server URL → วาง IP บรรทัดบน");
+  console.log("🖨️   ตั้งค่า IP เครื่องพิมพ์ให้ตรงกับ IP จริงของ Thermal Printer ด้วย\n");
 });

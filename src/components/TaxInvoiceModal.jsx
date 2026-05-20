@@ -40,8 +40,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
   // ── PRINT (thermal printer popup) ───────────────────────────
   const handlePrint = async () => {
     if (settings.enableDirectPrint) {
+      const serverUrl = (settings.printServerUrl || "http://localhost:3001").replace(/\/$/, "");
       try {
-        const response = await fetch("http://localhost:3001/print", {
+        const response = await fetch(`${serverUrl}/print`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -57,7 +58,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
         if (!data.success) toast.error("พิมพ์ไม่สำเร็จ: " + data.message);
         else { toast.success("พิมพ์ใบเสร็จเรียบร้อยแล้ว"); onClose(); }
       } catch (e) {
-        toast.error("ไม่สามารถเชื่อมต่อ Print Server ได้ (เปิดโปรแกรมหลังบ้านหรือยัง?)");
+        toast.error(`เชื่อมต่อ Print Server ไม่ได้ (${serverUrl}) — เปิด .bat ค้างไว้หรือยัง?`);
       }
       return;
     }

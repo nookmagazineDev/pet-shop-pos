@@ -4,6 +4,7 @@ const PrinterContext = createContext(null);
 
 const DEFAULTS = {
   printerIp: "",
+  printServerUrl: "http://localhost:3001",
   paperWidth: "80",  // mm
   enableDirectPrint: false, // true = use node bridge
   shopName: "บริษัทมะมามี (1989) จำกัด",
