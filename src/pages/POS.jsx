@@ -210,13 +210,42 @@ export default function POS() {
 
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const packagePrice = pendingPackage ? (parseFloat(pendingPackage.pkg.Price) || 0) : 0;
-  
+
+  // Pre-calculate manual discount so it can be used in MIN_AMOUNT threshold check
+  const manualDiscountAmt = (() => {
+    const mdVal = parseFloat(manualDiscountValue) || 0;
+    if (mdVal <= 0) return 0;
+    return manualDiscountType === "percent" ? subtotal * (mdVal / 100) : mdVal;
+  })();
+
+  // Raw coupon discount (without promo discount applied) — used for MIN_AMOUNT threshold check only
+  const rawCouponDiscountForCheck = (() => {
+    if (!selectedCoupon) return 0;
+    const base = Math.max(0, subtotal - manualDiscountAmt);
+    if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
+    if (selectedCoupon.Type === "FREE_ITEM") {
+      const barcode = String(selectedCoupon.FreeItemBarcode || "").trim();
+      if (!barcode) return 0;
+      const freeId = `free-coupon-${selectedCoupon.ID}`;
+      const freeEntry = cart.find(i => i.id === freeId);
+      if (freeEntry && freeEntry.price > 0) return freeEntry.price * freeEntry.qty;
+      const existing = cart.find(i => String(i.Barcode || "").trim() === barcode);
+      if (existing) return existing.price;
+      const prod = products.find(p => String(p.Barcode || "").trim() === barcode);
+      return parseFloat(prod?.Price || prod?.price || 0);
+    }
+    return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
+  })();
+
+  // Effective base after coupon + manual discounts — used to check MIN_AMOUNT thresholds
+  const baseAfterOtherDiscounts = Math.max(0, subtotal - manualDiscountAmt - rawCouponDiscountForCheck);
+
   // Promotion Calculation Engine
   const calculateDiscounts = () => {
     let totalDiscount = 0;
     promotions.forEach(promo => {
       if (promo.ConditionType === "MIN_AMOUNT") {
-        let qualifyingSubtotal = subtotal;
+        let qualifyingSubtotal = baseAfterOtherDiscounts;
         if (promo.DiscountType === "FREE_ITEM") {
            const freeBc = String(promo.DiscountValue).trim();
            const freeItem = cart.find(c => String(c.Barcode) === freeBc);
@@ -262,15 +291,8 @@ export default function POS() {
       }
     });
 
-    // Add manual discount
-    const mdVal = parseFloat(manualDiscountValue) || 0;
-    if (mdVal > 0) {
-      if (manualDiscountType === "percent") {
-        totalDiscount += subtotal * (mdVal / 100);
-      } else {
-        totalDiscount += mdVal;
-      }
-    }
+    // Add manual discount (pre-calculated)
+    totalDiscount += manualDiscountAmt;
 
     return Math.min(totalDiscount, subtotal);
   };
@@ -282,11 +304,11 @@ export default function POS() {
     let isApplicable = false;
     let freeQty = 1;
     if (promo.ConditionType === "MIN_AMOUNT") {
-      let qualifyingSubtotal = subtotal;
+      let qualifyingSubtotal = baseAfterOtherDiscounts;
       const freeBc = String(promo.DiscountValue).trim();
       const freeItem = cart.find(c => String(c.Barcode) === freeBc);
       if (freeItem && freeItem.qty > 0) qualifyingSubtotal -= freeItem.price;
-      
+
       if (qualifyingSubtotal >= parseFloat(promo.ConditionValue1 || 0)) {
         isApplicable = true;
       }
@@ -395,7 +417,7 @@ export default function POS() {
     promotions.forEach(promo => {
       if (promo.ConditionType === "MIN_AMOUNT") {
         const target = parseFloat(promo.ConditionValue1 || 0);
-        let qualifyingSubtotal = subtotal;
+        let qualifyingSubtotal = baseAfterOtherDiscounts;
         if (promo.DiscountType === "FREE_ITEM") {
            const freeBc = String(promo.DiscountValue).trim();
            const freeItem = cart.find(c => String(c.Barcode) === freeBc);
