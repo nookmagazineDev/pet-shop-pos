@@ -1513,8 +1513,69 @@ function purchasePackage(payload) {
   const ref = "ซื้อแพคเกจ: " + pkgRow[1] + " (฿" + pkgRow[2] + ")";
 
   const newBalance = _adjustCustomerPoints(ss, customerName, earnedPoints, "EARN", ref, packageId, actor);
+
+  // Auto-issue reward (coupon or free item) if package has one
+  var rewardType   = String(pkgRow[15] || "NONE").trim();
+  var rewardRef    = String(pkgRow[16] || "").trim();
+  var rewardQty    = parseInt(pkgRow[17]) || 1;
+  var rewardName   = String(pkgRow[18] || "").trim();
+  var expiryDays   = parseInt(pkgRow[10]) || 365;
+  var purchaseDate = new Date();
+  var rewardIssued = null;
+
+  if (rewardType === "COUPON" && rewardRef) {
+    var cpnSheet = ss.getSheetByName("Coupons");
+    if (cpnSheet) {
+      var cpnData = cpnSheet.getDataRange().getValues();
+      var cpnRow = null;
+      for (var ci = 1; ci < cpnData.length; ci++) {
+        if (String(cpnData[ci][0]).trim() === rewardRef ||
+            String(cpnData[ci][1]).trim().toLowerCase() === rewardRef.toLowerCase()) {
+          cpnRow = cpnData[ci]; break;
+        }
+      }
+      if (cpnRow) {
+        issueCoupon({ customerName: customerName, couponId: String(cpnRow[0]).trim(), quantity: rewardQty, price: 0, _actor: payload._actor });
+        rewardIssued = { type: "COUPON", name: cpnRow[1], qty: rewardQty };
+      }
+    }
+  } else if (rewardType === "ITEM" && rewardRef) {
+    var itemName = rewardName || rewardRef;
+    if (!itemName || itemName === rewardRef) {
+      var prodSheet2 = ss.getSheetByName("Products");
+      if (prodSheet2) {
+        var prodData2 = prodSheet2.getDataRange().getValues();
+        for (var pi = 1; pi < prodData2.length; pi++) {
+          if (String(prodData2[pi][0]).trim() === rewardRef) {
+            itemName = String(prodData2[pi][1]).trim() || rewardRef; break;
+          }
+        }
+      }
+    }
+    var CC_HDRS = ["ID","CustomerName","CouponID","CouponName","Type","Value","MinOrderAmount","Price","Status","IssuedAt","ExpiryDate","UsedAt","OrderID","IssuedBy","FreeItemBarcode","FreeItemName"];
+    var ccSheet2 = ss.getSheetByName("CustomerCoupons");
+    if (!ccSheet2) {
+      ccSheet2 = ss.insertSheet("CustomerCoupons");
+      ccSheet2.appendRow(CC_HDRS);
+      ccSheet2.getRange(1, 1, 1, CC_HDRS.length).setFontWeight("bold");
+    }
+    var ccHdrsCheck = ccSheet2.getRange(1, 1, 1, CC_HDRS.length).getValues()[0];
+    CC_HDRS.forEach(function(h, i) { if (!ccHdrsCheck[i] || ccHdrsCheck[i] !== h) ccSheet2.getRange(1, i + 1).setValue(h); });
+    var actor2 = payload._actor ? payload._actor.username : "System";
+    var couponIds = [];
+    for (var qi = 0; qi < rewardQty; qi++) {
+      var freeExpiryDate = new Date(purchaseDate);
+      freeExpiryDate.setDate(freeExpiryDate.getDate() + expiryDays);
+      var ccId = "CC-FREE-" + purchaseDate.getTime() + "-" + qi;
+      ccSheet2.appendRow([ccId, customerName, packageId, "ของแถม: " + itemName, "FREE_ITEM", 0, 0, 0, "ACTIVE", purchaseDate, freeExpiryDate, "", "", actor2, rewardRef, itemName]);
+      couponIds.push(ccId);
+      if (qi < rewardQty - 1) Utilities.sleep(5);
+    }
+    rewardIssued = { type: "ITEM", barcode: rewardRef, name: itemName, qty: rewardQty, couponIds: couponIds };
+  }
+
   logActivity("Points", "Purchase Package", packageId, payload._actor);
-  return jsonResponse({ success: true, earnedPoints: earnedPoints, newBalance: newBalance });
+  return jsonResponse({ success: true, earnedPoints: earnedPoints, newBalance: newBalance, rewardIssued: rewardIssued });
 }
 
 function saveCustomer(payload) {

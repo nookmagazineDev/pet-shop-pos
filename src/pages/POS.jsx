@@ -9,6 +9,7 @@ import BuyCouponModal from "../components/BuyCouponModal";
 import { fetchApi, postApi } from "../api";
 import { useShift } from "../context/ShiftContext";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 
 export default function POS() {
   const { isShiftOpen, isChecking } = useShift();
@@ -545,6 +546,14 @@ export default function POS() {
           ? { ...c, Points: pkgRes.newBalance }
           : c
       ));
+      if (pkgRes.rewardIssued) {
+        const r = pkgRes.rewardIssued;
+        if (r.type === "ITEM") {
+          toast.success(`🎁 ออกคูปองสินค้าฟรีให้ลูกค้าแล้ว: ${r.name} x${r.qty}`, { duration: 5000 });
+        } else if (r.type === "COUPON") {
+          toast.success(`🎟 ออกคูปองแถม: ${r.name} x${r.qty} เข้าบัญชีลูกค้าแล้ว`, { duration: 5000 });
+        }
+      }
     }
 
     const pkgItem = buildPkgCartItem();
