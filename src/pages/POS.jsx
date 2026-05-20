@@ -37,7 +37,7 @@ export default function POS() {
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [isPurchasePkgOpen, setIsPurchasePkgOpen] = useState(false);
   const [isBuyCouponOpen, setIsBuyCouponOpen] = useState(false);
-  const [selectedCoupon, setSelectedCoupon] = useState(null);   // coupon applied to this bill
+  const [selectedCoupons, setSelectedCoupons] = useState([]);   // coupons applied to this bill
   const [customerCoupons, setCustomerCoupons] = useState([]);   // all coupons loaded for app
   const [showCouponPicker, setShowCouponPicker] = useState(false);
   const [pendingPackage, setPendingPackage] = useState(null);   // { customer, pkg } package pending checkout
@@ -87,18 +87,21 @@ export default function POS() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, isInvoiceModalOpen, isLoadingProducts]);
 
-  // Handle FREE_ITEM coupon — item must already be in cart
+  // Handle FREE_ITEM coupons — item must already be in cart
   useEffect(() => {
-    if (selectedCoupon?.Type === "FREE_ITEM" && selectedCoupon?.FreeItemBarcode) {
-      const barcode = String(selectedCoupon.FreeItemBarcode).trim();
-      const inCart  = cart.some(i => String(i.Barcode || "").trim() === barcode);
-      if (!inCart) {
-        toast.error(`กรุณาเพิ่มสินค้า "${selectedCoupon.FreeItemName || barcode}" ลงตะกร้าก่อนใช้คูปองนี้`);
-        setSelectedCoupon(null);
+    setSelectedCoupons(prev => prev.filter(coupon => {
+      if (coupon.Type === "FREE_ITEM" && coupon.FreeItemBarcode) {
+        const barcode = String(coupon.FreeItemBarcode).trim();
+        const inCart  = cart.some(i => String(i.Barcode || "").trim() === barcode);
+        if (!inCart) {
+          toast.error(`กรุณาเพิ่มสินค้า "${coupon.FreeItemName || barcode}" ลงตะกร้าก่อนใช้คูปองนี้`);
+          return false;
+        }
       }
-    }
+      return true;
+    }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCoupon]);
+  }, [cart]);
 
   const addToCart = (product, qtyToAdd = 1) => {
     setCart(prev => {
@@ -220,21 +223,35 @@ export default function POS() {
 
   // Raw coupon discount (without promo discount applied) — used for MIN_AMOUNT threshold check only
   const rawCouponDiscountForCheck = (() => {
-    if (!selectedCoupon) return 0;
-    const base = Math.max(0, subtotal - manualDiscountAmt);
-    if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
-    if (selectedCoupon.Type === "FREE_ITEM") {
-      const barcode = String(selectedCoupon.FreeItemBarcode || "").trim();
-      if (!barcode) return 0;
-      const freeId = `free-coupon-${selectedCoupon.ID}`;
-      const freeEntry = cart.find(i => i.id === freeId);
-      if (freeEntry && freeEntry.price > 0) return freeEntry.price * freeEntry.qty;
-      const existing = cart.find(i => String(i.Barcode || "").trim() === barcode);
-      if (existing) return existing.price;
-      const prod = products.find(p => String(p.Barcode || "").trim() === barcode);
-      return parseFloat(prod?.Price || prod?.price || 0);
+    if (selectedCoupons.length === 0) return 0;
+    let base = Math.max(0, subtotal - manualDiscountAmt);
+    let total = 0;
+    for (const coupon of selectedCoupons) {
+      let disc = 0;
+      if (coupon.Type === "PERCENT") {
+        disc = Math.min(base * (parseFloat(coupon.Value) / 100), base);
+      } else if (coupon.Type === "FREE_ITEM") {
+        const barcode = String(coupon.FreeItemBarcode || "").trim();
+        if (barcode) {
+          const freeId = `free-coupon-${coupon.ID}`;
+          const freeEntry = cart.find(i => i.id === freeId);
+          if (freeEntry && freeEntry.price > 0) disc = freeEntry.price * freeEntry.qty;
+          else {
+            const existing = cart.find(i => String(i.Barcode || "").trim() === barcode);
+            if (existing) disc = existing.price;
+            else {
+              const prod = products.find(p => String(p.Barcode || "").trim() === barcode);
+              disc = parseFloat(prod?.Price || prod?.price || 0);
+            }
+          }
+        }
+      } else {
+        disc = Math.min(parseFloat(coupon.Value) || 0, base);
+      }
+      total += disc;
+      base = Math.max(0, base - disc);
     }
-    return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
+    return total;
   })();
 
   // Effective base after coupon + manual discounts — used to check MIN_AMOUNT thresholds
@@ -336,27 +353,42 @@ export default function POS() {
 
   const discountAmount = calculateDiscounts();
 
-  // Coupon discount (applied on top of promo/manual discounts)
-  const couponDiscount = (() => {
-    if (!selectedCoupon) return 0;
-    const base = Math.max(0, subtotal - discountAmount);
-    if (selectedCoupon.Type === "PERCENT") return Math.min(base * (parseFloat(selectedCoupon.Value) / 100), base);
-    if (selectedCoupon.Type === "FREE_ITEM") {
-      const barcode  = String(selectedCoupon.FreeItemBarcode || "").trim();
-      if (!barcode) return 0;
-      // 1. Dedicated free-item entry (added by coupon when barcode wasn't in cart)
-      const freeId   = `free-coupon-${selectedCoupon.ID}`;
-      const freeItem = cart.find(i => i.id === freeId);
-      if (freeItem && freeItem.price > 0) return freeItem.price * freeItem.qty;
-      // 2. Regular item already in cart with same barcode → discount its price (1 unit)
-      const existing = cart.find(i => String(i.Barcode || i.id || "").trim() === barcode);
-      if (existing) return existing.price; // discount 1 unit (qty:1 coupon)
-      // 3. Fallback: product lookup
-      const prod = products.find(p => String(p.Barcode || "").trim() === barcode);
-      return parseFloat(prod?.Price || prod?.price || 0);
+  // Per-coupon discount lines (for receipt display and total)
+  const couponLines = (() => {
+    if (selectedCoupons.length === 0) return [];
+    let base = Math.max(0, subtotal - discountAmount);
+    const lines = [];
+    for (const coupon of selectedCoupons) {
+      let disc = 0;
+      if (coupon.Type === "PERCENT") {
+        disc = Math.min(base * (parseFloat(coupon.Value) / 100), base);
+      } else if (coupon.Type === "FREE_ITEM") {
+        const barcode = String(coupon.FreeItemBarcode || "").trim();
+        if (barcode) {
+          const freeId = `free-coupon-${coupon.ID}`;
+          const freeItem = cart.find(i => i.id === freeId);
+          if (freeItem && freeItem.price > 0) disc = freeItem.price * freeItem.qty;
+          else {
+            const existing = cart.find(i => String(i.Barcode || i.id || "").trim() === barcode);
+            if (existing) disc = existing.price;
+            else {
+              const prod = products.find(p => String(p.Barcode || "").trim() === barcode);
+              disc = parseFloat(prod?.Price || prod?.price || 0);
+            }
+          }
+        }
+      } else {
+        disc = Math.min(parseFloat(coupon.Value) || 0, base);
+      }
+      const label = coupon.Type === "FREE_ITEM"
+        ? `ส่วนลดจากคูปอง: ${coupon.FreeItemName || coupon.CouponName || ""}`
+        : (coupon.CouponName || coupon.Name || "");
+      lines.push({ name: label, discount: disc, couponId: coupon.ID });
+      base = Math.max(0, base - disc);
     }
-    return Math.min(parseFloat(selectedCoupon.Value) || 0, base);
+    return lines;
   })();
+  const couponDiscount = couponLines.reduce((s, l) => s + l.discount, 0);
 
   const vatableSubtotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? 0 : (item.price * item.qty)), 0);
 
@@ -467,7 +499,7 @@ export default function POS() {
     setCustomerSearch("");
     setManualDiscountValue("");
     setManualDiscountType("baht");
-    setSelectedCoupon(null);
+    setSelectedCoupons([]);
     setShowCouponPicker(false);
     setPendingPackage(null);
   };
@@ -588,9 +620,11 @@ export default function POS() {
       setIsCheckingOut(false);
 
       if (res.success) {
-        if (selectedCoupon?.ID) {
-          postApi({ action: "useCoupon", payload: { couponInstanceId: selectedCoupon.ID, orderId: res.orderId || "" } });
-          setCustomerCoupons(prev => prev.map(c => c.ID === selectedCoupon.ID ? { ...c, Status: "USED" } : c));
+        for (const coupon of selectedCoupons) {
+          if (coupon.ID) {
+            postApi({ action: "useCoupon", payload: { couponInstanceId: coupon.ID, orderId: res.orderId || "" } });
+            setCustomerCoupons(prev => prev.map(c => c.ID === coupon.ID ? { ...c, Status: "USED" } : c));
+          }
         }
         if (hasCreditSplit && customerName && effectiveCreditPaid > 0) {
           const usedPts = Math.ceil(effectiveCreditPaid);
@@ -609,9 +643,8 @@ export default function POS() {
           discountAmount,
           freeItemLines: freeItemLines.map(f => ({ ...f })),
           couponDiscount,
-          couponName: selectedCoupon?.Type === "FREE_ITEM"
-        ? `ส่วนลดจากคูปอง: ${selectedCoupon.FreeItemName || selectedCoupon.CouponName || ""}`
-        : (selectedCoupon?.CouponName || selectedCoupon?.Name || ""),
+          couponLines: couponLines.map(l => ({ ...l })),
+          couponName: couponLines.map(l => l.name).filter(Boolean).join(", "),
           tax,
           total: cartTotal + packagePrice,
           receiptType,
@@ -894,21 +927,15 @@ export default function POS() {
                  <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
-            {selectedCoupon && (
-               <div className="flex justify-between text-amber-700 font-bold bg-amber-50 px-2 py-1 -mx-2 rounded-lg">
-                 <span className="flex items-center gap-1.5">
-                   <Ticket size={14} />
-                   {selectedCoupon.Type === "FREE_ITEM"
-                     ? `ส่วนลดจากคูปอง: ${selectedCoupon.FreeItemName || selectedCoupon.CouponName}`
-                     : `คูปอง: ${selectedCoupon.CouponName}`}
-                 </span>
-                 <span>
-                   {couponDiscount > 0
-                     ? `-฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-                     : ""}
-                 </span>
-               </div>
-            )}
+            {couponLines.map((cl, idx) => (
+              <div key={`cl-${idx}`} className="flex justify-between text-amber-700 font-bold bg-amber-50 px-2 py-1 -mx-2 rounded-lg">
+                <span className="flex items-center gap-1.5">
+                  <Ticket size={14} />
+                  {cl.name}
+                </span>
+                <span>{cl.discount > 0 ? `-฿${cl.discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ""}</span>
+              </div>
+            ))}
             <div className="flex justify-between text-gray-500">
               <span>ภาษีมูลค่าเพิ่ม 7% (รวมในราคาแล้ว)</span>
               <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -1078,20 +1105,20 @@ export default function POS() {
                     >
                       <span className="flex items-center gap-2">
                         <Ticket size={16} />
-                        {selectedCoupon ? `ใช้คูปอง: ${selectedCoupon.CouponName}` : `คูปองที่ใช้ได้ (${activeCoupons.length} ใบ)`}
+                        {selectedCoupons.length > 0 ? `ใช้คูปอง ${selectedCoupons.length} ใบ` : `คูปองที่ใช้ได้ (${activeCoupons.length} ใบ)`}
                       </span>
                       <span className="text-xs">{showCouponPicker ? "▲" : "▼"}</span>
                     </button>
                     {showCouponPicker && (
                       <div className="mt-2 space-y-1.5 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
-                        {selectedCoupon && (
-                          <button type="button" onClick={() => setSelectedCoupon(null)}
+                        {selectedCoupons.length > 0 && (
+                          <button type="button" onClick={() => setSelectedCoupons([])}
                             className="w-full text-left px-3 py-2 rounded-lg text-xs text-red-500 hover:bg-red-50 flex items-center gap-1.5 transition-colors">
-                            <X size={12} /> ยกเลิกการใช้คูปอง
+                            <X size={12} /> ยกเลิกคูปองทั้งหมด
                           </button>
                         )}
                         {activeCoupons.map((c, i) => {
-                          const isApplied = selectedCoupon?.ID === c.ID;
+                          const isApplied = selectedCoupons.some(s => s.ID === c.ID);
                           const minOk = !parseFloat(c.MinOrderAmount) || subtotal >= parseFloat(c.MinOrderAmount);
                           const freeBarcode = c.Type === "FREE_ITEM" ? String(c.FreeItemBarcode || "").trim() : null;
                           const freeItemInCart = !freeBarcode || cart.some(ci => String(ci.Barcode || "").trim() === freeBarcode);
@@ -1109,14 +1136,23 @@ export default function POS() {
                           return (
                             <button key={i} type="button"
                               disabled={isDisabled}
-                              onClick={() => { setSelectedCoupon(isApplied ? null : c); setShowCouponPicker(false); }}
+                              onClick={() => {
+                                setSelectedCoupons(prev =>
+                                  isApplied ? prev.filter(s => s.ID !== c.ID) : [...prev, c]
+                                );
+                              }}
                               className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all text-sm flex items-center justify-between ${isApplied ? "border-primary bg-primary/5 text-primary" : !isDisabled ? "border-gray-100 hover:border-primary/30 bg-gray-50" : "border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed"}`}>
-                              <div>
-                                <div className="font-semibold">{c.CouponName}</div>
-                                {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
-                                {c.Type === "FREE_ITEM" && !freeItemInCart && (
-                                  <div className="text-xs text-red-400">กรุณาเพิ่ม "{c.FreeItemName || freeBarcode}" ก่อน</div>
-                                )}
+                              <div className="flex items-center gap-2">
+                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${isApplied ? "border-primary bg-primary" : "border-gray-300"}`}>
+                                  {isApplied && <span className="text-white text-xs leading-none">✓</span>}
+                                </div>
+                                <div>
+                                  <div className="font-semibold">{c.CouponName}</div>
+                                  {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
+                                  {c.Type === "FREE_ITEM" && !freeItemInCart && (
+                                    <div className="text-xs text-red-400">กรุณาเพิ่ม "{c.FreeItemName || freeBarcode}" ก่อน</div>
+                                  )}
+                                </div>
                               </div>
                               <span className={`text-xs font-bold ml-2 shrink-0 ${c.Type === "FREE_ITEM" ? "text-green-600" : "text-primary"}`}>{discLabel}</span>
                             </button>
@@ -1126,23 +1162,26 @@ export default function POS() {
                     )}
                   </div>
                 )}
-                {selectedCoupon && (
-                  <div className="mt-2 flex items-center justify-between px-4 py-2 bg-green-50 border border-green-100 rounded-xl text-sm">
-                    <span className="flex items-center gap-1.5 text-green-700 font-semibold">
-                      <Ticket size={14} />
-                      {selectedCoupon.Type === "FREE_ITEM"
-                        ? `🎁 ${selectedCoupon.FreeItemName || selectedCoupon.CouponName}`
-                        : selectedCoupon.CouponName}
-                    </span>
-                    <span className="text-green-700 font-bold">
-                      {selectedCoupon.Type === "PERCENT"
-                        ? `-${selectedCoupon.Value}%`
-                        : selectedCoupon.Type === "FREE_ITEM"
-                          ? "ราคา ฿0"
-                          : `-฿${couponDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-                    </span>
-                  </div>
-                )}
+                {selectedCoupons.map((c, idx) => {
+                  const line = couponLines[idx];
+                  return (
+                    <div key={c.ID} className="mt-1.5 flex items-center justify-between px-4 py-2 bg-green-50 border border-green-100 rounded-xl text-sm">
+                      <span className="flex items-center gap-1.5 text-green-700 font-semibold">
+                        <Ticket size={14} />
+                        {c.Type === "FREE_ITEM" ? `🎁 ${c.FreeItemName || c.CouponName}` : c.CouponName}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-green-700 font-bold">
+                          {c.Type === "PERCENT" ? `-${c.Value}%` : c.Type === "FREE_ITEM" ? "ราคา ฿0" : `-฿${(line?.discount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                        </span>
+                        <button type="button" onClick={() => setSelectedCoupons(prev => prev.filter(s => s.ID !== c.ID))}
+                          className="text-gray-400 hover:text-red-500 transition-colors">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
@@ -1388,6 +1427,7 @@ export default function POS() {
         freeItemLines={receiptData?.freeItemLines || []}
         couponDiscount={receiptData?.couponDiscount || 0}
         couponName={receiptData?.couponName || ""}
+        couponLines={receiptData?.couponLines || []}
         tax={receiptData?.tax || 0}
         total={receiptData?.total || 0}
         receiptType={receiptData?.receiptType || "ใบเสร็จ"}

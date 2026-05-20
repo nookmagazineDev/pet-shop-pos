@@ -2,7 +2,21 @@ import { X, Printer } from "lucide-react";
 import { usePrinter } from "../context/PrinterContext";
 import toast from "react-hot-toast";
 
-export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, discountAmount = 0, freeItemLines = [], couponDiscount = 0, couponName = "", tax, total, receiptType, customerInfo, taxInvoiceNo }) {
+async function getLogoBase64() {
+  try {
+    const res = await fetch("/logo.png");
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result.split(",")[1] || null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch { return null; }
+}
+
+export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, discountAmount = 0, freeItemLines = [], couponDiscount = 0, couponName = "", couponLines = [], tax, total, receiptType, customerInfo, taxInvoiceNo }) {
   if (!isOpen) return null;
 
   const { settings } = usePrinter();
@@ -42,6 +56,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
     if (settings.enableDirectPrint) {
       const serverUrl = (settings.printServerUrl || "http://localhost:3001").replace(/\/$/, "");
       try {
+        const logoBase64 = await getLogoBase64();
         const response = await fetch(`${serverUrl}/print`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -52,7 +67,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
             receiptType, paymentMethod, customerInfo,
             empName, recNo, nonVatAdjusted, vatableAdjusted,
             discountAmount, freeItemLines, couponDiscount, couponName,
-            logoUrl: window.location.origin + "/logo.png",
+            couponLines,
+            logoBase64,
           }),
         });
         const data = await response.json();
@@ -92,11 +108,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
         <span>-${fmt(discountAmount)}</span>
       </div>` : "";
 
-    const couponRow = couponDiscount > 0 ? `
+    const couponRow = (couponLines && couponLines.length > 0
+      ? couponLines
+      : couponDiscount > 0 ? [{ name: couponName || "ส่วนลดจากคูปอง", discount: couponDiscount }] : []
+    ).map(cl => `
       <div class="flex-between" style="color:#b45309;font-size:0.93em">
-        <span>${couponName || "ส่วนลดจากคูปอง"}</span>
-        <span>-${fmt(couponDiscount)}</span>
-      </div>` : "";
+        <span>${cl.name}</span>
+        <span>-${fmt(cl.discount)}</span>
+      </div>`).join("");
 
     // Payment rows
     const payRows = payments.map(p => `
@@ -312,12 +331,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
                     <span>-{fmt(discountAmount)}</span>
                   </div>
                 )}
-                {couponDiscount > 0 && (
-                  <div className="flex justify-between text-[11px] text-amber-700">
-                    <span className="flex-1 pr-2">{couponName || "ส่วนลดจากคูปอง"}</span>
-                    <span>-{fmt(couponDiscount)}</span>
+                {(couponLines && couponLines.length > 0
+                  ? couponLines
+                  : couponDiscount > 0 ? [{ name: couponName || "ส่วนลดจากคูปอง", discount: couponDiscount }] : []
+                ).map((cl, idx) => (
+                  <div key={idx} className="flex justify-between text-[11px] text-amber-700">
+                    <span className="flex-1 pr-2">{cl.name}</span>
+                    <span>-{fmt(cl.discount)}</span>
                   </div>
-                )}
+                ))}
               </>
             )}
 

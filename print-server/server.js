@@ -2,55 +2,39 @@ const express = require("express");
 const cors = require("cors");
 const ThermalPrinter = require("node-thermal-printer").printer;
 const PrinterTypes = require("node-thermal-printer").types;
-const http  = require("http");
-const https = require("https");
-const fs    = require("fs");
-const path  = require("path");
-const os    = require("os");
+const fs   = require("fs");
+const path = require("path");
+const os   = require("os");
 
-async function downloadImage(url) {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith("https") ? https : http;
-    const tmpPath = path.join(os.tmpdir(), "pos_logo_tmp.png");
-    const file = fs.createWriteStream(tmpPath);
-    client.get(url, (res) => {
-      if (res.statusCode !== 200) return reject(new Error("HTTP " + res.statusCode));
-      res.pipe(file);
-      file.on("finish", () => { file.close(); resolve(tmpPath); });
-    }).on("error", (err) => { fs.unlink(tmpPath, () => {}); reject(err); });
-  });
-}
-
-const app = express();
+const app  = express();
 const port = 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
 
-// Visual width: Thai chars count as 2 (double-byte on thermal printers)
-function visualWidth(str) {
+// Visual width: Thai chars count as 2 on thermal printers
+function vw(str) {
   let w = 0;
-  for (const ch of String(str || "")) {
-    w += (ch >= "฀" && ch <= "๿") ? 2 : 1;
-  }
+  for (const ch of String(str || "")) w += (ch >= "฀" && ch <= "๿") ? 2 : 1;
   return w;
 }
 
-// Truncate string to max visual width, appending ".." if cut
-function truncate(str, maxW) {
-  let w = 0, out = "";
+// Wrap text into lines no wider than maxW (visual)
+function wrapLines(str, maxW) {
+  const lines = [];
+  let cur = "", curW = 0;
   for (const ch of String(str || "")) {
     const cw = (ch >= "฀" && ch <= "๿") ? 2 : 1;
-    if (w + cw + 2 > maxW) { out += ".."; break; }
-    out += ch; w += cw;
+    if (curW + cw > maxW) { lines.push(cur); cur = ch; curW = cw; }
+    else { cur += ch; curW += cw; }
   }
-  return out;
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [""];
 }
 
-// Right-align value against a left label on one line
+// Right-align value against label on one line
 function lineRow(label, value, lineWidth) {
-  const gap = lineWidth - visualWidth(label) - visualWidth(value);
-  return label + " ".repeat(Math.max(1, gap)) + value;
+  return label + " ".repeat(Math.max(1, lineWidth - vw(label) - vw(value))) + value;
 }
 
 app.post("/print", async (req, res) => {
@@ -59,16 +43,15 @@ app.post("/print", async (req, res) => {
       paperWidth, shopName, shopAddress, shopPhone, shopTaxId, shopBranch,
       footerNote, items, subtotal, tax, total, isTest,
       receiptType, paymentMethod, customerInfo, empName, recNo,
-      nonVatAdjusted, vatableAdjusted,
-      discountAmount, freeItemLines, couponDiscount, couponName,
-      logoUrl,
+      discountAmount, freeItemLines, couponDiscount, couponLines,
+      logoBase64,
     } = req.body;
 
     const ip = req.body.ip || req.body.printerIp;
     if (!ip) return res.status(400).json({ success: false, message: "Printer IP is required" });
 
     const width = parseInt(paperWidth) || 80;
-    const lineW = width <= 58 ? 32 : 48;  // printable chars per line
+    const lineW = width <= 58 ? 32 : 48;
 
     let printer = new ThermalPrinter({
       type: PrinterTypes.EPSON,
@@ -81,13 +64,11 @@ app.post("/print", async (req, res) => {
     const fmt = (n) => Number(n || 0).toFixed(2);
     const sep = "-".repeat(lineW);
 
-    // ── Header ────────────────────────────────────────────────
-    printer.alignCenter();
-
-    // Logo
-    if (logoUrl && !isTest) {
+    // ── Logo ──────────────────────────────────────────────────
+    if (logoBase64 && !isTest) {
       try {
-        const tmpPath = await downloadImage(logoUrl);
+        const tmpPath = path.join(os.tmpdir(), "pos_logo_tmp.png");
+        fs.writeFileSync(tmpPath, Buffer.from(logoBase64, "base64"));
         await printer.printImage(tmpPath);
         printer.newLine();
       } catch (e) {
@@ -95,6 +76,8 @@ app.post("/print", async (req, res) => {
       }
     }
 
+    // ── Header ────────────────────────────────────────────────
+    printer.alignCenter();
     printer.bold(true);
     printer.setTextSize(1, 1);
     printer.println(shopName || "Receipt");
@@ -126,64 +109,56 @@ app.post("/print", async (req, res) => {
 
     // ── Items ─────────────────────────────────────────────────
     printer.println(sep);
-    printer.bold(true);
-    printer.println("Item" + " ".repeat(lineW - 4 - 3 - 7 - 7) + "Qty" + "  Price" + "   Total");
-    printer.bold(false);
-    printer.println(sep);
 
     if (items && items.length > 0) {
       items.forEach(item => {
-        const qty   = item.qty || 1;
-        const price = Number(item.price || item.Price || 0);
-        const total = price * qty;
-        const qtyStr   = String(qty);
-        const priceStr = fmt(price);
-        const totalStr = fmt(total);
+        const qty      = item.qty || 1;
+        const price    = Number(item.price || item.Price || 0);
+        const barcode  = String(item.Barcode || item.barcode || "").trim();
+        const rawName  = (item.name || item.Name || "Item") + (item.vatStatus === "NON VAT" ? " (N)" : "");
+        const totalStr = fmt(price * qty);
 
-        // Max visual width for item name = lineW minus fixed right columns (qty+price+total+spaces)
-        const rightW = 1 + qtyStr.length + 2 + priceStr.length + 3 + totalStr.length;
-        const nameMaxW = lineW - rightW;
-        const rawName = (item.name || item.Name || "Item") + (item.vatStatus === "NON VAT" ? "(N)" : "");
-        const name = truncate(rawName, nameMaxW);
+        // Barcode line
+        if (barcode) printer.println(`  ${barcode}`);
 
-        const gap1 = nameMaxW - visualWidth(name);
-        const gap2 = 2;  // between qty and price
-        const gap3 = 3;  // between price and total
-        printer.println(
-          name +
-          " ".repeat(Math.max(1, gap1)) +
-          qtyStr +
-          " ".repeat(gap2) +
-          priceStr +
-          " ".repeat(gap3) +
-          totalStr
-        );
+        // Item name — wrap to full line width
+        const nameLines = wrapLines(rawName, lineW - 2);
+        nameLines.forEach(l => printer.println("  " + l));
+
+        // Price line: right-aligned total
+        const pricePart = `  x${qty}  @${fmt(price)}`;
+        printer.println(pricePart + " ".repeat(Math.max(1, lineW - vw(pricePart) - totalStr.length)) + totalStr);
       });
     }
 
     // ── Discounts ─────────────────────────────────────────────
-    const hasFree     = freeItemLines && freeItemLines.length > 0;
+    const hasFree    = freeItemLines && freeItemLines.length > 0;
     const hasBillDisc = Number(discountAmount || 0) > 0;
-    const hasCoupon   = Number(couponDiscount || 0) > 0;
+    const resolvedCouponLines = (couponLines && couponLines.length > 0)
+      ? couponLines
+      : (Number(couponDiscount || 0) > 0 ? [{ name: "Coupon", discount: couponDiscount }] : []);
 
-    if (hasFree || hasBillDisc || hasCoupon) {
+    if (hasFree || hasBillDisc || resolvedCouponLines.length > 0) {
       printer.println(sep);
-      printer.println("-- Discounts --");
-
       if (hasFree) {
         freeItemLines.forEach(fi => {
-          const label = "Free: " + truncate(fi.name || "Item", lineW - 14);
-          const value = "-" + fmt(fi.price * fi.qty);
-          printer.println(lineRow(label, value, lineW));
+          printer.println(lineRow("Free: " + fi.name, "-" + fmt(fi.price * fi.qty), lineW));
         });
       }
       if (hasBillDisc) {
         printer.println(lineRow("Promo Discount", "-" + fmt(discountAmount), lineW));
       }
-      if (hasCoupon) {
-        const cLabel = truncate(couponName || "Coupon", lineW - 14);
-        printer.println(lineRow(cLabel, "-" + fmt(couponDiscount), lineW));
-      }
+      resolvedCouponLines.forEach(cl => {
+        const label = String(cl.name || "Coupon");
+        const nameLines = wrapLines(label, lineW - 10);
+        nameLines.forEach((l, i) => {
+          if (i === nameLines.length - 1) {
+            printer.println(lineRow(l, "-" + fmt(cl.discount), lineW));
+          } else {
+            printer.println(l);
+          }
+        });
+      });
     }
 
     // ── Totals ────────────────────────────────────────────────
@@ -197,15 +172,13 @@ app.post("/print", async (req, res) => {
     // ── Payments ──────────────────────────────────────────────
     if (paymentMethod && !isTest) {
       printer.println(sep);
-      const payments = String(paymentMethod).includes(":")
+      const payList = String(paymentMethod).includes(":")
         ? String(paymentMethod).split(" + ").map(p => {
             const [m, a] = p.split(":");
             return { method: m.trim(), amount: parseFloat(a) || 0 };
           })
         : [{ method: paymentMethod, amount: Number(total) }];
-      payments.forEach(p => {
-        printer.println(lineRow(p.method, fmt(p.amount || total), lineW));
-      });
+      payList.forEach(p => printer.println(lineRow(p.method, fmt(p.amount || total), lineW)));
     }
 
     // ── Footer ────────────────────────────────────────────────
@@ -234,7 +207,6 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(port, "0.0.0.0", () => {
-  const os = require("os");
   const nets = os.networkInterfaces();
   const lanIps = [];
   for (const name of Object.keys(nets)) {

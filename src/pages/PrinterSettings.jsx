@@ -37,7 +37,19 @@ async function printReceipt(settings, isTest = false) {
           total,
           isTest,
           receiptType: "ใบกำกับภาษีอย่างย่อ",
-          logoUrl: window.location.origin + "/logo.png",
+          logoBase64: await (async () => {
+            try {
+              const r = await fetch("/logo.png");
+              if (!r.ok) return null;
+              const b = await r.blob();
+              return new Promise(res => {
+                const rd = new FileReader();
+                rd.onloadend = () => res((rd.result || "").split(",")[1] || null);
+                rd.onerror = () => res(null);
+                rd.readAsDataURL(b);
+              });
+            } catch { return null; }
+          })(),
         })
       });
       const data = await response.json();
