@@ -62,7 +62,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       return;
     }
 
-    const win = window.open("", "_blank", "width=420,height=700");
     const fmt = (n) => (parseFloat(n) || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     // Item rows
@@ -104,7 +103,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
         <span>${fmt(p.amount > 0 ? p.amount : total)}</span>
       </div>`).join("");
 
-    win.document.write(`<!DOCTYPE html><html><head>
+    const printHtml = `<!DOCTYPE html><html><head>
       <meta charset="UTF-8">
       <title>ใบเสร็จ</title>
       <style>
@@ -173,11 +172,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       <br/><br/>
       <div class="center">** วันที่ ${now.toLocaleString("th-TH", { hour12: false })} **</div>
       ${settings.footerNote ? `<div class="center" style="font-size:0.9em;margin-top:2px">${settings.footerNote}</div>` : ""}
-      <script>window.onload = function() { window.print(); window.close(); }</script>
-    </body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 300);
+    </body></html>`;
+
+    // Use hidden iframe to avoid popup blocker
+    let iframe = document.getElementById("pos-print-frame");
+    if (!iframe) {
+      iframe = document.createElement("iframe");
+      iframe.id = "pos-print-frame";
+      iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;visibility:hidden;";
+      document.body.appendChild(iframe);
+    }
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(printHtml);
+    iframeDoc.close();
+    iframe.contentWindow.focus();
+    setTimeout(() => iframe.contentWindow.print(), 400);
   };
 
   // ── PREVIEW (modal) ──────────────────────────────────────────
