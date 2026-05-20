@@ -87,39 +87,15 @@ export default function POS() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, isInvoiceModalOpen, isLoadingProducts]);
 
-  // Handle FREE_ITEM coupon — add to cart only if barcode not already there
+  // Handle FREE_ITEM coupon — item must already be in cart
   useEffect(() => {
     if (selectedCoupon?.Type === "FREE_ITEM" && selectedCoupon?.FreeItemBarcode) {
-      const barcode   = String(selectedCoupon.FreeItemBarcode).trim();
-      const itemName  = selectedCoupon.FreeItemName || barcode;
-      const prod      = products.find(p => String(p.Barcode || "").trim() === barcode);
-      const realPrice = parseFloat(prod?.Price || prod?.price || 0);
-      const freeId    = `free-coupon-${selectedCoupon.ID}`;
-
-      setCart(prev => {
-        // Remove any old isFreeItem entries first
-        const withoutFree = prev.filter(i => !i.isFreeItem);
-        // If the same barcode is already in cart as a regular item → don't add duplicate
-        const alreadyInCart = withoutFree.some(
-          i => String(i.Barcode || i.id || "").trim() === barcode
-        );
-        if (alreadyInCart) return withoutFree; // couponDiscount will pick it up by barcode
-        // Otherwise add the free item
-        return [{
-          id:        freeId,
-          Barcode:   barcode,
-          Name:      `🎁 ${itemName}`,
-          name:      `🎁 ${itemName}`,
-          price:     realPrice,
-          costPrice: realPrice,
-          image:     prod?.ImageURL || "https://placehold.co/300x300?text=Free",
-          vatStatus: prod?.VatStatus || prod?.vatStatus || "NON VAT",
-          qty:       1,
-          isFreeItem: true,
-        }, ...withoutFree];
-      });
-    } else {
-      setCart(prev => prev.filter(i => !i.isFreeItem));
+      const barcode = String(selectedCoupon.FreeItemBarcode).trim();
+      const inCart  = cart.some(i => String(i.Barcode || "").trim() === barcode);
+      if (!inCart) {
+        toast.error(`กรุณาเพิ่มสินค้า "${selectedCoupon.FreeItemName || barcode}" ลงตะกร้าก่อนใช้คูปองนี้`);
+        setSelectedCoupon(null);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCoupon]);
@@ -351,7 +327,7 @@ export default function POS() {
       const freeItem = cart.find(i => i.id === freeId);
       if (freeItem && freeItem.price > 0) return freeItem.price * freeItem.qty;
       // 2. Regular item already in cart with same barcode → discount its price (1 unit)
-      const existing = cart.find(i => !i.isFreeItem && String(i.Barcode || i.id || "").trim() === barcode);
+      const existing = cart.find(i => String(i.Barcode || i.id || "").trim() === barcode);
       if (existing) return existing.price; // discount 1 unit (qty:1 coupon)
       // 3. Fallback: product lookup
       const prod = products.find(p => String(p.Barcode || "").trim() === barcode);
@@ -792,28 +768,6 @@ export default function POS() {
                 );
               })()}
               {cart.map(item => (
-                item.isFreeItem ? (
-                  /* FREE ITEM from coupon — show at real price (discounted via coupon line) */
-                  <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border-2 border-green-200 bg-green-50">
-                    <div className="w-16 h-16 rounded-lg bg-green-100 flex items-center justify-center text-green-600 text-2xl shrink-0">🎁</div>
-                    <div className="flex-1 text-center sm:text-left">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-semibold text-green-800">{item.name}</h4>
-                        <span className="text-xs font-bold text-white bg-green-500 rounded-full px-2 py-0.5">ฟรี — ใช้คูปอง</span>
-                      </div>
-                      <p className="text-green-500 text-xs">{item.Barcode}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-400 text-lg line-through">
-                        ฿{item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                      <div className="text-xs font-bold text-green-600">ส่วนลดในยอดรวม</div>
-                    </div>
-                    <button onClick={() => { setSelectedCoupon(null); }} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-2" title="ยกเลิกของแถม">
-                      <X size={16} />
-                    </button>
-                  </div>
-                ) : (
                 <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-primary/30 transition-colors group bg-white shadow-sm hover:shadow-md">
                   <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover bg-gray-100" />
 
@@ -845,25 +799,6 @@ export default function POS() {
                   <button onClick={() => removeItem(item.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ml-2">
                     <Trash2 size={20} />
                   </button>
-                </div>
-                )
-              ))}
-
-              {/* Free item lines from promotions */}
-              {freeItemLines.map((fi, idx) => (
-                <div key={`free-${idx}`} className="flex items-center gap-4 p-4 rounded-xl border border-green-200 bg-green-50">
-                  <div className="w-16 h-16 rounded-lg bg-green-100 flex items-center justify-center text-green-600 text-2xl shrink-0">🎁</div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-semibold text-green-800">{fi.name}</h4>
-                      <span className="text-xs font-bold text-green-700 bg-green-200 rounded-full px-2 py-0.5">ของแถม</span>
-                    </div>
-                    <p className="text-xs text-green-600 mt-0.5">จากโปร: {fi.promoName}</p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm text-green-700 line-through">฿{(fi.price * fi.qty).toLocaleString(undefined,{minimumFractionDigits:2})}</div>
-                    <div className="font-bold text-green-800 text-lg">-฿{(fi.price * fi.qty).toLocaleString(undefined,{minimumFractionDigits:2})}</div>
-                  </div>
                 </div>
               ))}
             </div>
@@ -922,9 +857,18 @@ export default function POS() {
               <span>฿{preVatDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             
+            {freeItemLines.map((fi, idx) => (
+              <div key={`fi-sum-${idx}`} className="flex justify-between text-green-700 font-bold bg-green-50 px-2 py-1 -mx-2 rounded-lg">
+                <span className="flex items-center gap-1.5 flex-1 pr-2">
+                  <Gift size={14} />
+                  🎁 {fi.name}{fi.promoName ? ` (${fi.promoName})` : ""}
+                </span>
+                <span>-฿{(fi.price * fi.qty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            ))}
             {discountAmount > 0 && (
                <div className="flex justify-between text-fuchsia-600 font-bold bg-fuchsia-50 px-2 py-1 -mx-2 rounded-lg">
-                 <span>ส่วนลดรวมทั้งหมด</span>
+                 <span>ส่วนลดโปรโมชั่น</span>
                  <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
@@ -1127,11 +1071,13 @@ export default function POS() {
                         {activeCoupons.map((c, i) => {
                           const isApplied = selectedCoupon?.ID === c.ID;
                           const minOk = !parseFloat(c.MinOrderAmount) || subtotal >= parseFloat(c.MinOrderAmount);
+                          const freeBarcode = c.Type === "FREE_ITEM" ? String(c.FreeItemBarcode || "").trim() : null;
+                          const freeItemInCart = !freeBarcode || cart.some(ci => String(ci.Barcode || "").trim() === freeBarcode);
+                          const isDisabled = !minOk || !freeItemInCart;
                           let discLabel;
                           if (c.Type === "PERCENT") {
                             discLabel = `ลด ${c.Value}%`;
                           } else if (c.Type === "FREE_ITEM") {
-                            const freeBarcode = String(c.FreeItemBarcode || "").trim();
                             const freeProd = freeBarcode ? products.find(p => String(p.Barcode || "").trim() === freeBarcode) : null;
                             const freePrice = parseFloat(freeProd?.Price || freeProd?.price) || 0;
                             discLabel = `🎁 ${c.FreeItemName || "ของแถม"}${freePrice > 0 ? ` (฿${freePrice.toLocaleString()})` : ""}`;
@@ -1140,12 +1086,15 @@ export default function POS() {
                           }
                           return (
                             <button key={i} type="button"
-                              disabled={!minOk}
+                              disabled={isDisabled}
                               onClick={() => { setSelectedCoupon(isApplied ? null : c); setShowCouponPicker(false); }}
-                              className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all text-sm flex items-center justify-between ${isApplied ? "border-primary bg-primary/5 text-primary" : minOk ? "border-gray-100 hover:border-primary/30 bg-gray-50" : "border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed"}`}>
+                              className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all text-sm flex items-center justify-between ${isApplied ? "border-primary bg-primary/5 text-primary" : !isDisabled ? "border-gray-100 hover:border-primary/30 bg-gray-50" : "border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed"}`}>
                               <div>
                                 <div className="font-semibold">{c.CouponName}</div>
                                 {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
+                                {c.Type === "FREE_ITEM" && !freeItemInCart && (
+                                  <div className="text-xs text-red-400">กรุณาเพิ่ม "{c.FreeItemName || freeBarcode}" ก่อน</div>
+                                )}
                               </div>
                               <span className={`text-xs font-bold ml-2 shrink-0 ${c.Type === "FREE_ITEM" ? "text-green-600" : "text-primary"}`}>{discLabel}</span>
                             </button>
