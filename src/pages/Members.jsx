@@ -169,10 +169,15 @@ export default function Members() {
   const getCreditHistory   = name => creditHistoryByName[String(name||"").trim().toLowerCase()] || [];
   const getCustPackages    = name => cpByName[String(name||"").trim().toLowerCase()] || [];
   const getCustPets        = name => petsByName[String(name||"").trim().toLowerCase()] || [];
-  const getActiveCoupons   = name => coupons.filter(cc =>
-    String(cc.CustomerName||"") === String(name||"") &&
-    String(cc.Status||"").toUpperCase() === "ACTIVE"
-  );
+  const getActiveCoupons   = name => {
+    const n = String(name||"").trim().toLowerCase();
+    const now = new Date();
+    return coupons.filter(cc =>
+      String(cc.CustomerName||"").trim().toLowerCase() === n &&
+      String(cc.Status||"").toUpperCase() === "ACTIVE" &&
+      (!cc.ExpiryDate || new Date(cc.ExpiryDate) >= now)
+    );
+  };
 
   const getPurchases = useCallback(name => {
     const n = String(name||"").trim().toLowerCase();
@@ -459,11 +464,15 @@ export default function Members() {
                             {EXPANDED_TABS.map(t => {
                               const Icon = t.icon;
                               const active = (expandedTab[rowId]||"info") === t.k;
+                              const badge = t.k === "coupons" ? getActiveCoupons(c.Name).length : null;
                               return (
                                 <button key={t.k}
                                   onClick={e=>{e.stopPropagation(); setTab(rowId,t.k);}}
                                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${active?"bg-indigo-600 text-white shadow":"text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}>
                                   <Icon size={13}/>{t.label}
+                                  {badge > 0 && (
+                                    <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${active?"bg-white/30 text-white":"bg-indigo-100 text-indigo-700"}`}>{badge}</span>
+                                  )}
                                 </button>
                               );
                             })}
