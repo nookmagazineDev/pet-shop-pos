@@ -658,6 +658,7 @@ export default function POS() {
           paymentMethod: paymentMethodStr,
           cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
           receiptType,
+          customerName: customerName.trim() || "",
           customerInfo: (receiptType === "ใบกำกับภาษี" || hasCreditSplit) ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
           creditsUsed: Math.ceil(effectiveStoreCreditPaid) > 0 ? Math.ceil(effectiveStoreCreditPaid) : 0,
           pointsUsed:  Math.ceil(effectivePointsPaid)      > 0 ? Math.ceil(effectivePointsPaid)      : 0,

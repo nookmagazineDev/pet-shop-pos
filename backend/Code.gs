@@ -484,7 +484,7 @@ function processCheckout(payload) {
   });
   
   const actor = payload._actor ? payload._actor.username : "System";
-  const cName = payload.customerInfo ? (payload.customerInfo.name || payload.customerInfo.customerName || "") : "";
+  const cName = payload.customerName || (payload.customerInfo ? (payload.customerInfo.name || payload.customerInfo.customerName || "") : "");
 
   // Deduct store credits if customer paid with เครดิต
   const creditsUsed = parseFloat(payload.creditsUsed) || 0;
