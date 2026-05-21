@@ -154,6 +154,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
       <div class="center" style="font-size:0.85em">(VAT Included)</div>
       <div class="hr"></div>
 
+      ${receiptType === "ใบกำกับภาษี" && customerInfo && (customerInfo.customerName || customerInfo.customerAddress || customerInfo.customerTaxId) ? `
+      <div style="font-size:0.88em;margin-bottom:4px">
+        <div><span style="color:#555">ผู้ซื้อ:</span> ${customerInfo.customerName || "-"}</div>
+        ${customerInfo.customerAddress ? `<div><span style="color:#555">ที่อยู่:</span> ${customerInfo.customerAddress}</div>` : ""}
+        ${customerInfo.customerTaxId ? `<div><span style="color:#555">เลขประจำตัวผู้เสียภาษี:</span> ${customerInfo.customerTaxId}</div>` : ""}
+      </div>
+      <div class="hr"></div>` : ""}
+
       <table>
         <thead>
           <tr>
@@ -249,6 +257,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, 
             </div>
 
             <hr className="border-dashed border-gray-400 my-1.5" />
+
+            {/* Customer info — shown only on full tax invoice */}
+            {receiptType === "ใบกำกับภาษี" && customerInfo && (customerInfo.customerName || customerInfo.customerAddress || customerInfo.customerTaxId) && (
+              <>
+                <div className="text-[11px] space-y-0.5 mb-1">
+                  <div><span className="text-gray-500">ผู้ซื้อ:</span> {customerInfo.customerName || "-"}</div>
+                  {customerInfo.customerAddress && (
+                    <div><span className="text-gray-500">ที่อยู่:</span> {customerInfo.customerAddress}</div>
+                  )}
+                  {customerInfo.customerTaxId && (
+                    <div><span className="text-gray-500">เลขประจำตัวผู้เสียภาษี:</span> {customerInfo.customerTaxId}</div>
+                  )}
+                </div>
+                <hr className="border-dashed border-gray-400 my-1.5" />
+              </>
+            )}
 
             {/* Items header */}
             <div className="flex justify-between text-[11px] text-gray-500 font-semibold">
