@@ -53,7 +53,7 @@ export default function Reports() {
 
   const fetchData = async () => {
     setIsLoading(true);
-    if (activeTab === "sales" || activeTab === "history" || activeTab === "tax" || activeTab === "returns") {
+    if (activeTab === "sales" || activeTab === "history" || activeTab === "tax" || activeTab === "returns" || activeTab === "invoices") {
       const [tx, taxInv, prods, ret] = await Promise.all([
         fetchApi("getTransactions"),
         fetchApi("getTaxInvoices"),
@@ -635,6 +635,7 @@ export default function Reports() {
           {[
             { key: "sales", label: "ยอดขายตามเมนู" },
             { key: "history", label: "ประวัติการขาย (แยกใบเสร็จ/ใบกำกับ)" },
+            { key: "invoices", label: "ใบกำกับภาษี" },
             { key: "tax", label: "รายงานภาษีขาย" },
             { key: "returns", label: "ประวัติการยกเลิกบิล VOID" },
             { key: "stock", label: "รายการย้ายสต็อก" },
@@ -813,8 +814,13 @@ export default function Reports() {
                         <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{new Date(tx.Date).toLocaleString("th-TH")}</td>
                         <td className="py-3 px-4 font-mono text-gray-700 font-semibold">{tx.ReceiptNo || tx.OrderID}</td>
                         <td className="py-3 px-4">
-                          {taxInv?.TaxInvoiceNo
-                            ? <span className="font-mono text-purple-700 font-semibold">{taxInv.TaxInvoiceNo}</span>
+                          {(taxInv?.TaxInvoiceNo || tx.TaxInvoiceNo)
+                            ? <button
+                                onClick={e => { e.stopPropagation(); setViewInvoiceTx({ ...tx, TaxInvoiceNo: taxInv?.TaxInvoiceNo || tx.TaxInvoiceNo }); }}
+                                className="font-mono text-purple-700 font-semibold text-xs px-2 py-0.5 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 transition-colors flex items-center gap-1"
+                              >
+                                <FileText size={10} /> {taxInv?.TaxInvoiceNo || tx.TaxInvoiceNo}
+                              </button>
                             : <span className="text-gray-300 text-xs">-</span>
                           }
                         </td>
@@ -993,6 +999,106 @@ export default function Reports() {
             </div>
           </div>
         )}
+
+        {/* --- TAB: TAX INVOICES LIST --- */}
+        {!isLoading && activeTab === "invoices" && (() => {
+          const invoiceTxList = filteredTransactions
+            .filter(tx => tx.ReceiptType === "ใบกำกับภาษี" || tx.TaxInvoiceNo)
+            .filter(searchTx)
+            .sort((a, b) => new Date(b.Date) - new Date(a.Date));
+
+          const totalInvoiceAmt = invoiceTxList
+            .filter(t => t.Status !== "CANCELLED")
+            .reduce((s, t) => s + (parseFloat(t.TotalAmount) || 0), 0);
+
+          return (
+            <div className="flex-1 overflow-auto">
+              <div className="p-4 bg-purple-50/50 border-b border-purple-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <FileText className="text-purple-600" size={20} />
+                  <div>
+                    <div className="font-semibold text-purple-800">ใบกำกับภาษี</div>
+                    <div className="text-xs text-purple-600">{invoiceTxList.length} ฉบับ • ยอดรวม ฿{totalInvoiceAmt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</div>
+                  </div>
+                </div>
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text" placeholder="ค้นหาเลขที่ใบกำกับ / ชื่อลูกค้า..."
+                    value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-8 pr-3 py-2 text-sm border border-purple-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-200 w-64"
+                  />
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-purple-50 sticky top-0">
+                    <tr className="border-b border-purple-100 text-xs font-medium text-purple-700">
+                      <th className="py-3 px-4">#</th>
+                      <th className="py-3 px-4">วันที่ / เวลา</th>
+                      <th className="py-3 px-4">เลขที่ใบกำกับภาษี</th>
+                      <th className="py-3 px-4">เลขที่บิล</th>
+                      <th className="py-3 px-4">ชื่อผู้ซื้อ</th>
+                      <th className="py-3 px-4">เลขประจำตัวผู้เสียภาษี</th>
+                      <th className="py-3 px-4 text-right">ยอดสุทธิ</th>
+                      <th className="py-3 px-4 text-center">สถานะ</th>
+                      <th className="py-3 px-4 text-center">ดูใบกำกับ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {invoiceTxList.length === 0 ? (
+                      <tr><td colSpan="9" className="py-12 text-center text-gray-400">ไม่พบใบกำกับภาษีในช่วงเวลานี้</td></tr>
+                    ) : invoiceTxList.map((tx, i) => {
+                      const invRecord = taxInvoices.find(ti => ti.OrderID === tx.OrderID);
+                      const invoiceNo = tx.TaxInvoiceNo || invRecord?.TaxInvoiceNo || "-";
+                      let custName = invRecord?.CustomerName || "";
+                      let custTaxId = invRecord?.CustomerTaxID || "";
+                      if (!custName) {
+                        try {
+                          const ci = JSON.parse(tx.CustomerInfo || "{}");
+                          custName = ci.name || ci.customerName || "-";
+                          custTaxId = ci.taxId || ci.customerTaxId || "";
+                        } catch (e) { custName = "-"; }
+                      }
+                      const isCancelled = tx.Status === "CANCELLED";
+                      return (
+                        <tr key={i} className={clsx("text-sm transition-colors", isCancelled ? "bg-red-50/40 hover:bg-red-50" : "hover:bg-purple-50/30")}>
+                          <td className="py-3 px-4 text-gray-400 text-xs">{i + 1}</td>
+                          <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{new Date(tx.Date).toLocaleString("th-TH")}</td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono font-bold text-purple-700">{invoiceNo}</span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-gray-500 text-xs">{tx.ReceiptNo || tx.OrderID}</td>
+                          <td className="py-3 px-4 text-gray-700 font-medium">{custName}</td>
+                          <td className="py-3 px-4 text-gray-500 font-mono text-xs">{custTaxId || "-"}</td>
+                          <td className="py-3 px-4 text-right font-bold text-gray-800">
+                            <span className={isCancelled ? "line-through text-red-400" : ""}>
+                              ฿{parseFloat(tx.TotalAmount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {isCancelled
+                              ? <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold">ยกเลิกแล้ว</span>
+                              : <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold">สมบูรณ์</span>
+                            }
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => setViewInvoiceTx({ ...tx, TaxInvoiceNo: invoiceNo !== "-" ? invoiceNo : tx.TaxInvoiceNo })}
+                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 mx-auto"
+                            >
+                              <Eye size={12} /> ดูใบกำกับ
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* --- TAB: VOID BILLS --- */}
         {!isLoading && activeTab === "returns" && (
