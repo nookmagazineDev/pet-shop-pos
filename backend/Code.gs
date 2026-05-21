@@ -274,6 +274,8 @@ function doPost(e) {
       return processCheckout(data.payload);
     } else if (action === "receiveGoods") {
       return receiveGoods(data.payload);
+    } else if (action === "importProducts") {
+      return importProducts(data.payload);
     } else if (action === "addProduct") {
       return addProduct(data.payload);
     } else if (action === "updateProduct") {
@@ -1094,6 +1096,84 @@ function saveSupplier(payload) {
   const newId = "SUP-" + new Date().getTime();
   sheet.appendRow([newId, name, payload.contactPerson || "", payload.phone || "", payload.email || "", payload.address || "", payload.taxId || "", new Date().toISOString()]);
   return jsonResponse({ success: true, supplierId: newId, message: "บันทึกผู้จำหน่ายใหม่เรียบร้อย" });
+}
+
+function importProducts(payload) {
+  var sheet = getSpreadsheet().getSheetByName("Products");
+  if (!sheet) return jsonResponse({ error: "Products sheet not found" });
+
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var actor = payload._actor ? payload._actor.username : "System";
+
+  var added = 0, updated = 0;
+  var errors = [];
+
+  (payload.items || []).forEach(function(item, idx) {
+    var barcode = String(item.barcode || "").trim();
+    if (!barcode) { errors.push("แถว " + (idx + 2) + ": ไม่มีบาร์โค้ด"); return; }
+    if (!item.name) { errors.push("แถว " + (idx + 2) + ": ไม่มีชื่อสินค้า"); return; }
+
+    // Find existing row by barcode
+    var existingRowIdx = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === barcode) { existingRowIdx = i; break; }
+    }
+
+    if (existingRowIdx >= 0) {
+      // UPDATE — don't touch Quantity / LotNumber / ExpiryDate / ImageURL
+      var r = existingRowIdx + 1;
+      sheet.getRange(r, 2).setValue(item.name);
+      sheet.getRange(r, 3).setValue(item.vatStatus || "VAT");
+      sheet.getRange(r, 4).setValue(parseFloat(item.costPrice) || 0);
+      sheet.getRange(r, 5).setValue(parseFloat(item.price) || 0);
+      sheet.getRange(r, 6).setValue(parseFloat(item.wholesalePrice) || 0);
+      sheet.getRange(r, 7).setValue(parseFloat(item.shopeePrice) || 0);
+      sheet.getRange(r, 8).setValue(parseFloat(item.lazadaPrice) || 0);
+      sheet.getRange(r, 9).setValue(parseFloat(item.linemanPrice) || 0);
+      if (item.category) sheet.getRange(r, 10).setValue(item.category);
+      if (item.location) sheet.getRange(r, 12).setValue(item.location);
+      sheet.getRange(r, 17).setValue(parseFloat(item.lowStockThreshold) || 5);
+      sheet.getRange(r, 20).setValue(String(item.hasExpiry || "YES").toUpperCase());
+      var epIdx = headers.indexOf("EarnPoints");
+      if (epIdx >= 0) sheet.getRange(r, epIdx + 1).setValue(String(item.earnPoints || "YES").toUpperCase());
+      updated++;
+    } else {
+      // ADD NEW — mirrors addProduct appendRow order
+      sheet.appendRow([
+        barcode,
+        item.name || "",
+        item.vatStatus || "VAT",
+        parseFloat(item.costPrice) || 0,
+        parseFloat(item.price) || 0,
+        parseFloat(item.wholesalePrice) || 0,
+        parseFloat(item.shopeePrice) || 0,
+        parseFloat(item.lazadaPrice) || 0,
+        parseFloat(item.linemanPrice) || 0,
+        item.category || "ทั่วไป",
+        0,   // Quantity
+        item.location || "",
+        "",  // LotNumber
+        "",  // ExpiryDate
+        "",  // ReceivingDate
+        "",  // ImageURL
+        parseFloat(item.lowStockThreshold) || 5,
+        "",  // PackBarcode
+        0,   // PackMultiplier
+        String(item.hasExpiry || "YES").toUpperCase(),
+        "",  // AcceptedPayments
+        "",  // PackBarcode2
+        0,   // PackMultiplier2
+        "",  // PackBarcode3
+        0,   // PackMultiplier3
+        String(item.earnPoints || "YES").toUpperCase()
+      ]);
+      added++;
+    }
+  });
+
+  logActivity("Inventory", "Import Products", "Added:" + added + " Updated:" + updated, payload._actor);
+  return jsonResponse({ success: true, added: added, updated: updated, errors: errors });
 }
 
 function addProduct(payload) {
