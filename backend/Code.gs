@@ -12,7 +12,7 @@ function getSpreadsheet() {
 function setup() {
   const ss = getSpreadsheet();
   const sheets = {
-    "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments", "PackBarcode2", "PackMultiplier2", "PackBarcode3", "PackMultiplier3"],
+    "Products": ["Barcode", "Name", "VatStatus", "CostPrice", "Price", "WholesalePrice", "ShopeePrice", "LazadaPrice", "LinemanPrice", "Category", "Quantity", "Location", "LotNumber", "ExpiryDate", "ReceivingDate", "ImageURL", "LowStockThreshold", "PackBarcode", "PackMultiplier", "HasExpiry", "AcceptedPayments", "PackBarcode2", "PackMultiplier2", "PackBarcode3", "PackMultiplier3", "EarnPoints"],
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
@@ -28,7 +28,7 @@ function setup() {
     "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy", "FreeItemBarcode", "FreeItemName"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
-    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate", "StartDate", "EndDate", "ActiveDays", "BonusPoints"],
+    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate", "StartDate", "EndDate", "ActiveDays", "BonusPoints", "DiscountValue2"],
     "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
     "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"],
     "ActivityLog": ["Timestamp", "User", "Role", "Module", "Action", "ReferenceID", "Details"],
@@ -1138,7 +1138,8 @@ function addProduct(payload) {
     payload.packBarcode2 || "",
     parseFloat(payload.packMultiplier2) || 0,
     payload.packBarcode3 || "",
-    parseFloat(payload.packMultiplier3) || 0
+    parseFloat(payload.packMultiplier3) || 0,
+    payload.earnPoints !== undefined ? String(payload.earnPoints).toUpperCase() : "YES"
   ]);
 
   logActivity("Inventory", "Add Product", payload.barcode, payload._actor);
@@ -1174,6 +1175,10 @@ function updateProduct(payload) {
       if (payload.packMultiplier2 !== undefined) sheet.getRange(i + 1, 23).setValue(parseFloat(payload.packMultiplier2) || 0);
       if (payload.packBarcode3 !== undefined) sheet.getRange(i + 1, 24).setValue(payload.packBarcode3 || "");
       if (payload.packMultiplier3 !== undefined) sheet.getRange(i + 1, 25).setValue(parseFloat(payload.packMultiplier3) || 0);
+      if (payload.earnPoints !== undefined) {
+        var epIdx = data[0].indexOf("EarnPoints");
+        if (epIdx >= 0) sheet.getRange(i + 1, epIdx + 1).setValue(String(payload.earnPoints).toUpperCase());
+      }
       logActivity("Inventory", "Edit Product", searchBarcode, payload._actor);
       return jsonResponse({ success: true, message: "Product updated" });
     }
@@ -1920,6 +1925,14 @@ function savePromotion(payload) {
           sheet.getRange(1, bpIdx + 1).setFontWeight("bold");
         }
         sheet.getRange(i + 1, bpIdx + 1).setValue(parseFloat(payload.bonusPoints) || 0);
+        // DiscountValue2 (step amount for RATIO_POINTS)
+        var dv2Idx = hdrs.indexOf("DiscountValue2");
+        if (dv2Idx === -1) {
+          dv2Idx = sheet.getLastColumn();
+          sheet.getRange(1, dv2Idx + 1).setValue("DiscountValue2");
+          sheet.getRange(1, dv2Idx + 1).setFontWeight("bold");
+        }
+        sheet.getRange(i + 1, dv2Idx + 1).setValue(parseFloat(payload.discountValue2) || 0);
         found = true;
         break;
       }
@@ -1942,7 +1955,8 @@ function savePromotion(payload) {
       payload.startDate  || "",
       payload.endDate    || "",
       payload.activeDays || "",
-      parseFloat(payload.bonusPoints) || 0
+      parseFloat(payload.bonusPoints) || 0,
+      parseFloat(payload.discountValue2) || 0
     ]);
   }
 
@@ -1991,6 +2005,13 @@ function readSheetData(sheetName) {
         { col: 12, name: "ActiveDays" },
         { col: 13, name: "BonusPoints" },
       ];
+      // Safe-append DiscountValue2 (for RATIO_POINTS type)
+      var promoHdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (promoHdrs.indexOf("DiscountValue2") < 0) {
+        var pdv2col = sheet.getLastColumn() + 1;
+        sheet.getRange(1, pdv2col).setValue("DiscountValue2");
+        sheet.getRange(1, pdv2col).setFontWeight("bold");
+      }
       newCols.forEach(function(c) {
         const cell = sheet.getRange(1, c.col);
         if (!cell.getValue() || cell.getValue() !== c.name) {
@@ -2011,6 +2032,7 @@ function readSheetData(sheetName) {
       const newCols = [
         { col: 21, name: "AcceptedPayments" },
         { col: 22, name: "PackBarcode2" },
+
         { col: 23, name: "PackMultiplier2" },
         { col: 24, name: "PackBarcode3" },
         { col: 25, name: "PackMultiplier3" },
@@ -2022,6 +2044,13 @@ function readSheetData(sheetName) {
           cell.setFontWeight("bold");
         }
       });
+      // Safe-append EarnPoints if missing
+      var prodHdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (prodHdrs.indexOf("EarnPoints") < 0) {
+        var epCol = sheet.getLastColumn() + 1;
+        sheet.getRange(1, epCol).setValue("EarnPoints");
+        sheet.getRange(1, epCol).setFontWeight("bold");
+      }
     }
   } else if (sheetName === "StoreStock") {
     const requiredHeaders = ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"];
@@ -2067,6 +2096,7 @@ function readSheetData(sheetName) {
         cell.setFontWeight("bold");
       }
     });
+    // Safe-append DiscountValue2 to Promotions if missing — done later in Promotions block
     // Safe-append CreditsExpiry / PointsExpiry if not present (indexOf approach)
     var custHdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     ["CreditsExpiry", "PointsExpiry"].forEach(function(colName) {

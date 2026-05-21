@@ -123,7 +123,7 @@ export default function POS() {
       if (existing) {
         return prev.map(item => item.id === key ? { ...item, qty: item.qty + qtyToAdd } : item);
       }
-      return [{ 
+      return [{
         id: key,
         Barcode: product.Barcode,
         Name: product.Name,
@@ -132,7 +132,8 @@ export default function POS() {
         costPrice: Number(product.CostPrice) || 0,
         image: product.ImageURL || "https://placehold.co/300x300?text=No+Image",
         vatStatus: product.VatStatus || "VAT",
-        qty: qtyToAdd 
+        EarnPoints: product.EarnPoints || "YES",
+        qty: qtyToAdd
       }, ...prev];
     });
     setBarcodeInput("");
@@ -293,6 +294,11 @@ export default function POS() {
              if (freeItem && freeItem.qty > 0) totalDiscount += freeItem.price;
           } else if (promo.DiscountType === "POINTS") {
             promoPoints += parseFloat(promo.DiscountValue) || 0;
+          } else if (promo.DiscountType === "RATIO_POINTS") {
+            const step = parseFloat(promo.DiscountValue2) || 100;
+            const pts  = parseFloat(promo.DiscountValue)  || 1;
+            const eligibleTotal = cart.reduce((s, c) => s + (String(c.EarnPoints) !== "NO" ? c.price * c.qty : 0), 0);
+            promoPoints += Math.floor(eligibleTotal / step) * pts;
           } else {
             totalDiscount += parseFloat(promo.DiscountValue);
           }
@@ -322,6 +328,11 @@ export default function POS() {
                }
             } else if (promo.DiscountType === "POINTS") {
                promoPoints += (parseFloat(promo.DiscountValue) || 0) * minQty;
+            } else if (promo.DiscountType === "RATIO_POINTS") {
+               const step = parseFloat(promo.DiscountValue2) || 100;
+               const pts  = parseFloat(promo.DiscountValue)  || 1;
+               const eligibleTotal = cart.reduce((s, c) => s + (String(c.EarnPoints) !== "NO" ? c.price * c.qty : 0), 0);
+               promoPoints += Math.floor(eligibleTotal / step) * pts;
             } else {
                totalDiscount += parseFloat(promo.DiscountValue) * minQty;
             }

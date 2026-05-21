@@ -30,8 +30,9 @@ export default function Promotions() {
   const [conditionType, setConditionType] = useState("MIN_AMOUNT"); // MIN_AMOUNT or COMBO_ITEM
   const [conditionValue1, setConditionValue1] = useState("");
   const [comboItems, setComboItems] = useState(["", ""]); // Array for A + B + C...
-  const [discountType, setDiscountType] = useState("FIXED"); // FIXED, PERCENT, or FREE_ITEM
+  const [discountType, setDiscountType] = useState("FIXED"); // FIXED, PERCENT, FREE_ITEM, POINTS, RATIO_POINTS
   const [discountValue, setDiscountValue] = useState("");
+  const [discountValue2, setDiscountValue2] = useState(""); // step amount for RATIO_POINTS (every X baht)
   const [bonusPoints, setBonusPoints] = useState("");
   // Date & day scheduling
   const [startDate, setStartDate] = useState("");   // "YYYY-MM-DD" or ""
@@ -74,6 +75,7 @@ export default function Promotions() {
       }
       setDiscountType(promo.DiscountType || "FIXED");
       setDiscountValue(promo.DiscountValue || "");
+      setDiscountValue2(promo.DiscountValue2 ? String(parseFloat(promo.DiscountValue2) || "") : "");
       setBonusPoints(promo.BonusPoints ? String(parseFloat(promo.BonusPoints) || "") : "");
       setStartDate(promo.StartDate || "");
       setEndDate(promo.EndDate || "");
@@ -90,6 +92,7 @@ export default function Promotions() {
       setComboItems(["", ""]);
       setDiscountType("FIXED");
       setDiscountValue("");
+      setDiscountValue2("");
       setBonusPoints("");
       setStartDate("");
       setEndDate("");
@@ -101,6 +104,7 @@ export default function Promotions() {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!name || (!discountValue && discountValue !== 0)) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+    if (discountType === "RATIO_POINTS" && (!discountValue2 || parseFloat(discountValue2) <= 0)) return alert("กรุณาระบุ 'ทุกกี่บาท' สำหรับโปรแต้มตามยอดซื้อ");
     
     let finalCondition1 = conditionValue1;
     if (conditionType === "COMBO_ITEM") {
@@ -120,6 +124,7 @@ export default function Promotions() {
         conditionValue2: "", // Deprecated, kept empty
         discountType,
         discountValue,
+        discountValue2: discountValue2 || 0,
         bonusPoints: bonusPoints || 0,
         status: editPromo ? editPromo.Status : "ACTIVE",
         startDate: startDate || "",
@@ -288,6 +293,8 @@ export default function Promotions() {
                         <>แถม {getProductNameByBarcode(item.DiscountValue)} <Tag size={14} /></>
                       ) : item.DiscountType === "POINTS" ? (
                         <span className="text-yellow-600 bg-yellow-50 border-yellow-200 flex items-center gap-1 px-1 -mx-1 rounded">+{parseFloat(item.DiscountValue||0).toLocaleString()} แต้ม <Star size={13} /></span>
+                      ) : item.DiscountType === "RATIO_POINTS" ? (
+                        <span className="text-orange-600 bg-orange-50 border-orange-200 flex items-center gap-1 px-1 -mx-1 rounded">ทุก ฿{parseFloat(item.DiscountValue2||0).toLocaleString()} = {parseFloat(item.DiscountValue||0).toLocaleString()} แต้ม <Star size={13} /></span>
                       ) : (
                         <>ลด ฿{parseFloat(item.DiscountValue || 0).toLocaleString()} <Banknote size={14} /></>
                       )}
@@ -433,12 +440,16 @@ export default function Promotions() {
                       <option value="FIXED">ลดเป็นบาท (฿)</option>
                       <option value="PERCENT">ลดเปอร์เซ็นต์ (%)</option>
                       <option value="FREE_ITEM">ลดค่าของแถมเป็น (0฿)</option>
-                      <option value="POINTS">ให้แต้มสะสม (แต้ม)</option>
+                      <option value="POINTS">ให้แต้มสะสม (แต้มคงที่)</option>
+                      <option value="RATIO_POINTS">ให้แต้มตามยอดซื้อ (ทุก X บาท)</option>
                     </select>
                   </div>
                   <div className="flex-1">
                     <label className="block text-xs font-semibold text-fuchsia-700 mb-1.5">
-                      {discountType === "FREE_ITEM" ? "เลือกสินค้าของแถม *" : discountType === "POINTS" ? "จำนวนแต้มที่ให้ *" : "มูลค่าส่วนลด *"}
+                      {discountType === "FREE_ITEM" ? "เลือกสินค้าของแถม *"
+                        : discountType === "POINTS" ? "จำนวนแต้มที่ให้ *"
+                        : discountType === "RATIO_POINTS" ? "ทุก ___ บาท / ได้ ___ แต้ม *"
+                        : "มูลค่าส่วนลด *"}
                     </label>
                     {discountType === "FREE_ITEM" ? (
                       <select
@@ -448,6 +459,28 @@ export default function Promotions() {
                         <option value="">-- เลือกสินค้าแถมฟรี --</option>
                         {products.map(p => <option key={p.Barcode} value={p.Barcode}>{p.Name}</option>)}
                       </select>
+                    ) : discountType === "RATIO_POINTS" ? (
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <div className="text-[10px] text-fuchsia-600 mb-1">ทุก (บาท)</div>
+                          <input
+                            type="number" required min="1" step="1"
+                            value={discountValue2} onChange={e => setDiscountValue2(e.target.value)}
+                            placeholder="เช่น 100"
+                            className="w-full px-3 py-2.5 rounded-xl border border-fuchsia-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm font-bold text-fuchsia-900"
+                          />
+                        </div>
+                        <div className="text-fuchsia-400 font-bold mt-4">=</div>
+                        <div className="flex-1">
+                          <div className="text-[10px] text-fuchsia-600 mb-1">ได้ (แต้ม)</div>
+                          <input
+                            type="number" required min="1" step="1"
+                            value={discountValue} onChange={e => setDiscountValue(e.target.value)}
+                            placeholder="เช่น 1"
+                            className="w-full px-3 py-2.5 rounded-xl border border-fuchsia-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm font-bold text-fuchsia-900"
+                          />
+                        </div>
+                      </div>
                     ) : (
                       <input
                         type="number" required min="1" step={discountType === "POINTS" ? "1" : "0.01"}

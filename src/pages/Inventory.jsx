@@ -102,6 +102,7 @@ export default function Inventory() {
     packBarcode3: "",
     packMultiplier3: "",
     hasExpiry: "YES",
+    earnPoints: "YES",
     acceptedPayments: ["เงินสด", "โอนเข้าบัญชี", "สแกน QR", "บัตรเครดิต", "เครดิต", "พ้อย"]
   });
 
@@ -508,6 +509,7 @@ export default function Inventory() {
         packBarcode3: editItem.PackBarcode3 || "",
         packMultiplier3: editItem.PackMultiplier3 || "",
         hasExpiry: editItem.HasExpiry || "YES",
+        earnPoints: editItem.EarnPoints || "YES",
         acceptedPayments: Array.isArray(editItem.AcceptedPayments)
           ? editItem.AcceptedPayments.join(",")
           : String(editItem.AcceptedPayments || "")
@@ -737,6 +739,11 @@ export default function Inventory() {
                           {String(item.AcceptedPayments).split(",").filter(Boolean).map(pm => (
                             <span key={pm} className={clsx("text-[10px] px-1.5 py-0.5 rounded-full border font-semibold", PAYMENT_METHOD_STYLE[pm.trim()] || "bg-gray-100 text-gray-600 border-gray-200")}>{pm.trim()}</span>
                           ))}
+                        </div>
+                      )}
+                      {String(item.EarnPoints).toUpperCase() === "NO" && (
+                        <div className="mt-1.5">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border font-semibold bg-red-50 text-red-600 border-red-200">ไม่ร่วมโปรแต้ม</span>
                         </div>
                       )}
                     </td>
@@ -1907,6 +1914,17 @@ export default function Inventory() {
                     <option value="NO">ไม่มีวันหมดอายุ</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ร่วมโปรโมชั่นแต้มสะสม?</label>
+                  <select
+                    value={editItem.EarnPoints || "YES"}
+                    onChange={e => setEditItem(prev => ({ ...prev, EarnPoints: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-gray-50 focus:bg-white"
+                  >
+                    <option value="YES">ร่วมโปรโมชั่นได้</option>
+                    <option value="NO">ไม่ร่วมโปรโมชั่น</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">วิธีชำระเงินที่รับได้</label>
@@ -2218,6 +2236,17 @@ export default function Inventory() {
                     >
                       <option value="YES">มีวันหมดอายุ</option>
                       <option value="NO">ไม่มีวันหมดอายุ</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">ร่วมโปรโมชั่นแต้มสะสม?</label>
+                    <select
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm bg-white"
+                      value={newProductData.earnPoints}
+                      onChange={(e) => setNewProductData({...newProductData, earnPoints: e.target.value})}
+                    >
+                      <option value="YES">ร่วมโปรโมชั่นได้</option>
+                      <option value="NO">ไม่ร่วมโปรโมชั่น</option>
                     </select>
                   </div>
                   
