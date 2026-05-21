@@ -331,7 +331,7 @@ export default function Coupons() {
 
   // ---- Type label helper ----
   const typeLabel = (type) =>
-    type === "PERCENT" ? "ลด%" : type === "FIXED_AMOUNT" ? "ลดเงิน" : type === "FREE_ITEM" ? "ของแถม" : type || "-";
+    type === "PERCENT" ? "ลด%" : type === "FIXED_AMOUNT" ? "ลดเงิน" : type === "FREE_ITEM" ? "ของแถม" : type === "POINTS" ? "แต้มสะสม" : type || "-";
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -452,6 +452,8 @@ export default function Coupons() {
                           ? `${Number(item.Value || 0).toLocaleString()}%`
                           : item.Type === "FREE_ITEM"
                           ? <span className="text-green-700 text-xs">{item.FreeItemName || "-"}</span>
+                          : item.Type === "POINTS"
+                          ? <span className="text-yellow-600">+{Number(item.Value || 0).toLocaleString()} แต้ม</span>
                           : `฿${Number(item.Value || 0).toLocaleString()}`}
                       </td>
                       <td className="py-4 px-4 text-right text-gray-600">
@@ -852,21 +854,22 @@ export default function Coupons() {
                     <option value="FIXED_AMOUNT">ลดเงิน (฿)</option>
                     <option value="PERCENT">ลดเปอร์เซ็นต์ (%)</option>
                     <option value="FREE_ITEM">สินค้าฟรี (ของแถม)</option>
+                    <option value="POINTS">ให้แต้มสะสม</option>
                   </select>
                 </div>
                 {form.type !== "FREE_ITEM" && (
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                      มูลค่า <span className="text-red-400">*</span>
+                      {form.type === "POINTS" ? "จำนวนแต้มที่ให้" : "มูลค่า"} <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step={form.type === "POINTS" ? "1" : "0.01"}
                       max={form.type === "PERCENT" ? 100 : undefined}
                       value={form.value}
                       onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))}
-                      placeholder={form.type === "PERCENT" ? "เช่น 10" : "เช่น 50"}
+                      placeholder={form.type === "PERCENT" ? "เช่น 10" : form.type === "POINTS" ? "เช่น 50" : "เช่น 50"}
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 bg-gray-50 focus:bg-white"
                     />
                   </div>

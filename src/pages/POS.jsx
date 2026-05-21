@@ -245,6 +245,8 @@ export default function POS() {
             }
           }
         }
+      } else if (coupon.Type === "POINTS") {
+        disc = 0; // no monetary discount; points credited at checkout
       } else {
         disc = Math.min(parseFloat(coupon.Value) || 0, base);
       }
@@ -257,9 +259,10 @@ export default function POS() {
   // Effective base after coupon + manual discounts — used to check MIN_AMOUNT thresholds
   const baseAfterOtherDiscounts = Math.max(0, subtotal - manualDiscountAmt - rawCouponDiscountForCheck);
 
-  // Promotion Calculation Engine
+  // Promotion Calculation Engine — returns { discount, promoPoints }
   const calculateDiscounts = () => {
     let totalDiscount = 0;
+    let promoPoints = 0;
     promotions.forEach(promo => {
       if (promo.ConditionType === "MIN_AMOUNT") {
         let qualifyingSubtotal = baseAfterOtherDiscounts;
@@ -276,12 +279,16 @@ export default function POS() {
              const freeBc = String(promo.DiscountValue).trim();
              const freeItem = cart.find(c => String(c.Barcode) === freeBc);
              if (freeItem && freeItem.qty > 0) totalDiscount += freeItem.price;
+          } else if (promo.DiscountType === "POINTS") {
+            promoPoints += parseFloat(promo.DiscountValue) || 0;
           } else {
             totalDiscount += parseFloat(promo.DiscountValue);
           }
+          // Bonus points (additional points on top of any discount type)
+          promoPoints += parseFloat(promo.BonusPoints) || 0;
         }
       } else if (promo.ConditionType === "COMBO_ITEM") {
-         const comboBarcodes = String(promo.ConditionValue1 || "").includes(",") 
+         const comboBarcodes = String(promo.ConditionValue1 || "").includes(",")
            ? String(promo.ConditionValue1).split(",").map(b => b.trim()).filter(Boolean)
            : [promo.ConditionValue1, promo.ConditionValue2].map(b => String(b).trim()).filter(Boolean);
          let minQty = Infinity, comboPrice = 0, allFound = true;
@@ -301,9 +308,13 @@ export default function POS() {
                   const freeDisQty = Math.min(freeItem.qty, minQty);
                   totalDiscount += freeItem.price * freeDisQty;
                }
+            } else if (promo.DiscountType === "POINTS") {
+               promoPoints += (parseFloat(promo.DiscountValue) || 0) * minQty;
             } else {
                totalDiscount += parseFloat(promo.DiscountValue) * minQty;
             }
+            // Bonus points — multiply by combo count
+            promoPoints += (parseFloat(promo.BonusPoints) || 0) * minQty;
          }
       }
     });
@@ -311,7 +322,7 @@ export default function POS() {
     // Add manual discount (pre-calculated)
     totalDiscount += manualDiscountAmt;
 
-    return Math.min(totalDiscount, subtotal);
+    return { discount: Math.min(totalDiscount, subtotal), promoPoints };
   };
 
   // Build list of FREE_ITEM lines to show in cart
@@ -351,7 +362,7 @@ export default function POS() {
     }
   });
 
-  const discountAmount = calculateDiscounts();
+  const { discount: discountAmount, promoPoints: promoPointsEarned } = calculateDiscounts();
 
   // Per-coupon discount lines (for receipt display and total)
   const couponLines = (() => {
@@ -377,18 +388,25 @@ export default function POS() {
             }
           }
         }
+      } else if (coupon.Type === "POINTS") {
+        disc = 0; // no monetary discount; points credited at checkout
       } else {
         disc = Math.min(parseFloat(coupon.Value) || 0, base);
       }
       const label = coupon.Type === "FREE_ITEM"
         ? `ส่วนลดจากคูปอง: ${coupon.FreeItemName || coupon.CouponName || ""}`
-        : (coupon.CouponName || coupon.Name || "");
+        : coupon.Type === "POINTS"
+          ? `+${coupon.Value} แต้ม: ${coupon.CouponName || coupon.Name || ""}`
+          : (coupon.CouponName || coupon.Name || "");
       lines.push({ name: label, discount: disc, couponId: coupon.ID });
       base = Math.max(0, base - disc);
     }
     return lines;
   })();
   const couponDiscount = couponLines.reduce((s, l) => s + l.discount, 0);
+  const couponPoints = selectedCoupons
+    .filter(c => c.Type === "POINTS")
+    .reduce((s, c) => s + (parseFloat(c.Value) || 0), 0);
 
   const vatableSubtotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? 0 : (item.price * item.qty)), 0);
 
@@ -419,9 +437,19 @@ export default function POS() {
   const NON_CASH_METHODS = ["เครดิต", "พ้อย"]; // methods that don't count as cash income
   const hasCashSplit   = splitPayments.some(p => p.method === "เงินสด");
   const hasCreditSplit = splitPayments.some(p => NON_CASH_METHODS.includes(p.method));
+  const hasStoreCreditRow = splitPayments.some(p => p.method === "เครดิต");
+  const hasPointsRow      = splitPayments.some(p => p.method === "พ้อย");
   const totalPaid  = splitPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const cashPaid   = splitPayments.filter(p => p.method === "เงินสด").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const creditPaid = splitPayments.filter(p => NON_CASH_METHODS.includes(p.method)).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  // เครดิตร้าน และ พ้อย แยกกัน
+  const storeCreditAmountRaw = splitPayments.filter(p => p.method === "เครดิต").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const pointsAmountRaw      = splitPayments.filter(p => p.method === "พ้อย").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  // ถ้าเลือก method เดียว + ไม่กรอกจำนวน → ใช้ยอดเต็ม
+  const effectiveStoreCreditPaid = (splitPayments.length === 1 && splitPayments[0].method === "เครดิต" && !splitPayments[0].amount) ? total : storeCreditAmountRaw;
+  const effectivePointsPaid      = (splitPayments.length === 1 && splitPayments[0].method === "พ้อย"   && !splitPayments[0].amount) ? total : pointsAmountRaw;
+  // compat: รวมกันสำหรับการคำนวณอื่น ๆ
+  const effectiveCreditPaid = effectiveStoreCreditPaid + effectivePointsPaid;
   const remaining  = Math.max(0, total - totalPaid);
   const cashChange = (hasCashSplit && totalPaid >= total) ? Math.max(0, totalPaid - total) : 0;
   // Payment method string for receipt/backend
@@ -433,9 +461,6 @@ export default function POS() {
     if (active.length === 1) return active[0].method;
     return active.map(p => `${p.method}:${parseFloat(p.amount)}`).join(" + ");
   })();
-  // Credits/Points: if single non-cash method with blank amount, treat as full total
-  const effectiveCreditPaid = (hasCreditSplit && splitPayments.length === 1 && !splitPayments[0].amount)
-    ? total : creditPaid;
   // Checkout is complete when: non-cash single method (no amount needed), or totalPaid >= total
   const isPaymentComplete = (() => {
     if (splitPayments.length === 1 && !splitPayments[0].amount) {
@@ -538,9 +563,8 @@ export default function POS() {
       discountAmount,
       freeItemLines: freeItemLines.map(f => ({ ...f })),
       couponDiscount,
-      couponName: selectedCoupon?.Type === "FREE_ITEM"
-        ? `ส่วนลดจากคูปอง: ${selectedCoupon.FreeItemName || selectedCoupon.CouponName || ""}`
-        : (selectedCoupon?.CouponName || selectedCoupon?.Name || ""),
+      couponLines: couponLines.map(l => ({ ...l })),
+      couponName: couponLines.map(l => l.name).filter(Boolean).join(", "),
       tax,
       total,
       receiptType,
@@ -612,8 +636,11 @@ export default function POS() {
           cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
           receiptType,
           customerInfo: (receiptType === "ใบกำกับภาษี" || hasCreditSplit) ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
-          pointsUsed: Math.ceil(effectiveCreditPaid) > 0 ? Math.ceil(effectiveCreditPaid) : 0,
-          couponInstanceId: selectedCoupon?.ID || ""
+          creditsUsed: Math.ceil(effectiveStoreCreditPaid) > 0 ? Math.ceil(effectiveStoreCreditPaid) : 0,
+          pointsUsed:  Math.ceil(effectivePointsPaid)      > 0 ? Math.ceil(effectivePointsPaid)      : 0,
+          promoPoints: promoPointsEarned,
+          couponPoints,
+          _actor: null,
         }
       });
 
@@ -626,13 +653,20 @@ export default function POS() {
             setCustomerCoupons(prev => prev.map(c => c.ID === coupon.ID ? { ...c, Status: "USED" } : c));
           }
         }
-        if (hasCreditSplit && customerName && effectiveCreditPaid > 0) {
-          const usedPts = Math.ceil(effectiveCreditPaid);
-          setCustomers(prev => prev.map(c =>
-            String(c.Name || "").toLowerCase() === customerName.toLowerCase()
-              ? { ...c, Points: Math.max(0, (parseFloat(c.Points) || 0) - usedPts) }
-              : c
-          ));
+        if (hasCreditSplit && customerName) {
+          const usedCredits = Math.ceil(effectiveStoreCreditPaid);
+          const usedPoints  = Math.ceil(effectivePointsPaid);
+          if (usedCredits > 0 || usedPoints > 0) {
+            setCustomers(prev => prev.map(c =>
+              String(c.Name || "").toLowerCase() === customerName.toLowerCase()
+                ? {
+                    ...c,
+                    Credits: Math.max(0, (parseFloat(c.Credits) || 0) - usedCredits),
+                    Points:  Math.max(0, (parseFloat(c.Points)  || 0) - usedPoints),
+                  }
+                : c
+            ));
+          }
         }
         // Combined receipt: package item (if any) + regular cart
         const receiptCart = pkgItem ? [pkgItem, ...cart.map(c => ({ ...c }))] : cart.map(c => ({ ...c }));
@@ -927,10 +961,16 @@ export default function POS() {
                  <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                </div>
             )}
+            {promoPointsEarned > 0 && (
+               <div className="flex justify-between text-yellow-700 font-bold bg-yellow-50 px-2 py-1 -mx-2 rounded-lg">
+                 <span className="flex items-center gap-1"><Star size={13} /> แต้มจากโปรโมชั่น</span>
+                 <span>+{promoPointsEarned.toLocaleString()} แต้ม</span>
+               </div>
+            )}
             {couponLines.map((cl, idx) => (
-              <div key={`cl-${idx}`} className="flex justify-between text-amber-700 font-bold bg-amber-50 px-2 py-1 -mx-2 rounded-lg">
+              <div key={`cl-${idx}`} className={`flex justify-between font-bold px-2 py-1 -mx-2 rounded-lg ${cl.discount > 0 ? "text-amber-700 bg-amber-50" : "text-yellow-700 bg-yellow-50"}`}>
                 <span className="flex items-center gap-1.5">
-                  <Ticket size={14} />
+                  {cl.discount > 0 ? <Ticket size={14} /> : <Star size={13} />}
                   {cl.name}
                 </span>
                 <span>{cl.discount > 0 ? `-฿${cl.discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ""}</span>
@@ -1130,6 +1170,8 @@ export default function POS() {
                             const freeProd = freeBarcode ? products.find(p => String(p.Barcode || "").trim() === freeBarcode) : null;
                             const freePrice = parseFloat(freeProd?.Price || freeProd?.price) || 0;
                             discLabel = `🎁 ${c.FreeItemName || "ของแถม"}${freePrice > 0 ? ` (฿${freePrice.toLocaleString()})` : ""}`;
+                          } else if (c.Type === "POINTS") {
+                            discLabel = `+${Number(c.Value).toLocaleString()} แต้ม`;
                           } else {
                             discLabel = `ลด ฿${Number(c.Value).toLocaleString()}`;
                           }
@@ -1165,14 +1207,14 @@ export default function POS() {
                 {selectedCoupons.map((c, idx) => {
                   const line = couponLines[idx];
                   return (
-                    <div key={c.ID} className="mt-1.5 flex items-center justify-between px-4 py-2 bg-green-50 border border-green-100 rounded-xl text-sm">
-                      <span className="flex items-center gap-1.5 text-green-700 font-semibold">
-                        <Ticket size={14} />
+                    <div key={c.ID} className={`mt-1.5 flex items-center justify-between px-4 py-2 border rounded-xl text-sm ${c.Type === "POINTS" ? "bg-yellow-50 border-yellow-100" : "bg-green-50 border-green-100"}`}>
+                      <span className={`flex items-center gap-1.5 font-semibold ${c.Type === "POINTS" ? "text-yellow-700" : "text-green-700"}`}>
+                        {c.Type === "POINTS" ? <Star size={14} /> : <Ticket size={14} />}
                         {c.Type === "FREE_ITEM" ? `🎁 ${c.FreeItemName || c.CouponName}` : c.CouponName}
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className="text-green-700 font-bold">
-                          {c.Type === "PERCENT" ? `-${c.Value}%` : c.Type === "FREE_ITEM" ? "ราคา ฿0" : `-฿${(line?.discount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                        <span className={`font-bold ${c.Type === "POINTS" ? "text-yellow-700" : "text-green-700"}`}>
+                          {c.Type === "PERCENT" ? `-${c.Value}%` : c.Type === "FREE_ITEM" ? "ราคา ฿0" : c.Type === "POINTS" ? `+${Number(c.Value).toLocaleString()} แต้ม` : `-฿${(line?.discount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                         </span>
                         <button type="button" onClick={() => setSelectedCoupons(prev => prev.filter(s => s.ID !== c.ID))}
                           className="text-gray-400 hover:text-red-500 transition-colors">
@@ -1341,42 +1383,49 @@ export default function POS() {
             );
           })()}
 
-          {/* เครดิต / พ้อย balance info */}
+          {/* เครดิต / พ้อย balance info — แสดงแยกกัน */}
           {hasCreditSplit && customerName && (() => {
-            const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
-            const available = parseFloat(custObj?.Points) || 0;
-            const needed = Math.ceil(effectiveCreditPaid);
-            const enough = available >= needed;
-            const hasCredit = splitPayments.some(p => p.method === "เครดิต");
-            const hasPoints = splitPayments.some(p => p.method === "พ้อย");
+            const custObj        = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
+            const availableCredit = parseFloat(custObj?.Credits) || 0;
+            const availablePoints = parseFloat(custObj?.Points)  || 0;
+            const neededCredit = Math.ceil(effectiveStoreCreditPaid);
+            const neededPoints = Math.ceil(effectivePointsPaid);
             return (
               <div className="mb-3 space-y-2">
-                {hasCredit && (
+                {hasStoreCreditRow && (
                   <div className="p-3 bg-yellow-50 rounded-xl border border-yellow-100 space-y-1.5 text-sm">
                     <div className="flex justify-between items-center">
-                      <span className="text-yellow-800 font-semibold flex items-center gap-1"><Star size={13} /> เครดิตลูกค้า ({customerName})</span>
-                      <span className="font-bold text-yellow-700">{available.toLocaleString()} credit</span>
+                      <span className="text-yellow-800 font-semibold flex items-center gap-1"><Star size={13} /> เครดิตร้าน ({customerName})</span>
+                      <span className="font-bold text-yellow-700">{availableCredit.toLocaleString()} ฿</span>
                     </div>
                     <div className="flex justify-between text-yellow-700 text-xs">
                       <span>ใช้ไป (1 เครดิต = ฿1)</span>
-                      <span className="font-bold">{Math.ceil(splitPayments.filter(p=>p.method==="เครดิต").reduce((s,p)=>s+(parseFloat(p.amount)||0),0)).toLocaleString()}</span>
+                      <span className="font-bold">{neededCredit.toLocaleString()}</span>
                     </div>
-                    {!enough && needed > 0 && <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">เครดิตไม่พอ — ขาดอีก {(needed - available).toLocaleString()}</div>}
-                    {enough && needed > 0 && <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(available - needed).toLocaleString()}</div>}
+                    {availableCredit < neededCredit && neededCredit > 0 && (
+                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">เครดิตไม่พอ — ขาดอีก {(neededCredit - availableCredit).toLocaleString()}</div>
+                    )}
+                    {availableCredit >= neededCredit && neededCredit > 0 && (
+                      <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availableCredit - neededCredit).toLocaleString()}</div>
+                    )}
                   </div>
                 )}
-                {hasPoints && (
+                {hasPointsRow && (
                   <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 space-y-1.5 text-sm">
                     <div className="flex justify-between items-center">
-                      <span className="text-orange-800 font-semibold flex items-center gap-1"><Gift size={13} /> พ้อยลูกค้า ({customerName})</span>
-                      <span className="font-bold text-orange-700">{available.toLocaleString()} pts</span>
+                      <span className="text-orange-800 font-semibold flex items-center gap-1"><Gift size={13} /> แต้มสะสม ({customerName})</span>
+                      <span className="font-bold text-orange-700">{availablePoints.toLocaleString()} แต้ม</span>
                     </div>
                     <div className="flex justify-between text-orange-700 text-xs">
-                      <span>ใช้ไป (1 พ้อย = ฿1)</span>
-                      <span className="font-bold">{Math.ceil(splitPayments.filter(p=>p.method==="พ้อย").reduce((s,p)=>s+(parseFloat(p.amount)||0),0)).toLocaleString()}</span>
+                      <span>ใช้ไป (1 แต้ม = ฿1)</span>
+                      <span className="font-bold">{neededPoints.toLocaleString()}</span>
                     </div>
-                    {!enough && needed > 0 && <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">พ้อยไม่พอ — ขาดอีก {(needed - available).toLocaleString()}</div>}
-                    {enough && needed > 0 && <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(available - needed).toLocaleString()}</div>}
+                    {availablePoints < neededPoints && neededPoints > 0 && (
+                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">แต้มไม่พอ — ขาดอีก {(neededPoints - availablePoints).toLocaleString()}</div>
+                    )}
+                    {availablePoints >= neededPoints && neededPoints > 0 && (
+                      <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availablePoints - neededPoints).toLocaleString()}</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1401,12 +1450,15 @@ export default function POS() {
               </button>
               <button
                 onClick={handleCheckout}
-                disabled={
-                  (cart.length === 0 && !pendingPackage) ||
-                  isCheckingOut ||
-                  !isPaymentComplete ||
-                  (hasCreditSplit && (parseFloat(customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase())?.Points) || 0) < Math.ceil(effectiveCreditPaid))
-                }
+                disabled={(() => {
+                  if (cart.length === 0 && !pendingPackage) return true;
+                  if (isCheckingOut) return true;
+                  if (!isPaymentComplete) return true;
+                  const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
+                  if (hasStoreCreditRow && (parseFloat(custObj?.Credits) || 0) < Math.ceil(effectiveStoreCreditPaid)) return true;
+                  if (hasPointsRow      && (parseFloat(custObj?.Points)  || 0) < Math.ceil(effectivePointsPaid))      return true;
+                  return false;
+                })()}
                 className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
               >
                 {isCheckingOut ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle size={20} />}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Tag, Percent, Banknote, Power, Check, X, Loader2, ListPlus, Calendar, CalendarDays } from "lucide-react";
+import { Plus, Tag, Percent, Banknote, Power, Check, X, Loader2, ListPlus, Calendar, CalendarDays, Star } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
 
@@ -32,6 +32,7 @@ export default function Promotions() {
   const [comboItems, setComboItems] = useState(["", ""]); // Array for A + B + C...
   const [discountType, setDiscountType] = useState("FIXED"); // FIXED, PERCENT, or FREE_ITEM
   const [discountValue, setDiscountValue] = useState("");
+  const [bonusPoints, setBonusPoints] = useState("");
   // Date & day scheduling
   const [startDate, setStartDate] = useState("");   // "YYYY-MM-DD" or ""
   const [endDate, setEndDate] = useState("");       // "YYYY-MM-DD" or ""
@@ -73,6 +74,7 @@ export default function Promotions() {
       }
       setDiscountType(promo.DiscountType || "FIXED");
       setDiscountValue(promo.DiscountValue || "");
+      setBonusPoints(promo.BonusPoints ? String(parseFloat(promo.BonusPoints) || "") : "");
       setStartDate(promo.StartDate || "");
       setEndDate(promo.EndDate || "");
       setActiveDays(
@@ -88,6 +90,7 @@ export default function Promotions() {
       setComboItems(["", ""]);
       setDiscountType("FIXED");
       setDiscountValue("");
+      setBonusPoints("");
       setStartDate("");
       setEndDate("");
       setActiveDays([]);
@@ -117,6 +120,7 @@ export default function Promotions() {
         conditionValue2: "", // Deprecated, kept empty
         discountType,
         discountValue,
+        bonusPoints: bonusPoints || 0,
         status: editPromo ? editPromo.Status : "ACTIVE",
         startDate: startDate || "",
         endDate: endDate || "",
@@ -277,15 +281,22 @@ export default function Promotions() {
                     )}
                   </td>
                   <td className="py-4 px-6 text-sm">
-                    <div className="flex items-center gap-1.5 font-bold text-fuchsia-600 bg-fuchsia-50 px-3 py-1.5 rounded-lg w-max border border-fuchsia-100">
+                    <div className="flex items-center gap-1.5 font-bold px-3 py-1.5 rounded-lg w-max border text-fuchsia-600 bg-fuchsia-50 border-fuchsia-100">
                       {item.DiscountType === "PERCENT" ? (
                         <>ลด {item.DiscountValue}% <Percent size={14} /></>
                       ) : item.DiscountType === "FREE_ITEM" ? (
                         <>แถม {getProductNameByBarcode(item.DiscountValue)} <Tag size={14} /></>
+                      ) : item.DiscountType === "POINTS" ? (
+                        <span className="text-yellow-600 bg-yellow-50 border-yellow-200 flex items-center gap-1 px-1 -mx-1 rounded">+{parseFloat(item.DiscountValue||0).toLocaleString()} แต้ม <Star size={13} /></span>
                       ) : (
                         <>ลด ฿{parseFloat(item.DiscountValue || 0).toLocaleString()} <Banknote size={14} /></>
                       )}
                     </div>
+                    {parseFloat(item.BonusPoints||0) > 0 && (
+                      <div className="flex items-center gap-1 mt-1.5 text-[11px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full w-max">
+                        <Star size={10}/> +{parseFloat(item.BonusPoints).toLocaleString()} แต้มโบนัส
+                      </div>
+                    )}
                   </td>
                   <td className="py-4 px-6 text-center">
                     <button
@@ -422,10 +433,13 @@ export default function Promotions() {
                       <option value="FIXED">ลดเป็นบาท (฿)</option>
                       <option value="PERCENT">ลดเปอร์เซ็นต์ (%)</option>
                       <option value="FREE_ITEM">ลดค่าของแถมเป็น (0฿)</option>
+                      <option value="POINTS">ให้แต้มสะสม (แต้ม)</option>
                     </select>
                   </div>
                   <div className="flex-1">
-                    <label className="block text-xs font-semibold text-fuchsia-700 mb-1.5">{discountType === "FREE_ITEM" ? "เลือกสินค้าของแถม *" : "มูลค่าส่วนลด *"}</label>
+                    <label className="block text-xs font-semibold text-fuchsia-700 mb-1.5">
+                      {discountType === "FREE_ITEM" ? "เลือกสินค้าของแถม *" : discountType === "POINTS" ? "จำนวนแต้มที่ให้ *" : "มูลค่าส่วนลด *"}
+                    </label>
                     {discountType === "FREE_ITEM" ? (
                       <select
                         required value={discountValue} onChange={e => setDiscountValue(e.target.value)}
@@ -436,15 +450,39 @@ export default function Promotions() {
                       </select>
                     ) : (
                       <input
-                        type="number" required min="1" step="0.01" max={discountType === "PERCENT" ? 100 : undefined}
+                        type="number" required min="1" step={discountType === "POINTS" ? "1" : "0.01"}
+                        max={discountType === "PERCENT" ? 100 : undefined}
                         value={discountValue} onChange={e => setDiscountValue(e.target.value)}
-                        placeholder={discountType === "PERCENT" ? "เช่น 10" : "เช่น 100"}
+                        placeholder={discountType === "PERCENT" ? "เช่น 10" : discountType === "POINTS" ? "เช่น 50" : "เช่น 100"}
                         className="w-full px-4 py-3 rounded-xl border border-fuchsia-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 bg-white text-sm font-bold text-fuchsia-900"
                       />
                     )}
                   </div>
                 </div>
               </div>
+
+              {/* ── BONUS POINTS ── (only for non-POINTS discount types) */}
+              {discountType !== "POINTS" && (
+                <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 space-y-3">
+                  <h4 className="font-bold text-sm text-orange-800 flex items-center gap-1.5 border-b border-orange-200/50 pb-2">
+                    <Star size={15} className="text-orange-500"/> แต้มสะสมโบนัส <span className="font-normal text-orange-400 text-xs ml-1">(ไม่กรอก = ไม่ให้แต้ม)</span>
+                  </h4>
+                  <div>
+                    <label className="block text-xs font-semibold text-orange-700 mb-1.5">จำนวนแต้มที่ลูกค้าจะได้รับเพิ่ม</label>
+                    <input
+                      type="number" min="0" step="1"
+                      value={bonusPoints} onChange={e => setBonusPoints(e.target.value)}
+                      placeholder="เช่น 50 (ว่าง = ไม่ให้แต้ม)"
+                      className="w-full px-4 py-3 rounded-xl border border-orange-200 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white text-sm font-bold text-orange-900"
+                    />
+                    {bonusPoints && parseFloat(bonusPoints) > 0 && (
+                      <p className="mt-1.5 text-xs text-orange-600 font-medium flex items-center gap-1">
+                        <Star size={11}/> เมื่อโปรโมชั่นนี้ทำงาน ลูกค้าจะได้ +{parseFloat(bonusPoints).toLocaleString()} แต้ม เพิ่มเติมจากส่วนลด
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* ── DATE RANGE ── */}
               <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-4">

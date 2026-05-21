@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
 import { exportToExcel, exportReportToExcel, getCartVatSplit, formatThaiPeriod } from "../utils/excelExport";
 import ShiftSlipModal from "../components/ShiftSlipModal";
+import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import { usePrinter } from "../context/PrinterContext";
 import toast from "react-hot-toast";
 
@@ -36,6 +37,9 @@ export default function Reports() {
 
   // Void bill expand
   const [expandedVoidId, setExpandedVoidId] = useState(null);
+
+  // Tax invoice viewer
+  const [viewInvoiceTx, setViewInvoiceTx] = useState(null);
 
   // Stock movement doc + expand
   const [receiveGoodsList, setReceiveGoodsList] = useState([]);
@@ -925,7 +929,20 @@ export default function Reports() {
                         <tr key={`orig-${i}`} className={clsx("text-sm", isVoid ? "bg-red-50/40" : "hover:bg-gray-50")}>
                           <td className="p-3 text-gray-600">{new Date(tx.Date).toLocaleString("th-TH")}</td>
                           <td className="p-3">{receiptBadge(tx)}</td>
-                          <td className="p-3 font-mono text-gray-500">{tx.ReceiptNo || tx.OrderID}</td>
+                          <td className="p-3 font-mono text-gray-500">
+                            <div className="flex items-center gap-1.5">
+                              <span>{tx.ReceiptNo || tx.OrderID}</span>
+                              {tx.TaxInvoiceNo && (
+                                <button
+                                  onClick={() => setViewInvoiceTx(tx)}
+                                  title={`ดูใบกำกับภาษี ${tx.TaxInvoiceNo}`}
+                                  className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-bold hover:bg-purple-200 transition-colors flex items-center gap-1"
+                                >
+                                  <FileText size={10} /> {tx.TaxInvoiceNo}
+                                </button>
+                              )}
+                            </div>
+                          </td>
                           <td className="p-3 text-right font-medium">฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                           <td className="p-3 text-right text-amber-600 font-bold">
                             {vat > 0 ? `฿${vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : <span className="text-gray-300">-</span>}
@@ -1627,6 +1644,60 @@ export default function Reports() {
           onClose={() => { setIsSlipModalOpen(false); setShiftSlipData(null); setShiftSlipBills([]); }}
         />
       )}
+
+      {/* Tax Invoice Viewer Modal */}
+      {viewInvoiceTx && (() => {
+        const tx = viewInvoiceTx;
+        let cartItems = [];
+        try { cartItems = typeof tx.CartDetails === "string" ? JSON.parse(tx.CartDetails) : (tx.CartDetails || []); } catch (e) {}
+        const cartForModal = cartItems.map(item => ({
+          id: item.Barcode || item.barcode || item.Name || item.name,
+          Barcode: item.Barcode || item.barcode || "",
+          Name: item.Name || item.name || "",
+          name: item.Name || item.name || "",
+          price: parseFloat(item.price || item.Price || 0),
+          qty: parseFloat(item.qty || 1),
+          vatStatus: item.vatStatus || item.VatStatus || "VAT",
+        }));
+        const cartSubtotal = cartForModal.reduce((s, i) => s + i.price * i.qty, 0);
+        const discAmt = parseFloat(tx.DiscountAmount || 0);
+        const vatAmt = parseFloat(tx.Tax || 0);
+        const total = parseFloat(tx.TotalAmount || 0);
+
+        // Find customer info from taxInvoices table (preferred) or CustomerInfo JSON
+        const invRecord = taxInvoices.find(ti => ti.OrderID === tx.OrderID);
+        let custName = invRecord?.CustomerName || "";
+        let custAddr = invRecord?.CustomerAddress || "";
+        let custTaxId = invRecord?.CustomerTaxID || "";
+        if (!custName) {
+          try {
+            const ci = typeof tx.CustomerInfo === "string" ? JSON.parse(tx.CustomerInfo) : (tx.CustomerInfo || {});
+            custName = ci.name || ci.customerName || "";
+            custAddr = ci.address || ci.customerAddress || "";
+            custTaxId = ci.taxId || ci.customerTaxId || "";
+          } catch (e) {}
+        }
+
+        return (
+          <TaxInvoiceModal
+            isOpen={true}
+            onClose={() => setViewInvoiceTx(null)}
+            cart={cartForModal}
+            paymentMethod={tx.PaymentMethod || ""}
+            subtotal={cartSubtotal || total}
+            discountAmount={discAmt}
+            freeItemLines={[]}
+            couponDiscount={0}
+            couponName=""
+            couponLines={[]}
+            tax={vatAmt}
+            total={total}
+            receiptType={tx.ReceiptType || "ใบเสร็จ"}
+            customerInfo={{ customerName: custName, customerAddress: custAddr, customerTaxId: custTaxId }}
+            taxInvoiceNo={tx.TaxInvoiceNo || ""}
+          />
+        );
+      })()}
 
       {/* Stock Move Document Viewer Modal */}
       {viewDocMove && (

@@ -4,7 +4,7 @@ import {
   Loader2, Download, X, History, TrendingUp, TrendingDown, Plus, Minus,
   Scissors, Clock, Check, AlertCircle, Mail, MessageCircle, StickyNote,
   Edit2, Trash2, PawPrint, ShoppingBag, Calendar, Heart, Weight,
-  Syringe, AlertTriangle, FileText, RefreshCw,
+  Syringe, AlertTriangle, FileText, RefreshCw, CreditCard, Gift,
 } from "lucide-react";
 import { fetchApi, postApi, invalidateCache } from "../api";
 import { exportToExcel } from "../utils/excelExport";
@@ -30,12 +30,13 @@ const EMPTY_CUST_EDIT = {
 };
 
 const EXPANDED_TABS = [
-  { k: "info",      label: "ข้อมูล",        icon: Users },
-  { k: "pets",      label: "สัตว์เลี้ยง",   icon: PawPrint },
-  { k: "coupons",   label: "คูปอง",         icon: Ticket },
-  { k: "packages",  label: "แพคเกจครั้ง",   icon: Scissors },
-  { k: "points",    label: "ประวัติพ้อย",   icon: Star },
-  { k: "purchases", label: "ประวัติซื้อ",   icon: ShoppingBag },
+  { k: "info",      label: "ข้อมูล",         icon: Users },
+  { k: "pets",      label: "สัตว์เลี้ยง",    icon: PawPrint },
+  { k: "coupons",   label: "คูปอง",          icon: Ticket },
+  { k: "packages",  label: "แพคเกจครั้ง",    icon: Scissors },
+  { k: "credits",   label: "เครดิตร้าน",     icon: Star },
+  { k: "points",    label: "แต้มสะสม",       icon: Gift },
+  { k: "purchases", label: "ประวัติซื้อ",    icon: ShoppingBag },
 ];
 
 // ── helpers ─────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ export default function Members() {
   const [customers, setCustomers]           = useState([]);
   const [coupons, setCoupons]               = useState([]);
   const [pointsHistory, setPointsHistory]   = useState([]);
+  const [creditsHistory, setCreditsHistory] = useState([]);
   const [customerPackages, setCustomerPackages] = useState([]);
   const [pets, setPets]                     = useState([]);
   const [transactions, setTransactions]     = useState([]);
@@ -94,12 +96,15 @@ export default function Members() {
   const [petModal, setPetModal]         = useState(null); // { mode:"add"|"edit", customer, pet }
   const [editCustModal, setEditCustModal] = useState(null); // customer obj
   const [pointsModal, setPointsModal]   = useState(null); // customer obj
+  const [creditsModal, setCreditsModal] = useState(null); // customer obj for credits
   const [confirmDel, setConfirmDel]     = useState(null); // { petId, petName }
 
   // Form states
   const [petForm, setPetForm]   = useState(EMPTY_PET);
   const [custForm, setCustForm] = useState(EMPTY_CUST_EDIT);
   const [ptForm, setPtForm]     = useState({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add" });
+  const [crForm, setCrForm]     = useState({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add" });
+  const [savingCr, setSavingCr] = useState(false);
 
   // Saving flags
   const [savingPet, setSavingPet]   = useState(false);
@@ -114,13 +119,15 @@ export default function Members() {
       fetchApi("getCustomers",       { skipCache: true }),
       fetchApi("getCustomerCoupons", { skipCache: true }),
       fetchApi("getPointsHistory",   { skipCache: true }),
+      fetchApi("getCreditsHistory",  { skipCache: true }),
       fetchApi("getCustomerPackages",{ skipCache: true }),
       fetchApi("getPets",            { skipCache: true }),
-    ]).then(([custs, couponData, histData, cpData, petsData]) => {
-      setCustomers(Array.isArray(custs)       ? custs : []);
-      setCoupons(Array.isArray(couponData)    ? couponData : []);
-      setPointsHistory(Array.isArray(histData) ? [...histData].reverse() : []);
-      setCustomerPackages(Array.isArray(cpData) ? cpData : []);
+    ]).then(([custs, couponData, histData, credData, cpData, petsData]) => {
+      setCustomers(Array.isArray(custs)          ? custs : []);
+      setCoupons(Array.isArray(couponData)       ? couponData : []);
+      setPointsHistory(Array.isArray(histData)   ? [...histData].reverse() : []);
+      setCreditsHistory(Array.isArray(credData)  ? [...credData].reverse() : []);
+      setCustomerPackages(Array.isArray(cpData)  ? cpData : []);
       setPets(Array.isArray(petsData) ? petsData.filter(p => p.Status !== "DELETED") : []);
       setIsLoading(false);
     });
@@ -146,6 +153,16 @@ export default function Members() {
     return map;
   }, [pointsHistory]);
 
+  const creditsHistoryByName = useMemo(() => {
+    const map = {};
+    creditsHistory.forEach(h => {
+      const k = String(h.CustomerName || "").trim().toLowerCase();
+      if (!map[k]) map[k] = [];
+      map[k].push(h);
+    });
+    return map;
+  }, [creditsHistory]);
+
   const cpByName = useMemo(() => {
     const map = {};
     customerPackages.forEach(cp => {
@@ -166,7 +183,8 @@ export default function Members() {
     return map;
   }, [pets]);
 
-  const getCreditHistory   = name => creditHistoryByName[String(name||"").trim().toLowerCase()] || [];
+  const getCreditHistory   = name => creditHistoryByName[String(name||"").trim().toLowerCase()]  || [];
+  const getCreditsHistory  = name => creditsHistoryByName[String(name||"").trim().toLowerCase()] || [];
   const getCustPackages    = name => cpByName[String(name||"").trim().toLowerCase()] || [];
   const getCustPets        = name => petsByName[String(name||"").trim().toLowerCase()] || [];
   const getActiveCoupons   = name => {
@@ -307,6 +325,27 @@ export default function Members() {
     } else toast.error(res.error||"ลบไม่สำเร็จ");
   };
 
+  // ── manual credits ────────────────────────────────────────────────────
+  const openCreditsModal = (c, e) => {
+    e.stopPropagation();
+    setCrForm({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add" });
+    setCreditsModal(c);
+  };
+  const handleSaveCr = async () => {
+    const delta = parseFloat(crForm.delta) || 0;
+    if (delta <= 0) { toast.error("กรุณาระบุจำนวนเครดิต"); return; }
+    const actual = crForm.mode === "deduct" ? -delta : delta;
+    const reason = crForm.reason === "อื่นๆ" ? (crForm.customReason.trim() || "Manual") : crForm.reason;
+    setSavingCr(true);
+    const res = await postApi({ action: "addManualCredits", payload: { customerName: creditsModal.Name, credits: actual, reason } });
+    setSavingCr(false);
+    if (res.success) {
+      toast.success(res.message || "บันทึกสำเร็จ");
+      invalidateCache("getCustomers"); invalidateCache("getCreditsHistory");
+      loadAll(); setCreditsModal(null);
+    } else toast.error(res.error || "บันทึกไม่สำเร็จ");
+  };
+
   // ── manual points ─────────────────────────────────────────────────────
   const openPointsModal = (c, e) => {
     e.stopPropagation();
@@ -351,7 +390,7 @@ export default function Members() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => { ["getCustomers","getCustomerCoupons","getPointsHistory","getCustomerPackages","getPets"].forEach(k=>invalidateCache(k)); loadAll(); }}
+          <button onClick={() => { ["getCustomers","getCustomerCoupons","getPointsHistory","getCreditsHistory","getCustomerPackages","getPets"].forEach(k=>invalidateCache(k)); loadAll(); }}
             className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
             <RefreshCw size={14} /> รีเฟรช
           </button>
@@ -396,8 +435,9 @@ export default function Members() {
                   <th className="py-3 px-5">ชื่อ / ติดต่อ</th>
                   <th className="py-3 px-4">สัตว์เลี้ยง</th>
                   <th className="py-3 px-4 text-right cursor-pointer select-none hover:bg-indigo-100/60" onClick={cycleSortPoints}>
-                    <span className="flex items-center justify-end gap-1">เครดิต {sortPoints==="desc"?"↓":sortPoints==="asc"?"↑":"↕"}</span>
+                    <span className="flex items-center justify-end gap-1">เครดิตร้าน {sortPoints==="desc"?"↓":sortPoints==="asc"?"↑":"↕"}</span>
                   </th>
+                  <th className="py-3 px-4 text-right">แต้มสะสม</th>
                   <th className="py-3 px-4 text-center">แพคเกจครั้ง</th>
                   <th className="py-3 px-4">วันที่สมัคร</th>
                   <th className="py-3 px-4 text-center w-10"></th>
@@ -436,7 +476,12 @@ export default function Members() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <span className="inline-flex items-center gap-1 bg-yellow-50 border border-yellow-100 text-yellow-700 px-2.5 py-1 rounded-full text-xs font-bold">
-                          <Star size={11}/>{Number(c.Points||0).toLocaleString()}
+                          <Star size={11}/>฿{Number(c.Credits||0).toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <span className="inline-flex items-center gap-1 bg-orange-50 border border-orange-100 text-orange-700 px-2.5 py-1 rounded-full text-xs font-bold">
+                          <Gift size={11}/>{Number(c.Points||0).toLocaleString()}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-center">
@@ -458,7 +503,7 @@ export default function Members() {
                     /* ── expanded row ── */
                     isExp && (
                       <tr key={`detail-${rowId}`} className="bg-slate-50/60">
-                        <td colSpan={6} className="px-4 pt-1 pb-5">
+                        <td colSpan={7} className="px-4 pt-1 pb-5">
                           {/* Tab bar */}
                           <div className="flex gap-0.5 bg-white border border-gray-100 rounded-xl p-1 mb-4 w-fit shadow-sm">
                             {EXPANDED_TABS.map(t => {
@@ -485,9 +530,13 @@ export default function Members() {
                                 <div className="flex items-center justify-between border-b border-gray-50 pb-2">
                                   <h4 className="text-sm font-bold text-gray-800 flex items-center gap-1.5"><Users size={14}/>ข้อมูลสมาชิก</h4>
                                   <div className="flex gap-1.5">
-                                    <button onClick={e=>openPointsModal(c,e)}
+                                    <button onClick={e=>openCreditsModal(c,e)}
                                       className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-semibold transition-colors">
-                                      <Star size={11}/>พ้อย
+                                      <Star size={11}/>เครดิต
+                                    </button>
+                                    <button onClick={e=>openPointsModal(c,e)}
+                                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-colors">
+                                      <Gift size={11}/>แต้ม
                                     </button>
                                     <button onClick={e=>openEditCust(c,e)}
                                       className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors">
@@ -503,8 +552,10 @@ export default function Members() {
                                   <InfoRow icon={<MessageCircle size={12}/>}  label="Line ID"      value={c.LineID||"-"} />
                                   <InfoRow icon={<Calendar size={12}/>}       label="วันเกิด"      value={fmtDate(c.Birthday)} />
                                   <InfoRow icon={<Hash size={12}/>}           label="เลขภาษี"      value={c.TaxID||"-"} mono />
-                                  <InfoRow icon={<Star size={12}/>}           label="เครดิตสะสม"
-                                    value={<span className="font-bold text-yellow-600">{Number(c.Points||0).toLocaleString()} pts</span>} />
+                                  <InfoRow icon={<Star size={12}/>}           label="เครดิตร้าน"
+                                    value={<span className="font-bold text-yellow-600">฿{Number(c.Credits||0).toLocaleString()}</span>} />
+                                  <InfoRow icon={<Gift size={12}/>}           label="แต้มสะสม"
+                                    value={<span className="font-bold text-orange-600">{Number(c.Points||0).toLocaleString()} แต้ม</span>} />
                                   <InfoRow icon={<MapPin size={12}/>}         label="ที่อยู่ภาษี"  value={c.TaxAddress||"-"} />
                                   <InfoRow icon={<MapPin size={12}/>}         label="ที่อยู่"       value={c.Address||"-"} />
                                 </div>
@@ -521,7 +572,8 @@ export default function Members() {
                                     { label: "สัตว์เลี้ยง",      val: getCustPets(c.Name).length,          color: "bg-orange-50 text-orange-700 border-orange-100",  icon: <PawPrint size={18}/> },
                                     { label: "คูปองใช้ได้",      val: getActiveCoupons(c.Name).length,      color: "bg-indigo-50 text-indigo-700 border-indigo-100",  icon: <Ticket size={18}/> },
                                     { label: "แพคเกจครั้งใช้งาน",val: getCustPackages(c.Name).filter(cp=>cp.Status==="ACTIVE").length, color: "bg-violet-50 text-violet-700 border-violet-100", icon: <Scissors size={18}/> },
-                                    { label: "เครดิตสะสม",       val: Number(c.Points||0).toLocaleString()+" pts", color: "bg-yellow-50 text-yellow-700 border-yellow-100", icon: <Star size={18}/> },
+                                    { label: "เครดิตร้าน",  val: "฿"+Number(c.Credits||0).toLocaleString(),          color: "bg-yellow-50 text-yellow-700 border-yellow-100",  icon: <Star size={18}/> },
+                                    { label: "แต้มสะสม",    val: Number(c.Points||0).toLocaleString()+" แต้ม",        color: "bg-orange-50 text-orange-700 border-orange-100",  icon: <Gift size={18}/> },
                                   ].map((s,si)=>(
                                     <div key={si} className={`rounded-2xl border p-4 flex items-center gap-3 ${s.color}`}>
                                       <div className="opacity-60">{s.icon}</div>
@@ -637,7 +689,74 @@ export default function Members() {
                             </div>
                           )}
 
-                          {/* ── tab: ประวัติพ้อย ── */}
+                          {/* ── tab: เครดิตร้าน ── */}
+                          {(expandedTab[rowId]||"info") === "credits" && (() => {
+                            const hist = getCreditsHistory(c.Name);
+                            const cKey = `cr-${rowId}`;
+                            const cq   = (creditSearch[cKey]||"").toLowerCase();
+                            const visible = cq ? hist.filter(h=>
+                              String(h.Reference||"").toLowerCase().includes(cq)||
+                              String(h.Type||"").includes(cq)
+                            ) : hist;
+                            const earnT   = hist.filter(h=>h.Type==="EARN"||h.Type==="MANUAL_ADD").reduce((s,h)=>s+(parseFloat(h.Credits)||0),0);
+                            const redeemT = hist.filter(h=>h.Type!=="EARN"&&h.Type!=="MANUAL_ADD").reduce((s,h)=>s+(parseFloat(h.Credits)||0),0);
+                            return (
+                              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+                                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-50 bg-yellow-50/60">
+                                  <h4 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                                    <Star size={14} className="text-yellow-600"/> เครดิตร้าน
+                                    <span className="bg-gray-100 text-gray-600 text-[11px] font-bold px-2 py-0.5 rounded-full ml-1">{hist.length}</span>
+                                  </h4>
+                                  <div className="flex gap-2 text-xs font-semibold">
+                                    <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full"><TrendingUp size={11}/> +{earnT.toLocaleString()}</span>
+                                    <span className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-100 px-2.5 py-1 rounded-full"><TrendingDown size={11}/> -{redeemT.toLocaleString()}</span>
+                                    <span className="flex items-center gap-1 bg-yellow-50 text-yellow-700 border border-yellow-100 px-2.5 py-1 rounded-full"><Star size={11}/> ฿{Number(c.Credits||0).toLocaleString()}</span>
+                                    <button onClick={e=>{ e.stopPropagation(); openCreditsModal(c,e); }}
+                                      className="flex items-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors">
+                                      <Plus size={9}/> ปรับ
+                                    </button>
+                                  </div>
+                                </div>
+                                {hist.length === 0 ? (
+                                  <div className="py-10 flex flex-col items-center gap-2 text-gray-400"><History size={32} className="opacity-20"/><span className="text-xs">ยังไม่มีประวัติเครดิต</span></div>
+                                ) : (
+                                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                                    <table className="w-full text-left text-xs">
+                                      <thead className="bg-gray-50 sticky top-0">
+                                        <tr className="border-b border-gray-100 text-gray-500 font-semibold">
+                                          <th className="py-2 px-4">วันที่</th>
+                                          <th className="py-2 px-4 text-center">ประเภท</th>
+                                          <th className="py-2 px-4 text-right">เครดิต (฿)</th>
+                                          <th className="py-2 px-4 text-right">คงเหลือ</th>
+                                          <th className="py-2 px-4">หมายเหตุ</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-50">
+                                        {visible.map((h,hi)=>{
+                                          const isEarn = h.Type==="EARN"||h.Type==="MANUAL_ADD";
+                                          return (
+                                            <tr key={hi} className={isEarn?"hover:bg-emerald-50/30":"hover:bg-red-50/30"}>
+                                              <td className="py-2 px-4 text-gray-500 whitespace-nowrap">{h.Date?new Date(h.Date).toLocaleString("th-TH",{dateStyle:"short",timeStyle:"short"}):"-"}</td>
+                                              <td className="py-2 px-4 text-center">
+                                                <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${isEarn?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>
+                                                  {isEarn?<TrendingUp size={9}/>:<TrendingDown size={9}/>} {isEarn?"รับ":"ใช้"}
+                                                </span>
+                                              </td>
+                                              <td className={`py-2 px-4 text-right font-bold ${isEarn?"text-emerald-600":"text-red-500"}`}>{isEarn?"+฿":"-฿"}{(parseFloat(h.Credits)||0).toLocaleString()}</td>
+                                              <td className="py-2 px-4 text-right font-semibold text-gray-700">฿{h.Balance!=null?Number(h.Balance).toLocaleString():"-"}</td>
+                                              <td className="py-2 px-4 text-gray-500 max-w-[200px] truncate">{h.Reference||"-"}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* ── tab: แต้มสะสม (พ้อย) ── */}
                           {(expandedTab[rowId]||"info") === "points" && (() => {
                             const hist = getCreditHistory(c.Name);
                             const cKey = rowId;
@@ -646,23 +765,27 @@ export default function Members() {
                               String(h.Reference||"").toLowerCase().includes(cq)||
                               String(h.Type||"").includes(cq)
                             ) : hist;
-                            const earnT   = hist.filter(h=>h.Type==="EARN"||h.Type==="MANUAL_ADD").reduce((s,h)=>s+(parseFloat(h.Points)||0),0);
-                            const redeemT = hist.filter(h=>h.Type!=="EARN"&&h.Type!=="MANUAL_ADD").reduce((s,h)=>s+(parseFloat(h.Points)||0),0);
+                            const earnT   = hist.filter(h=>h.Type!=="REDEEM"&&h.Type!=="MANUAL_DEDUCT").reduce((s,h)=>s+(parseFloat(h.Points)||0),0);
+                            const redeemT = hist.filter(h=>h.Type==="REDEEM"||h.Type==="MANUAL_DEDUCT").reduce((s,h)=>s+(parseFloat(h.Points)||0),0);
                             return (
                               <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-                                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-50 bg-gray-50/40">
+                                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-50 bg-orange-50/60">
                                   <h4 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
-                                    <History size={14}/> ประวัติพ้อย
+                                    <Gift size={14} className="text-orange-500"/> แต้มสะสม (พ้อย)
                                     <span className="bg-gray-100 text-gray-600 text-[11px] font-bold px-2 py-0.5 rounded-full ml-1">{hist.length}</span>
                                   </h4>
                                   <div className="flex gap-2 text-xs font-semibold">
                                     <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full"><TrendingUp size={11}/> +{earnT.toLocaleString()}</span>
                                     <span className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-100 px-2.5 py-1 rounded-full"><TrendingDown size={11}/> -{redeemT.toLocaleString()}</span>
-                                    <span className="flex items-center gap-1 bg-yellow-50 text-yellow-700 border border-yellow-100 px-2.5 py-1 rounded-full"><Star size={11}/> {Number(c.Points||0).toLocaleString()}</span>
+                                    <span className="flex items-center gap-1 bg-orange-50 text-orange-700 border border-orange-100 px-2.5 py-1 rounded-full"><Gift size={11}/> {Number(c.Points||0).toLocaleString()} แต้ม</span>
+                                    <button onClick={e=>{ e.stopPropagation(); openPointsModal(c,e); }}
+                                      className="flex items-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors">
+                                      <Plus size={9}/> ปรับ
+                                    </button>
                                   </div>
                                 </div>
                                 {hist.length === 0 ? (
-                                  <div className="py-10 flex flex-col items-center gap-2 text-gray-400"><History size={32} className="opacity-20"/><span className="text-xs">ยังไม่มีประวัติ</span></div>
+                                  <div className="py-10 flex flex-col items-center gap-2 text-gray-400"><History size={32} className="opacity-20"/><span className="text-xs">ยังไม่มีประวัติแต้มสะสม</span></div>
                                 ) : (
                                   <>
                                     <div className="px-5 py-2.5 border-b border-gray-50 bg-gray-50/50">
@@ -679,20 +802,20 @@ export default function Members() {
                                           <tr className="border-b border-gray-100 text-gray-500 font-semibold">
                                             <th className="py-2 px-4">วันที่</th>
                                             <th className="py-2 px-4 text-center">ประเภท</th>
-                                            <th className="py-2 px-4 text-right">พ้อย</th>
+                                            <th className="py-2 px-4 text-right">แต้ม</th>
                                             <th className="py-2 px-4 text-right">คงเหลือ</th>
                                             <th className="py-2 px-4">หมายเหตุ</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
                                           {visible.map((h,hi)=>{
-                                            const isEarn = h.Type==="EARN"||h.Type==="MANUAL_ADD";
+                                            const isEarn = h.Type!=="REDEEM"&&h.Type!=="MANUAL_DEDUCT";
                                             return (
                                               <tr key={hi} className={isEarn?"hover:bg-emerald-50/30":"hover:bg-red-50/30"}>
                                                 <td className="py-2 px-4 text-gray-500 whitespace-nowrap">{h.Date?new Date(h.Date).toLocaleString("th-TH",{dateStyle:"short",timeStyle:"short"}):"-"}</td>
                                                 <td className="py-2 px-4 text-center">
                                                   <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${isEarn?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>
-                                                    {isEarn?<TrendingUp size={9}/>:<TrendingDown size={9}/>} {isEarn?"รับ":"ใช้"}
+                                                    {isEarn?<TrendingUp size={9}/>:<TrendingDown size={9}/>} {isEarn?"ได้รับ":"ใช้"}
                                                   </span>
                                                 </td>
                                                 <td className={`py-2 px-4 text-right font-bold ${isEarn?"text-emerald-600":"text-red-500"}`}>{isEarn?"+":"-"}{(parseFloat(h.Points)||0).toLocaleString()}</td>
@@ -874,6 +997,57 @@ export default function Members() {
               <button onClick={handleSavePet} disabled={savingPet}
                 className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
                 {savingPet?<><Loader2 size={16} className="animate-spin"/>กำลังบันทึก...</>:<><Check size={16}/>บันทึกสัตว์เลี้ยง</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: Manual Credits ═════════════════════════════════════════ */}
+      {creditsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><CreditCard size={18} className="text-yellow-500"/>เพิ่ม / หักเครดิต</h3>
+              <button onClick={()=>setCreditsModal(null)} className="text-gray-400 hover:text-gray-700"><X size={20}/></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-yellow-50 border border-yellow-100 rounded-xl px-4 py-3 flex items-center justify-between">
+                <div><div className="font-bold text-gray-900">{creditsModal.Name}</div><div className="text-xs text-gray-500">{creditsModal.Phone||"-"}</div></div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-400">เครดิตปัจจุบัน</div>
+                  <div className="font-bold text-yellow-600 text-lg flex items-center gap-1"><CreditCard size={14}/>฿{Number(creditsModal.Credits||0).toLocaleString()}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[{k:"add",label:"เพิ่มเครดิต",icon:<Plus size={14}/>,cls:"border-green-500 bg-green-50 text-green-700"},
+                  {k:"deduct",label:"หักเครดิต",icon:<Minus size={14}/>,cls:"border-red-400 bg-red-50 text-red-600"}].map(t=>(
+                  <button key={t.k} type="button" onClick={()=>setCrForm(p=>({...p,mode:t.k}))}
+                    className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${crForm.mode===t.k?t.cls:"border-gray-200 text-gray-500"}`}>
+                    {t.icon}{t.label}
+                  </button>
+                ))}
+              </div>
+              <Field label="จำนวนเครดิต (฿) *" type="number" value={crForm.delta} onChange={v=>setCrForm(p=>({...p,delta:v}))} placeholder="100"/>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">เหตุผล</label>
+                <select value={crForm.reason} onChange={e=>setCrForm(p=>({...p,reason:e.target.value}))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-yellow-400">
+                  {MANUAL_REASONS.map(r=><option key={r} value={r}>{r}</option>)}
+                </select>
+                {crForm.reason==="อื่นๆ" && (
+                  <input value={crForm.customReason} onChange={e=>setCrForm(p=>({...p,customReason:e.target.value}))}
+                    placeholder="ระบุเหตุผล..." className="mt-2 w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-yellow-400"/>
+                )}
+              </div>
+              {crForm.delta && parseFloat(crForm.delta)>0 && (
+                <div className={`text-xs rounded-lg px-3 py-2 flex items-center gap-2 ${crForm.mode==="add"?"bg-green-50 text-green-700 border border-green-100":"bg-red-50 text-red-600 border border-red-100"}`}>
+                  <AlertCircle size={13}/> เครดิตจะเป็น ฿{Math.max(0,(Number(creditsModal.Credits||0)+(crForm.mode==="add"?1:-1)*parseFloat(crForm.delta))).toLocaleString()} หลังบันทึก
+                </div>
+              )}
+              <button onClick={handleSaveCr} disabled={savingCr}
+                className={`w-full py-3 text-white rounded-xl font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors ${crForm.mode==="add"?"bg-yellow-500 hover:bg-yellow-600":"bg-red-500 hover:bg-red-600"}`}>
+                {savingCr?<><Loader2 size={16} className="animate-spin"/>กำลังบันทึก...</>:<><Check size={16}/>ยืนยัน{crForm.mode==="add"?"เพิ่ม":"หัก"}เครดิต</>}
               </button>
             </div>
           </div>

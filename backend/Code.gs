@@ -16,7 +16,8 @@ function setup() {
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
-    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"],
+    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "Credits", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"],
+    "CreditsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Credits", "Balance", "Reference", "OrderID", "Actor"],
     "Pets": ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"],
     "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays", "BonusSessions", "BonusServiceName", "BonusServiceSessions", "Subtype", "RewardType", "RewardRef", "RewardQty", "RewardName"],
     "CustomerPackages": ["ID", "CustomerName", "Phone", "PackageID", "PackageName", "PackageType", "TotalSessions", "UsedSessions", "PurchaseDate", "ExpiryDate", "Status", "PaidAmount", "Actor", "BonusServiceName", "BonusServiceSessions", "BonusServiceUsed"],
@@ -27,7 +28,7 @@ function setup() {
     "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy", "FreeItemBarcode", "FreeItemName"],
     "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
-    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate", "StartDate", "EndDate", "ActiveDays"],
+    "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate", "StartDate", "EndDate", "ActiveDays", "BonusPoints"],
     "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
     "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"],
     "ActivityLog": ["Timestamp", "User", "Role", "Module", "Action", "ReferenceID", "Details"],
@@ -232,6 +233,8 @@ function doGet(e) {
     return jsonResponse(readSheetData("Packages"));
   } else if (action === "getPointsHistory") {
     return jsonResponse(readSheetData("PointsHistory"));
+  } else if (action === "getCreditsHistory") {
+    return jsonResponse(readSheetData("CreditsHistory"));
   } else if (action === "getCoupons") {
     return jsonResponse(readSheetData("Coupons"));
   } else if (action === "getCustomerCoupons") {
@@ -325,6 +328,8 @@ function doPost(e) {
       return usePackageSession(data.payload);
     } else if (action === "addManualPoints") {
       return addManualPoints(data.payload);
+    } else if (action === "addManualCredits") {
+      return addManualCredits(data.payload);
     } else if (action === "savePet") {
       return savePet(data.payload);
     } else if (action === "deletePet") {
@@ -476,10 +481,31 @@ function processCheckout(payload) {
     }
   });
   
-  // Deduct points if customer paid with points
+  const actor = payload._actor ? payload._actor.username : "System";
+  const cName = payload.customerInfo ? (payload.customerInfo.name || payload.customerInfo.customerName || "") : "";
+
+  // Deduct store credits if customer paid with เครดิต
+  const creditsUsed = parseFloat(payload.creditsUsed) || 0;
+  if (creditsUsed > 0 && cName) {
+    _adjustCustomerCredits(ss, cName, -creditsUsed, "REDEEM", "ชำระบิล " + orderId, orderId, actor);
+  }
+
+  // Deduct loyalty points if customer paid with พ้อย
   const pointsUsed = parseFloat(payload.pointsUsed) || 0;
-  if (pointsUsed > 0 && payload.customerInfo && payload.customerInfo.name) {
-    _adjustCustomerPoints(ss, payload.customerInfo.name, -pointsUsed, "REDEEM", "ชำระบิล " + orderId, orderId, payload._actor ? payload._actor.username : "System");
+  if (pointsUsed > 0 && cName) {
+    _adjustCustomerPoints(ss, cName, -pointsUsed, "REDEEM", "ชำระบิล " + orderId, orderId, actor);
+  }
+
+  // Award promo points (DiscountType = POINTS promotions)
+  const promoPoints = parseFloat(payload.promoPoints) || 0;
+  if (promoPoints > 0 && cName) {
+    _adjustCustomerPoints(ss, cName, promoPoints, "PROMO_EARN", "โปรโมชั่น บิล " + orderId, orderId, actor);
+  }
+
+  // Award coupon points (Type = POINTS coupons)
+  const couponPoints = parseFloat(payload.couponPoints) || 0;
+  if (couponPoints > 0 && cName) {
+    _adjustCustomerPoints(ss, cName, couponPoints, "COUPON_EARN", "คูปองแต้ม บิล " + orderId, orderId, actor);
   }
 
   logActivity("POS/Online", "Checkout", orderId, payload._actor);
@@ -1436,6 +1462,101 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
   return newBalance;
 }
 
+// ─────────────────────────────────────────────────────
+// CREDITS HELPERS  (Store Credit — เครดิต ซื้อสินค้า)
+// ─────────────────────────────────────────────────────
+function _adjustCustomerCredits(ss, customerName, delta, type, reference, orderId, actor) {
+  const custSheet = ss.getSheetByName("Customers");
+  if (!custSheet) return 0;
+
+  let custData = custSheet.getDataRange().getValues();
+  let nameColIdx    = custData[0].indexOf("Name");
+  let creditsColIdx = custData[0].indexOf("Credits");
+  const updatedAtColIdx = custData[0].indexOf("UpdatedAt");
+
+  // Auto-add Credits column if the sheet predates this feature
+  if (creditsColIdx < 0) {
+    const nextCol = custSheet.getLastColumn() + 1;
+    custSheet.getRange(1, nextCol).setValue("Credits");
+    custData    = custSheet.getDataRange().getValues();
+    creditsColIdx = custData[0].indexOf("Credits");
+  }
+  if (nameColIdx < 0 || creditsColIdx < 0) return 0;
+
+  let newBalance = 0;
+  let customerFound = false;
+  for (let i = 1; i < custData.length; i++) {
+    const rowName = String(custData[i][nameColIdx] || "").trim().toLowerCase();
+    if (rowName === String(customerName).trim().toLowerCase()) {
+      const current = parseFloat(custData[i][creditsColIdx]) || 0;
+      newBalance = Math.max(0, current + delta);
+      custSheet.getRange(i + 1, creditsColIdx + 1).setValue(newBalance);
+      const now = new Date();
+      if (updatedAtColIdx >= 0) custSheet.getRange(i + 1, updatedAtColIdx + 1).setValue(now);
+      customerFound = true;
+      break;
+    }
+  }
+
+  if (!customerFound) {
+    newBalance = Math.max(0, delta);
+    const headers = custData[0];
+    const row = new Array(headers.length).fill("");
+    const set = (h, v) => { const i = headers.indexOf(h); if (i >= 0) row[i] = v; };
+    const now = new Date();
+    set("CustomerID", "CUST-" + new Date().getTime());
+    set("Name", customerName);
+    set("Credits", newBalance);
+    set("Points", 0);
+    set("CreatedAt", now);
+    set("UpdatedAt", now);
+    custSheet.appendRow(row);
+  }
+
+  // Log to CreditsHistory
+  let histSheet = ss.getSheetByName("CreditsHistory");
+  if (!histSheet) {
+    histSheet = ss.insertSheet("CreditsHistory");
+    histSheet.appendRow(["HistoryID", "CustomerName", "Date", "Type", "Credits", "Balance", "Reference", "OrderID", "Actor"]);
+    histSheet.getRange(1, 1, 1, 9).setFontWeight("bold");
+  }
+  histSheet.appendRow([
+    "CH-" + new Date().getTime(),
+    customerName,
+    new Date(),
+    type,
+    Math.abs(delta),
+    newBalance,
+    reference || "",
+    orderId   || "",
+    actor     || "System"
+  ]);
+
+  return newBalance;
+}
+
+function addManualCredits(payload) {
+  const ss           = getSpreadsheet();
+  const customerName = String(payload.customerName || "").trim();
+  const credits      = parseFloat(payload.credits) || 0;
+  const reason       = String(payload.reason || "ปรับเครดิตโดย Staff").trim();
+
+  if (!customerName) return jsonResponse({ error: "กรุณาระบุชื่อลูกค้า" });
+  if (credits === 0)  return jsonResponse({ error: "จำนวนเครดิตต้องไม่เป็นศูนย์" });
+
+  const actor      = payload._actor ? payload._actor.username : "System";
+  const type       = credits > 0 ? "MANUAL_ADD" : "MANUAL_DEDUCT";
+  const newBalance = _adjustCustomerCredits(ss, customerName, credits, type, reason, "", actor);
+
+  logActivity("Credits", "Manual " + (credits > 0 ? "Add" : "Deduct") + " Credits", customerName, payload._actor);
+  return jsonResponse({
+    success: true,
+    creditsChanged: credits,
+    newBalance: newBalance,
+    message: (credits > 0 ? "เพิ่ม" : "หัก") + " " + Math.abs(credits) + " เครดิตให้ " + customerName + " สำเร็จ"
+  });
+}
+
 function savePackage(payload) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName("Packages");
@@ -1512,7 +1633,7 @@ function purchasePackage(payload) {
   const actor = payload._actor ? payload._actor.username : "System";
   const ref = "ซื้อแพคเกจ: " + pkgRow[1] + " (฿" + pkgRow[2] + ")";
 
-  const newBalance = _adjustCustomerPoints(ss, customerName, earnedPoints, "EARN", ref, packageId, actor);
+  const newBalance = _adjustCustomerCredits(ss, customerName, earnedPoints, "EARN", ref, packageId, actor);
 
   // Auto-issue reward (coupon or free item) if package has one
   var rewardType   = String(pkgRow[15] || "NONE").trim();
@@ -1679,6 +1800,15 @@ function savePromotion(payload) {
         sheet.getRange(i + 1, 10).setValue(payload.startDate || "");
         sheet.getRange(i + 1, 11).setValue(payload.endDate   || "");
         sheet.getRange(i + 1, 12).setValue(payload.activeDays || "");
+        // BonusPoints — use indexOf for backward compat with existing sheets
+        var hdrs = data[0];
+        var bpIdx = hdrs.indexOf("BonusPoints");
+        if (bpIdx === -1) {
+          bpIdx = sheet.getLastColumn();
+          sheet.getRange(1, bpIdx + 1).setValue("BonusPoints");
+          sheet.getRange(1, bpIdx + 1).setFontWeight("bold");
+        }
+        sheet.getRange(i + 1, bpIdx + 1).setValue(parseFloat(payload.bonusPoints) || 0);
         found = true;
         break;
       }
@@ -1700,7 +1830,8 @@ function savePromotion(payload) {
       payload.expiryDate || "",
       payload.startDate  || "",
       payload.endDate    || "",
-      payload.activeDays || ""
+      payload.activeDays || "",
+      parseFloat(payload.bonusPoints) || 0
     ]);
   }
 
@@ -1747,6 +1878,7 @@ function readSheetData(sheetName) {
         { col: 10, name: "StartDate"  },
         { col: 11, name: "EndDate"    },
         { col: 12, name: "ActiveDays" },
+        { col: 13, name: "BonusPoints" },
       ];
       newCols.forEach(function(c) {
         const cell = sheet.getRange(1, c.col);
