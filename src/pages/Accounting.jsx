@@ -100,6 +100,40 @@ export default function Accounting() {
   const [slipModalOpen, setSlipModalOpen] = useState(false);
   const [slipData, setSlipData] = useState(null);
 
+  // Tax Invoice Viewer (80mm modal)
+  const [viewTaxInvoiceTx, setViewTaxInvoiceTx] = useState(null);
+
+  const openTaxInvoiceView = (tx) => {
+    let cart = [];
+    try { cart = JSON.parse(tx.CartDetails || tx[5] || "[]"); } catch (e) {}
+    const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
+    const tax   = parseFloat(tx.Tax || tx[3] || 0);
+    const subtotal = cart.reduce((s, c) => s + ((parseFloat(c.price || c.Price) || 0) * (parseFloat(c.qty || c.quantity) || 1)), 0);
+    const discountAmount = Math.max(0, subtotal - total);
+    let custName = (tx.TaxInvoiceCustomerName && tx.TaxInvoiceCustomerName !== "-") ? tx.TaxInvoiceCustomerName : "";
+    let custAddr = (tx.TaxInvoiceCustomerAddress && tx.TaxInvoiceCustomerAddress !== "-") ? tx.TaxInvoiceCustomerAddress : "";
+    let custTaxId = (tx.TaxInvoiceCustomerTaxID && tx.TaxInvoiceCustomerTaxID !== "-") ? tx.TaxInvoiceCustomerTaxID : "";
+    if (!custName) {
+      try {
+        const ci = JSON.parse(tx.CustomerInfo || tx[10] || "{}");
+        custName  = ci.name || ci.customerName || "";
+        custAddr  = ci.address || ci.customerAddress || "";
+        custTaxId = ci.taxId || ci.customerTaxId || "";
+      } catch (e) {}
+    }
+    setViewTaxInvoiceTx({
+      cart: cart.map(c => ({ ...c, qty: parseFloat(c.qty || c.quantity) || 1, price: parseFloat(c.price || c.Price) || 0, name: c.name || c.Name || "" })),
+      paymentMethod: tx.PaymentMethod || tx[4] || "",
+      subtotal,
+      discountAmount,
+      tax,
+      total,
+      receiptType: "ใบกำกับภาษี",
+      taxInvoiceNo: tx.TaxInvoiceNo || tx[15] || "",
+      customerInfo: { customerName: custName, customerAddress: custAddr, customerTaxId: custTaxId },
+    });
+  };
+
   // Cancel Bill Modal
   const [cancelModal, setCancelModal] = useState(null); // tx object or null
   const [cancelNoteInput, setCancelNoteInput] = useState("");
@@ -455,7 +489,15 @@ export default function Accounting() {
                       </td>
                       <td className="py-4 px-6 text-sm font-mono font-medium text-gray-900">{tx.ReceiptNo || tx.OrderID || tx[0]}</td>
                       <td className="py-4 px-6 text-sm font-medium text-gray-700">
-                        {tx.TaxInvoiceNo || tx[15] ? <span className="uppercase text-primary font-bold">{tx.TaxInvoiceNo || tx[15]}</span> : <span className="text-gray-400">-</span>}
+                        {tx.TaxInvoiceNo || tx[15]
+                          ? <button
+                              onClick={() => openTaxInvoiceView(tx)}
+                              className="uppercase text-purple-700 font-bold font-mono text-xs px-2 py-0.5 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 transition-colors flex items-center gap-1"
+                            >
+                              <FileText size={11} /> {tx.TaxInvoiceNo || tx[15]}
+                            </button>
+                          : <span className="text-gray-400">-</span>
+                        }
                       </td>
                       <td className="py-4 px-6 text-right font-medium text-gray-700">
                         ฿{preVat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
@@ -525,7 +567,12 @@ export default function Accounting() {
                             ใบเสร็จ (A4)
                           </button>
                           {tx.TaxInvoiceNo || tx[15]
-                            ? <span className="text-[10px] text-purple-600 font-mono font-bold bg-purple-50 px-2 py-0.5 rounded w-full text-center">{tx.TaxInvoiceNo || tx[15]}</span>
+                            ? <button
+                                onClick={() => openTaxInvoiceView(tx)}
+                                className="w-full text-[10px] text-purple-700 font-mono font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-200 hover:bg-purple-100 transition-colors flex items-center justify-center gap-1"
+                              >
+                                <FileText size={10} /> {tx.TaxInvoiceNo || tx[15]}
+                              </button>
                             : <button
                                 onClick={() => {
                                   setSelectedTx(tx);
@@ -945,6 +992,27 @@ export default function Accounting() {
           total={slipData.total}
           receiptType={slipData.receiptType}
           taxInvoiceNo={slipData.taxInvoiceNo}
+        />
+      )}
+
+      {/* TAX INVOICE VIEWER MODAL (80mm) */}
+      {viewTaxInvoiceTx && (
+        <TaxInvoiceModal
+          isOpen={true}
+          onClose={() => setViewTaxInvoiceTx(null)}
+          cart={viewTaxInvoiceTx.cart}
+          paymentMethod={viewTaxInvoiceTx.paymentMethod}
+          subtotal={viewTaxInvoiceTx.subtotal}
+          discountAmount={viewTaxInvoiceTx.discountAmount}
+          freeItemLines={[]}
+          couponDiscount={0}
+          couponName=""
+          couponLines={[]}
+          tax={viewTaxInvoiceTx.tax}
+          total={viewTaxInvoiceTx.total}
+          receiptType={viewTaxInvoiceTx.receiptType}
+          customerInfo={viewTaxInvoiceTx.customerInfo}
+          taxInvoiceNo={viewTaxInvoiceTx.taxInvoiceNo}
         />
       )}
 
