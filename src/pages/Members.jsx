@@ -50,6 +50,18 @@ function fmtDate(val) {
   const d = new Date(val);
   return isNaN(d) ? String(val) : d.toLocaleDateString("th-TH", { dateStyle: "medium" });
 }
+// Returns { expired, soon, daysLeft, label, colorClass } or null if no date
+function expiryInfo(val) {
+  if (!val) return null;
+  const exp = new Date(val);
+  if (isNaN(exp)) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const daysLeft = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+  const label = exp.toLocaleDateString("th-TH", { day:"numeric", month:"short", year:"2-digit" });
+  if (daysLeft < 0)  return { expired: true,  soon: false, daysLeft, label: `หมดอายุแล้ว (${label})`,     colorClass: "bg-red-100 text-red-700 border-red-200" };
+  if (daysLeft <= 30) return { expired: false, soon: true,  daysLeft, label: `หมดอายุใน ${daysLeft} วัน`, colorClass: "bg-orange-100 text-orange-700 border-orange-200" };
+  return               { expired: false, soon: false, daysLeft, label: `หมดอายุ ${label}`,                colorClass: "bg-gray-100 text-gray-500 border-gray-200" };
+}
 function ageStr(birthDate) {
   if (!birthDate) return null;
   const d = new Date(birthDate);
@@ -104,8 +116,8 @@ export default function Members() {
   // Form states
   const [petForm, setPetForm]   = useState(EMPTY_PET);
   const [custForm, setCustForm] = useState(EMPTY_CUST_EDIT);
-  const [ptForm, setPtForm]     = useState({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add" });
-  const [crForm, setCrForm]     = useState({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add" });
+  const [ptForm, setPtForm]     = useState({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add", expiryDate: "" });
+  const [crForm, setCrForm]     = useState({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add", expiryDate: "" });
   const [savingCr, setSavingCr] = useState(false);
 
   // Saving flags
@@ -339,7 +351,7 @@ export default function Members() {
     const actual = crForm.mode === "deduct" ? -delta : delta;
     const reason = crForm.reason === "อื่นๆ" ? (crForm.customReason.trim() || "Manual") : crForm.reason;
     setSavingCr(true);
-    const res = await postApi({ action: "addManualCredits", payload: { customerName: creditsModal.Name, credits: actual, reason } });
+    const res = await postApi({ action: "addManualCredits", payload: { customerName: creditsModal.Name, credits: actual, reason, expiryDate: crForm.mode === "add" ? crForm.expiryDate : "" } });
     setSavingCr(false);
     if (res.success) {
       toast.success(res.message || "บันทึกสำเร็จ");
@@ -374,7 +386,7 @@ export default function Members() {
     const actual = ptForm.mode === "deduct" ? -delta : delta;
     const reason = ptForm.reason === "อื่นๆ" ? (ptForm.customReason.trim()||"Manual") : ptForm.reason;
     setSavingPt(true);
-    const res = await postApi({ action: "addManualPoints", payload: { customerName: pointsModal.Name, points: actual, reason }});
+    const res = await postApi({ action: "addManualPoints", payload: { customerName: pointsModal.Name, points: actual, reason, expiryDate: ptForm.mode === "add" ? ptForm.expiryDate : "" } });
     setSavingPt(false);
     if (res.success) {
       toast.success(res.message||"บันทึกสำเร็จ");
@@ -574,9 +586,15 @@ export default function Members() {
                                   <InfoRow icon={<Calendar size={12}/>}       label="วันเกิด"      value={fmtDate(c.Birthday)} />
                                   <InfoRow icon={<Hash size={12}/>}           label="เลขภาษี"      value={c.TaxID||"-"} mono />
                                   <InfoRow icon={<Star size={12}/>}           label="เครดิตร้าน"
-                                    value={<span className="font-bold text-yellow-600">฿{Number(c.Credits||0).toLocaleString()}</span>} />
+                                    value={<span className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-bold text-yellow-600">฿{Number(c.Credits||0).toLocaleString()}</span>
+                                      {expiryInfo(c.CreditsExpiry) && <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-semibold ${expiryInfo(c.CreditsExpiry).colorClass}`}>{expiryInfo(c.CreditsExpiry).label}</span>}
+                                    </span>} />
                                   <InfoRow icon={<Gift size={12}/>}           label="แต้มสะสม"
-                                    value={<span className="font-bold text-orange-600">{Number(c.Points||0).toLocaleString()} แต้ม</span>} />
+                                    value={<span className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-bold text-orange-600">{Number(c.Points||0).toLocaleString()} แต้ม</span>
+                                      {expiryInfo(c.PointsExpiry) && <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-semibold ${expiryInfo(c.PointsExpiry).colorClass}`}>{expiryInfo(c.PointsExpiry).label}</span>}
+                                    </span>} />
                                   <InfoRow icon={<MapPin size={12}/>}         label="ที่อยู่ภาษี"  value={c.TaxAddress||"-"} />
                                   <InfoRow icon={<MapPin size={12}/>}         label="ที่อยู่"       value={c.Address||"-"} />
                                 </div>
@@ -593,14 +611,15 @@ export default function Members() {
                                     { label: "สัตว์เลี้ยง",      val: getCustPets(c.Name).length,          color: "bg-orange-50 text-orange-700 border-orange-100",  icon: <PawPrint size={18}/> },
                                     { label: "คูปองใช้ได้",      val: getActiveCoupons(c.Name).length,      color: "bg-indigo-50 text-indigo-700 border-indigo-100",  icon: <Ticket size={18}/> },
                                     { label: "แพคเกจครั้งใช้งาน",val: getCustPackages(c.Name).filter(cp=>cp.Status==="ACTIVE").length, color: "bg-violet-50 text-violet-700 border-violet-100", icon: <Scissors size={18}/> },
-                                    { label: "เครดิตร้าน",  val: "฿"+Number(c.Credits||0).toLocaleString(),          color: "bg-yellow-50 text-yellow-700 border-yellow-100",  icon: <Star size={18}/> },
-                                    { label: "แต้มสะสม",    val: Number(c.Points||0).toLocaleString()+" แต้ม",        color: "bg-orange-50 text-orange-700 border-orange-100",  icon: <Gift size={18}/> },
+                                    { label: "เครดิตร้าน",  val: "฿"+Number(c.Credits||0).toLocaleString(), expiry: expiryInfo(c.CreditsExpiry), color: "bg-yellow-50 text-yellow-700 border-yellow-100",  icon: <Star size={18}/> },
+                                    { label: "แต้มสะสม",    val: Number(c.Points||0).toLocaleString()+" แต้ม", expiry: expiryInfo(c.PointsExpiry), color: "bg-orange-50 text-orange-700 border-orange-100",  icon: <Gift size={18}/> },
                                   ].map((s,si)=>(
                                     <div key={si} className={`rounded-2xl border p-4 flex items-center gap-3 ${s.color}`}>
                                       <div className="opacity-60">{s.icon}</div>
                                       <div>
                                         <div className="font-bold text-lg leading-tight">{s.val}</div>
                                         <div className="text-xs opacity-70">{s.label}</div>
+                                        {s.expiry && <div className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-full border font-semibold w-max ${s.expiry.colorClass}`}>{s.expiry.label}</div>}
                                       </div>
                                     </div>
                                   ))}
@@ -732,6 +751,7 @@ export default function Members() {
                                     <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full"><TrendingUp size={11}/> +{earnT.toLocaleString()}</span>
                                     <span className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-100 px-2.5 py-1 rounded-full"><TrendingDown size={11}/> -{redeemT.toLocaleString()}</span>
                                     <span className="flex items-center gap-1 bg-yellow-50 text-yellow-700 border border-yellow-100 px-2.5 py-1 rounded-full"><Star size={11}/> ฿{Number(c.Credits||0).toLocaleString()}</span>
+                                    {expiryInfo(c.CreditsExpiry) && <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${expiryInfo(c.CreditsExpiry).colorClass}`}>{expiryInfo(c.CreditsExpiry).label}</span>}
                                     <button onClick={e=>{ e.stopPropagation(); openCreditsModal(c,e); }}
                                       className="flex items-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors">
                                       <Plus size={9}/> ปรับ
@@ -799,6 +819,7 @@ export default function Members() {
                                     <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full"><TrendingUp size={11}/> +{earnT.toLocaleString()}</span>
                                     <span className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-100 px-2.5 py-1 rounded-full"><TrendingDown size={11}/> -{redeemT.toLocaleString()}</span>
                                     <span className="flex items-center gap-1 bg-orange-50 text-orange-700 border border-orange-100 px-2.5 py-1 rounded-full"><Gift size={11}/> {Number(c.Points||0).toLocaleString()} แต้ม</span>
+                                    {expiryInfo(c.PointsExpiry) && <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${expiryInfo(c.PointsExpiry).colorClass}`}>{expiryInfo(c.PointsExpiry).label}</span>}
                                     <button onClick={e=>{ e.stopPropagation(); openPointsModal(c,e); }}
                                       className="flex items-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors">
                                       <Plus size={9}/> ปรับ
@@ -1061,6 +1082,15 @@ export default function Members() {
                     placeholder="ระบุเหตุผล..." className="mt-2 w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-yellow-400"/>
                 )}
               </div>
+              {crForm.mode==="add" && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block flex items-center gap-1">
+                    <Calendar size={11}/> วันหมดอายุเครดิต <span className="font-normal text-gray-400">(ไม่กรอก = ไม่กำหนด)</span>
+                  </label>
+                  <input type="date" value={crForm.expiryDate} onChange={e=>setCrForm(p=>({...p,expiryDate:e.target.value}))}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-yellow-400"/>
+                </div>
+              )}
               {crForm.delta && parseFloat(crForm.delta)>0 && (
                 <div className={`text-xs rounded-lg px-3 py-2 flex items-center gap-2 ${crForm.mode==="add"?"bg-green-50 text-green-700 border border-green-100":"bg-red-50 text-red-600 border border-red-100"}`}>
                   <AlertCircle size={13}/> เครดิตจะเป็น ฿{Math.max(0,(Number(creditsModal.Credits||0)+(crForm.mode==="add"?1:-1)*parseFloat(crForm.delta))).toLocaleString()} หลังบันทึก
@@ -1112,6 +1142,15 @@ export default function Members() {
                     placeholder="ระบุเหตุผล..." className="mt-2 w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-yellow-400"/>
                 )}
               </div>
+              {ptForm.mode==="add" && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block flex items-center gap-1">
+                    <Calendar size={11}/> วันหมดอายุแต้มสะสม <span className="font-normal text-gray-400">(ไม่กรอก = ไม่กำหนด)</span>
+                  </label>
+                  <input type="date" value={ptForm.expiryDate} onChange={e=>setPtForm(p=>({...p,expiryDate:e.target.value}))}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-yellow-400"/>
+                </div>
+              )}
               {ptForm.delta && parseFloat(ptForm.delta)>0 && (
                 <div className={`text-xs rounded-lg px-3 py-2 flex items-center gap-2 ${ptForm.mode==="add"?"bg-green-50 text-green-700 border border-green-100":"bg-red-50 text-red-600 border border-red-100"}`}>
                   <AlertCircle size={13}/> พ้อยจะเป็น {Math.max(0,(Number(pointsModal.Points||0)+(ptForm.mode==="add"?1:-1)*parseFloat(ptForm.delta))).toLocaleString()} หลังบันทึก

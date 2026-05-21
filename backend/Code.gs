@@ -16,7 +16,7 @@ function setup() {
     "StoreStock": ["Barcode", "Name", "Quantity", "StoreLocation", "UpdatedAt", "LowStockThreshold"],
     "StockMovements": ["Date", "Barcode", "Name", "Quantity", "FromLocation", "ToLocation", "MovedBy", "ReferenceNo"],
     "Returns": ["Timestamp", "OrderID", "Barcode", "ProductName", "ReturnQty", "RefundAmount", "ReturnNote", "ActionBy"],
-    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "Credits", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday"],
+    "Customers": ["CustomerID", "Name", "Phone", "TaxID", "TaxAddress", "Address", "Points", "Credits", "LastInvoiceID", "LastInvoiceDate", "CreatedAt", "UpdatedAt", "PointsUpdatedAt", "Email", "LineID", "Notes", "Birthday", "CreditsExpiry", "PointsExpiry"],
     "CreditsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Credits", "Balance", "Reference", "OrderID", "Actor"],
     "Pets": ["PetID", "CustomerName", "PetName", "Species", "Breed", "BirthDate", "Weight", "Color", "VaccineDate", "NextVaccineDate", "MedicalNotes", "Allergies", "PhotoURL", "Notes", "Status", "CreatedAt", "UpdatedAt"],
     "Packages": ["PackageID", "Name", "Price", "Points", "BonusPoints", "Description", "Status", "CreatedAt", "PackageType", "SessionCount", "ExpiryDays", "BonusSessions", "BonusServiceName", "BonusServiceSessions", "Subtype", "RewardType", "RewardRef", "RewardQty", "RewardName"],
@@ -1396,7 +1396,7 @@ function useCoupon(payload) {
 // ─────────────────────────────────────────────────────
 // POINTS HELPERS
 // ─────────────────────────────────────────────────────
-function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId, actor) {
+function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId, actor, expiryDate) {
   const custSheet = ss.getSheetByName("Customers");
   if (!custSheet) return 0;
 
@@ -1406,15 +1406,25 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
   CUST_HEADERS.forEach((h, i) => {
     if (!headerRow[i] || headerRow[i] !== h) {
       custSheet.getRange(1, i + 1).setValue(h);
-      headerRow[i] = h; // update local cache too
+      headerRow[i] = h;
     }
   });
 
-  const custData = custSheet.getDataRange().getValues();
+  let custData = custSheet.getDataRange().getValues();
   const nameColIdx = custData[0].indexOf("Name");
   const pointsColIdx = custData[0].indexOf("Points");
+  let pointsExpiryIdx = custData[0].indexOf("PointsExpiry");
   const updatedAtColIdx = custData[0].indexOf("UpdatedAt");
   const pointsUpdatedAtColIdx = custData[0].indexOf("PointsUpdatedAt");
+
+  // Auto-add PointsExpiry column if missing
+  if (pointsExpiryIdx < 0) {
+    const nc = custSheet.getLastColumn() + 1;
+    custSheet.getRange(1, nc).setValue("PointsExpiry");
+    custSheet.getRange(1, nc).setFontWeight("bold");
+    custData = custSheet.getDataRange().getValues();
+    pointsExpiryIdx = custData[0].indexOf("PointsExpiry");
+  }
   if (nameColIdx < 0 || pointsColIdx < 0) return 0;
 
   let newBalance = 0;
@@ -1426,6 +1436,10 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
       const current = parseFloat(custData[i][pointsColIdx]) || 0;
       newBalance = Math.max(0, current + delta);
       custSheet.getRange(i + 1, pointsColIdx + 1).setValue(newBalance);
+      // Set expiry if provided
+      if (expiryDate && pointsExpiryIdx >= 0) {
+        custSheet.getRange(i + 1, pointsExpiryIdx + 1).setValue(expiryDate);
+      }
       const now = new Date();
       if (updatedAtColIdx >= 0) custSheet.getRange(i + 1, updatedAtColIdx + 1).setValue(now);
       if (pointsUpdatedAtColIdx >= 0) custSheet.getRange(i + 1, pointsUpdatedAtColIdx + 1).setValue(now);
@@ -1467,13 +1481,14 @@ function _adjustCustomerPoints(ss, customerName, delta, type, reference, orderId
 // ─────────────────────────────────────────────────────
 // CREDITS HELPERS  (Store Credit — เครดิต ซื้อสินค้า)
 // ─────────────────────────────────────────────────────
-function _adjustCustomerCredits(ss, customerName, delta, type, reference, orderId, actor) {
+function _adjustCustomerCredits(ss, customerName, delta, type, reference, orderId, actor, expiryDate) {
   const custSheet = ss.getSheetByName("Customers");
   if (!custSheet) return 0;
 
   let custData = custSheet.getDataRange().getValues();
   let nameColIdx    = custData[0].indexOf("Name");
   let creditsColIdx = custData[0].indexOf("Credits");
+  let creditsExpiryIdx = custData[0].indexOf("CreditsExpiry");
   const updatedAtColIdx = custData[0].indexOf("UpdatedAt");
 
   // Auto-add Credits column if the sheet predates this feature
@@ -1482,6 +1497,14 @@ function _adjustCustomerCredits(ss, customerName, delta, type, reference, orderI
     custSheet.getRange(1, nextCol).setValue("Credits");
     custData    = custSheet.getDataRange().getValues();
     creditsColIdx = custData[0].indexOf("Credits");
+  }
+  // Auto-add CreditsExpiry column if missing
+  if (creditsExpiryIdx < 0) {
+    const nc = custSheet.getLastColumn() + 1;
+    custSheet.getRange(1, nc).setValue("CreditsExpiry");
+    custSheet.getRange(1, nc).setFontWeight("bold");
+    custData = custSheet.getDataRange().getValues();
+    creditsExpiryIdx = custData[0].indexOf("CreditsExpiry");
   }
   if (nameColIdx < 0 || creditsColIdx < 0) return 0;
 
@@ -1493,6 +1516,10 @@ function _adjustCustomerCredits(ss, customerName, delta, type, reference, orderI
       const current = parseFloat(custData[i][creditsColIdx]) || 0;
       newBalance = Math.max(0, current + delta);
       custSheet.getRange(i + 1, creditsColIdx + 1).setValue(newBalance);
+      // Set expiry date if provided (only update when adding, not when redeeming)
+      if (expiryDate && creditsExpiryIdx >= 0) {
+        custSheet.getRange(i + 1, creditsExpiryIdx + 1).setValue(expiryDate);
+      }
       const now = new Date();
       if (updatedAtColIdx >= 0) custSheet.getRange(i + 1, updatedAtColIdx + 1).setValue(now);
       customerFound = true;
@@ -1548,7 +1575,8 @@ function addManualCredits(payload) {
 
   const actor      = payload._actor ? payload._actor.username : "System";
   const type       = credits > 0 ? "MANUAL_ADD" : "MANUAL_DEDUCT";
-  const newBalance = _adjustCustomerCredits(ss, customerName, credits, type, reason, "", actor);
+  const expiryDate = (credits > 0 && payload.expiryDate) ? new Date(payload.expiryDate) : null;
+  const newBalance = _adjustCustomerCredits(ss, customerName, credits, type, reason, "", actor, expiryDate);
 
   logActivity("Credits", "Manual " + (credits > 0 ? "Add" : "Deduct") + " Credits", customerName, payload._actor);
   return jsonResponse({
@@ -1711,8 +1739,12 @@ function purchasePackage(payload) {
   const earnedPoints = (parseFloat(pkgRow[3]) || 0) + (parseFloat(pkgRow[4]) || 0);
   const actor = payload._actor ? payload._actor.username : "System";
   const ref = "ซื้อแพคเกจ: " + pkgRow[1] + " (฿" + pkgRow[2] + ")";
+  // Compute credits expiry from package ExpiryDays
+  var pkgExpiryDaysForCredits = parseInt(pkgRow[10]) || 365;
+  var creditsExpiryDate = new Date();
+  creditsExpiryDate.setDate(creditsExpiryDate.getDate() + pkgExpiryDaysForCredits);
 
-  const newBalance = _adjustCustomerCredits(ss, customerName, earnedPoints, "EARN", ref, packageId, actor);
+  const newBalance = _adjustCustomerCredits(ss, customerName, earnedPoints, "EARN", ref, packageId, actor, creditsExpiryDate);
 
   // Auto-issue reward (coupon or free item) if package has one
   var rewardType   = String(pkgRow[15] || "NONE").trim();
@@ -2033,6 +2065,16 @@ function readSheetData(sheetName) {
       if (!cell.getValue() || cell.getValue() !== c.name) {
         cell.setValue(c.name);
         cell.setFontWeight("bold");
+      }
+    });
+    // Safe-append CreditsExpiry / PointsExpiry if not present (indexOf approach)
+    var custHdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    ["CreditsExpiry", "PointsExpiry"].forEach(function(colName) {
+      if (custHdrs.indexOf(colName) < 0) {
+        var nc = sheet.getLastColumn() + 1;
+        sheet.getRange(1, nc).setValue(colName);
+        sheet.getRange(1, nc).setFontWeight("bold");
+        custHdrs.push(colName);
       }
     });
   } else if (sheetName === "Pets") {
@@ -2430,7 +2472,8 @@ function addManualPoints(payload) {
 
   const actor      = payload._actor ? payload._actor.username : "System";
   const type       = points > 0 ? "MANUAL_ADD" : "MANUAL_DEDUCT";
-  const newBalance = _adjustCustomerPoints(ss, customerName, points, type, reason, "", actor);
+  const expiryDate = (points > 0 && payload.expiryDate) ? new Date(payload.expiryDate) : null;
+  const newBalance = _adjustCustomerPoints(ss, customerName, points, type, reason, "", actor, expiryDate);
 
   logActivity("Points", "Manual " + (points > 0 ? "Add" : "Deduct") + " Points", customerName, payload._actor);
   return jsonResponse({

@@ -11,6 +11,18 @@ import { useShift } from "../context/ShiftContext";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
+function posExpiryInfo(val) {
+  if (!val) return null;
+  const exp = new Date(val);
+  if (isNaN(exp)) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const daysLeft = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+  const label = exp.toLocaleDateString("th-TH", { day:"numeric", month:"short", year:"2-digit" });
+  if (daysLeft < 0)  return { expired: true,  label: `หมดอายุแล้ว`,         sub: label, cls: "text-red-600 bg-red-50 border-red-200" };
+  if (daysLeft <= 30) return { expired: false, label: `หมดอายุใน ${daysLeft} วัน`, sub: label, cls: "text-orange-600 bg-orange-50 border-orange-200" };
+  return               { expired: false, label: `หมดอายุ ${label}`, sub: null, cls: "text-gray-500 bg-gray-50 border-gray-200" };
+}
+
 export default function POS() {
   const { isShiftOpen, isChecking } = useShift();
   const navigate = useNavigate();
@@ -1162,6 +1174,7 @@ export default function POS() {
                           const minOk = !parseFloat(c.MinOrderAmount) || subtotal >= parseFloat(c.MinOrderAmount);
                           const freeBarcode = c.Type === "FREE_ITEM" ? String(c.FreeItemBarcode || "").trim() : null;
                           const freeItemInCart = !freeBarcode || cart.some(ci => String(ci.Barcode || "").trim() === freeBarcode);
+                          const couponExp = posExpiryInfo(c.ExpiryDate);
                           const isDisabled = !minOk || !freeItemInCart;
                           let discLabel;
                           if (c.Type === "PERCENT") {
@@ -1190,6 +1203,11 @@ export default function POS() {
                                 </div>
                                 <div>
                                   <div className="font-semibold">{c.CouponName}</div>
+                                  {couponExp && (
+                                    <div className={`text-[10px] font-medium ${couponExp.expired ? "text-red-500" : couponExp.cls.split(" ")[0]}`}>
+                                      {couponExp.label}
+                                    </div>
+                                  )}
                                   {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
                                   {c.Type === "FREE_ITEM" && !freeItemInCart && (
                                     <div className="text-xs text-red-400">กรุณาเพิ่ม "{c.FreeItemName || freeBarcode}" ก่อน</div>
@@ -1390,6 +1408,8 @@ export default function POS() {
             const availablePoints = parseFloat(custObj?.Points)  || 0;
             const neededCredit = Math.ceil(effectiveStoreCreditPaid);
             const neededPoints = Math.ceil(effectivePointsPaid);
+            const creditsExp   = posExpiryInfo(custObj?.CreditsExpiry);
+            const pointsExp    = posExpiryInfo(custObj?.PointsExpiry);
             return (
               <div className="mb-3 space-y-2">
                 {hasStoreCreditRow && (
@@ -1398,14 +1418,22 @@ export default function POS() {
                       <span className="text-yellow-800 font-semibold flex items-center gap-1"><Star size={13} /> เครดิตร้าน ({customerName})</span>
                       <span className="font-bold text-yellow-700">{availableCredit.toLocaleString()} ฿</span>
                     </div>
+                    {creditsExp && (
+                      <div className={`text-xs px-2 py-1 rounded-lg border flex items-center gap-1 ${creditsExp.cls}`}>
+                        <Tag size={11}/> {creditsExp.label}
+                      </div>
+                    )}
                     <div className="flex justify-between text-yellow-700 text-xs">
                       <span>ใช้ไป (1 เครดิต = ฿1)</span>
                       <span className="font-bold">{neededCredit.toLocaleString()}</span>
                     </div>
-                    {availableCredit < neededCredit && neededCredit > 0 && (
+                    {creditsExp?.expired && neededCredit > 0 && (
+                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">⚠️ เครดิตหมดอายุแล้ว ไม่สามารถใช้งานได้</div>
+                    )}
+                    {!creditsExp?.expired && availableCredit < neededCredit && neededCredit > 0 && (
                       <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">เครดิตไม่พอ — ขาดอีก {(neededCredit - availableCredit).toLocaleString()}</div>
                     )}
-                    {availableCredit >= neededCredit && neededCredit > 0 && (
+                    {!creditsExp?.expired && availableCredit >= neededCredit && neededCredit > 0 && (
                       <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availableCredit - neededCredit).toLocaleString()}</div>
                     )}
                   </div>
@@ -1416,14 +1444,22 @@ export default function POS() {
                       <span className="text-orange-800 font-semibold flex items-center gap-1"><Gift size={13} /> แต้มสะสม ({customerName})</span>
                       <span className="font-bold text-orange-700">{availablePoints.toLocaleString()} แต้ม</span>
                     </div>
+                    {pointsExp && (
+                      <div className={`text-xs px-2 py-1 rounded-lg border flex items-center gap-1 ${pointsExp.cls}`}>
+                        <Tag size={11}/> {pointsExp.label}
+                      </div>
+                    )}
                     <div className="flex justify-between text-orange-700 text-xs">
                       <span>ใช้ไป (1 แต้ม = ฿1)</span>
                       <span className="font-bold">{neededPoints.toLocaleString()}</span>
                     </div>
-                    {availablePoints < neededPoints && neededPoints > 0 && (
+                    {pointsExp?.expired && neededPoints > 0 && (
+                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">⚠️ แต้มหมดอายุแล้ว ไม่สามารถใช้งานได้</div>
+                    )}
+                    {!pointsExp?.expired && availablePoints < neededPoints && neededPoints > 0 && (
                       <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">แต้มไม่พอ — ขาดอีก {(neededPoints - availablePoints).toLocaleString()}</div>
                     )}
-                    {availablePoints >= neededPoints && neededPoints > 0 && (
+                    {!pointsExp?.expired && availablePoints >= neededPoints && neededPoints > 0 && (
                       <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availablePoints - neededPoints).toLocaleString()}</div>
                     )}
                   </div>
@@ -1457,6 +1493,8 @@ export default function POS() {
                   const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
                   if (hasStoreCreditRow && (parseFloat(custObj?.Credits) || 0) < Math.ceil(effectiveStoreCreditPaid)) return true;
                   if (hasPointsRow      && (parseFloat(custObj?.Points)  || 0) < Math.ceil(effectivePointsPaid))      return true;
+                  if (hasStoreCreditRow && Math.ceil(effectiveStoreCreditPaid) > 0 && posExpiryInfo(custObj?.CreditsExpiry)?.expired) return true;
+                  if (hasPointsRow      && Math.ceil(effectivePointsPaid)      > 0 && posExpiryInfo(custObj?.PointsExpiry)?.expired)  return true;
                   return false;
                 })()}
                 className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
