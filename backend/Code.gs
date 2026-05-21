@@ -330,6 +330,8 @@ function doPost(e) {
       return addManualPoints(data.payload);
     } else if (action === "addManualCredits") {
       return addManualCredits(data.payload);
+    } else if (action === "migratePointsToCredits") {
+      return migratePointsToCredits();
     } else if (action === "savePet") {
       return savePet(data.payload);
     } else if (action === "deletePet") {
@@ -1554,6 +1556,83 @@ function addManualCredits(payload) {
     creditsChanged: credits,
     newBalance: newBalance,
     message: (credits > 0 ? "เพิ่ม" : "หัก") + " " + Math.abs(credits) + " เครดิตให้ " + customerName + " สำเร็จ"
+  });
+}
+
+// ─────────────────────────────────────────────────────
+// ONE-TIME MIGRATION: ย้าย Points balance → Credits
+// ─────────────────────────────────────────────────────
+function migratePointsToCredits() {
+  const ss = getSpreadsheet();
+  const custSheet = ss.getSheetByName("Customers");
+  if (!custSheet) return jsonResponse({ error: "Customers sheet not found" });
+
+  const custData     = custSheet.getDataRange().getValues();
+  const headers      = custData[0];
+  const nameIdx      = headers.indexOf("Name");
+  const pointsIdx    = headers.indexOf("Points");
+  let   creditsIdx   = headers.indexOf("Credits");
+
+  if (pointsIdx < 0) return jsonResponse({ error: "ไม่พบคอลัมน์ Points" });
+
+  // Auto-add Credits column if missing
+  if (creditsIdx < 0) {
+    const nextCol = custSheet.getLastColumn() + 1;
+    custSheet.getRange(1, nextCol).setValue("Credits");
+    custSheet.getRange(1, nextCol).setFontWeight("bold");
+    creditsIdx = nextCol - 1; // 0-indexed
+  }
+
+  var migrated = 0;
+  var skipped  = 0;
+  var now      = new Date();
+
+  // Ensure CreditsHistory sheet exists
+  var histSheet = ss.getSheetByName("CreditsHistory");
+  if (!histSheet) {
+    histSheet = ss.insertSheet("CreditsHistory");
+    histSheet.appendRow(["HistoryID", "CustomerName", "Date", "Type", "Credits", "Balance", "Reference", "OrderID", "Actor"]);
+    histSheet.getRange(1, 1, 1, 9).setFontWeight("bold");
+  }
+
+  for (var i = 1; i < custData.length; i++) {
+    var points  = parseFloat(custData[i][pointsIdx]) || 0;
+    if (points <= 0) { skipped++; continue; }
+
+    var oldCredits = parseFloat(custData[i][creditsIdx]) || 0;
+    var newCredits = oldCredits + points;
+    var custName   = String(custData[i][nameIdx] || "").trim();
+
+    // Set Credits = Credits + Points
+    custSheet.getRange(i + 1, creditsIdx + 1).setValue(newCredits);
+    // Zero out Points
+    custSheet.getRange(i + 1, pointsIdx + 1).setValue(0);
+    // Update UpdatedAt
+    var updIdx = headers.indexOf("UpdatedAt");
+    if (updIdx >= 0) custSheet.getRange(i + 1, updIdx + 1).setValue(now);
+
+    // Log to CreditsHistory
+    histSheet.appendRow([
+      "CH-MIG-" + now.getTime() + "-" + i,
+      custName,
+      now,
+      "MIGRATE",
+      points,
+      newCredits,
+      "ย้ายจากแต้มสะสม (Points → Credits)",
+      "",
+      "System"
+    ]);
+
+    migrated++;
+    Utilities.sleep(30); // avoid rate limit on large customer lists
+  }
+
+  return jsonResponse({
+    success: true,
+    migrated: migrated,
+    skipped: skipped,
+    message: "ย้าย balance สำเร็จ " + migrated + " ราย (ข้าม " + skipped + " ราย ที่ Points = 0)"
   });
 }
 

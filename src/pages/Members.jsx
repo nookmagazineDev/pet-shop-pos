@@ -98,6 +98,8 @@ export default function Members() {
   const [pointsModal, setPointsModal]   = useState(null); // customer obj
   const [creditsModal, setCreditsModal] = useState(null); // customer obj for credits
   const [confirmDel, setConfirmDel]     = useState(null); // { petId, petName }
+  const [migrateConfirm, setMigrateConfirm] = useState(false);
+  const [migrating, setMigrating]           = useState(false);
 
   // Form states
   const [petForm, setPetForm]   = useState(EMPTY_PET);
@@ -250,7 +252,7 @@ export default function Members() {
     exportToExcel(filtered.map((c,i) => ({
       "ลำดับ": i+1, "รหัสสมาชิก": c.CustomerID||"-", "ชื่อ": c.Name||"-",
       "เบอร์โทร": c.Phone||"-", "Email": c.Email||"-", "Line ID": c.LineID||"-",
-      "เลขภาษี": c.TaxID||"-", "เครดิตสะสม": parseFloat(c.Points)||0,
+      "เลขภาษี": c.TaxID||"-", "เครดิตร้าน (฿)": parseFloat(c.Credits)||0, "แต้มสะสม (แต้ม)": parseFloat(c.Points)||0,
       "สัตว์เลี้ยง": getCustPets(c.Name).map(p=>p.PetName).join(", ")||"-",
       "วันเกิดลูกค้า": fmtDate(c.Birthday),
       "วันที่สมัคร": fmtFull(c.CreatedAt),
@@ -347,6 +349,20 @@ export default function Members() {
   };
 
   // ── manual points ─────────────────────────────────────────────────────
+  const handleMigrate = async () => {
+    setMigrating(true);
+    const res = await postApi({ action: "migratePointsToCredits", payload: {} });
+    setMigrating(false);
+    setMigrateConfirm(false);
+    if (res.success) {
+      toast.success(res.message || "ย้ายข้อมูลสำเร็จ");
+      ["getCustomers","getCreditsHistory","getPointsHistory"].forEach(k=>invalidateCache(k));
+      loadAll();
+    } else {
+      toast.error(res.error || "เกิดข้อผิดพลาด");
+    }
+  };
+
   const openPointsModal = (c, e) => {
     e.stopPropagation();
     setPtForm({ delta: "", reason: MANUAL_REASONS[0], customReason: "", mode: "add" });
@@ -393,6 +409,11 @@ export default function Members() {
           <button onClick={() => { ["getCustomers","getCustomerCoupons","getPointsHistory","getCreditsHistory","getCustomerPackages","getPets"].forEach(k=>invalidateCache(k)); loadAll(); }}
             className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
             <RefreshCw size={14} /> รีเฟรช
+          </button>
+          <button onClick={() => setMigrateConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-2.5 border border-yellow-300 text-yellow-700 bg-yellow-50 rounded-xl text-sm font-medium hover:bg-yellow-100 transition-colors"
+            title="ย้าย balance แต้มสะสม (Points) ทั้งหมดเข้าเครดิตร้าน (ทำครั้งเดียว)">
+            <CreditCard size={14} /> ย้ายแต้ม→เครดิต
           </button>
           <button onClick={handleExport}
             className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-colors shadow-sm">
@@ -1099,6 +1120,41 @@ export default function Members() {
               <button onClick={handleSavePt} disabled={savingPt}
                 className={`w-full py-3 text-white rounded-xl font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors ${ptForm.mode==="add"?"bg-yellow-500 hover:bg-yellow-600":"bg-red-500 hover:bg-red-600"}`}>
                 {savingPt?<><Loader2 size={16} className="animate-spin"/>กำลังบันทึก...</>:<><Check size={16}/>ยืนยัน{ptForm.mode==="add"?"เพิ่ม":"หัก"}พ้อย</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: Migrate Points → Credits ══════════════════════════════ */}
+      {migrateConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 rounded-xl bg-yellow-100 flex items-center justify-center shrink-0">
+                <CreditCard size={22} className="text-yellow-600"/>
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">ย้ายแต้มสะสม → เครดิตร้าน</h3>
+                <p className="text-xs text-gray-500 mt-0.5">ดำเนินการได้ครั้งเดียว</p>
+              </div>
+            </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4 text-sm text-yellow-800 space-y-1.5">
+              <p>• ยอด <strong>แต้มสะสม (Points)</strong> ของสมาชิกทุกคนจะถูกย้ายไปรวมใน <strong>เครดิตร้าน (Credits)</strong></p>
+              <p>• หลังย้าย ยอดแต้มสะสมจะกลายเป็น <strong>0</strong></p>
+              <p>• ประวัติเดิมใน แต้มสะสม ยังคงอยู่ (ไม่ถูกลบ)</p>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-5 text-xs text-red-600 font-medium flex items-center gap-1.5">
+              <AlertCircle size={13}/> ไม่สามารถย้อนกลับได้ — ตรวจสอบก่อนกด
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setMigrateConfirm(false)} disabled={migrating}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                ยกเลิก
+              </button>
+              <button onClick={handleMigrate} disabled={migrating}
+                className="flex-1 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
+                {migrating ? <><Loader2 size={15} className="animate-spin"/>กำลังย้าย...</> : <><CreditCard size={15}/>ยืนยันย้าย</>}
               </button>
             </div>
           </div>
