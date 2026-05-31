@@ -103,24 +103,35 @@ export default function Accounting() {
   // Tax Invoice Viewer (80mm modal)
   const [viewTaxInvoiceTx, setViewTaxInvoiceTx] = useState(null);
 
-  const openTaxInvoiceView = (tx) => {
+  // เปิด "ใบกำกับภาษี" แบบเต็ม A4 (มีชื่อ-ที่อยู่-เลขผู้เสียภาษีของลูกค้า)
+  const openA4Invoice = (tx) => {
+    setSelectedTx(tx);
+    let cName = "", cAddress = "", cTaxId = "", cPhone = "";
+    if (tx.TaxInvoiceCustomerName && tx.TaxInvoiceCustomerName !== "-") {
+      cName = tx.TaxInvoiceCustomerName;
+      cAddress = tx.TaxInvoiceCustomerAddress === "-" ? "" : (tx.TaxInvoiceCustomerAddress || "");
+      cTaxId = tx.TaxInvoiceCustomerTaxID === "-" ? "" : (tx.TaxInvoiceCustomerTaxID || "");
+    } else if (tx.CustomerInfo || tx[10]) {
+      try {
+        const ci = JSON.parse(tx.CustomerInfo || tx[10]);
+        cName = ci.name || ci.customerName || "";
+        cAddress = ci.address || ci.customerAddress || "";
+        cTaxId = ci.taxId || ci.customerTaxId || "";
+        cPhone = ci.phone || ci.customerPhone || "";
+      } catch (e) {}
+    }
+    setCustomerInfo({ name: cName, address: cAddress, taxId: cTaxId, phone: cPhone });
+    setInvoiceModal(true);
+  };
+
+  // เปิด "ใบเสร็จอย่างย่อ" (80mm) — ไม่ใช่ใบกำกับภาษี
+  const openReceiptView = (tx) => {
     let cart = [];
     try { cart = JSON.parse(tx.CartDetails || tx[5] || "[]"); } catch (e) {}
     const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
     const tax   = parseFloat(tx.Tax || tx[3] || 0);
     const subtotal = cart.reduce((s, c) => s + ((parseFloat(c.price || c.Price) || 0) * (parseFloat(c.qty || c.quantity) || 1)), 0);
     const discountAmount = Math.max(0, subtotal - total);
-    let custName = (tx.TaxInvoiceCustomerName && tx.TaxInvoiceCustomerName !== "-") ? tx.TaxInvoiceCustomerName : "";
-    let custAddr = (tx.TaxInvoiceCustomerAddress && tx.TaxInvoiceCustomerAddress !== "-") ? tx.TaxInvoiceCustomerAddress : "";
-    let custTaxId = (tx.TaxInvoiceCustomerTaxID && tx.TaxInvoiceCustomerTaxID !== "-") ? tx.TaxInvoiceCustomerTaxID : "";
-    if (!custName) {
-      try {
-        const ci = JSON.parse(tx.CustomerInfo || tx[10] || "{}");
-        custName  = ci.name || ci.customerName || "";
-        custAddr  = ci.address || ci.customerAddress || "";
-        custTaxId = ci.taxId || ci.customerTaxId || "";
-      } catch (e) {}
-    }
     setViewTaxInvoiceTx({
       cart: cart.map(c => ({ ...c, qty: parseFloat(c.qty || c.quantity) || 1, price: parseFloat(c.price || c.Price) || 0, name: c.name || c.Name || "" })),
       paymentMethod: tx.PaymentMethod || tx[4] || "",
@@ -128,9 +139,9 @@ export default function Accounting() {
       discountAmount,
       tax,
       total,
-      receiptType: "ใบกำกับภาษี",
-      taxInvoiceNo: tx.TaxInvoiceNo || tx[15] || "",
-      customerInfo: { customerName: custName, customerAddress: custAddr, customerTaxId: custTaxId },
+      receiptType: "ใบเสร็จอย่างย่อ",
+      taxInvoiceNo: tx.ReceiptNo || tx.OrderID || tx[0] || "",
+      customerInfo: null,
     });
   };
 
@@ -491,7 +502,7 @@ export default function Accounting() {
                       <td className="py-4 px-6 text-sm font-medium text-gray-700">
                         {tx.TaxInvoiceNo || tx[15]
                           ? <button
-                              onClick={() => openTaxInvoiceView(tx)}
+                              onClick={() => openA4Invoice(tx)}
                               className="uppercase text-purple-700 font-bold font-mono text-xs px-2 py-0.5 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 transition-colors flex items-center gap-1"
                             >
                               <FileText size={11} /> {tx.TaxInvoiceNo || tx[15]}
@@ -543,52 +554,20 @@ export default function Accounting() {
                             ปริ้นสลิป
                           </button>
                           <button
-                            onClick={() => {
-                              setSelectedTx(tx);
-                              let cName = "", cAddress = "", cTaxId = "", cPhone = "";
-                              if (tx.TaxInvoiceCustomerName && tx.TaxInvoiceCustomerName !== "-") {
-                                 cName = tx.TaxInvoiceCustomerName;
-                                 cAddress = tx.TaxInvoiceCustomerAddress === "-" ? "" : (tx.TaxInvoiceCustomerAddress || "");
-                                 cTaxId = tx.TaxInvoiceCustomerTaxID === "-" ? "" : (tx.TaxInvoiceCustomerTaxID || "");
-                              } else if (tx.CustomerInfo || tx[10]) {
-                                 try {
-                                   const ci = JSON.parse(tx.CustomerInfo || tx[10]);
-                                   cName = ci.name || ci.customerName || "";
-                                   cAddress = ci.address || ci.customerAddress || "";
-                                   cTaxId = ci.taxId || ci.customerTaxId || "";
-                                   cPhone = ci.phone || ci.customerPhone || "";
-                                 } catch (e) {}
-                              }
-                              setCustomerInfo({ name: cName, address: cAddress, taxId: cTaxId, phone: cPhone });
-                              setInvoiceModal(true);
-                            }}
+                            onClick={() => openReceiptView(tx)}
                             className="w-full px-3 py-1 text-xs font-semibold text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
                           >
-                            ใบเสร็จ (A4)
+                            ใบเสร็จอย่างย่อ
                           </button>
                           {tx.TaxInvoiceNo || tx[15]
                             ? <button
-                                onClick={() => openTaxInvoiceView(tx)}
+                                onClick={() => openA4Invoice(tx)}
                                 className="w-full text-[10px] text-purple-700 font-mono font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-200 hover:bg-purple-100 transition-colors flex items-center justify-center gap-1"
                               >
-                                <FileText size={10} /> {tx.TaxInvoiceNo || tx[15]}
+                                <FileText size={10} /> ใบกำกับภาษี {tx.TaxInvoiceNo || tx[15]}
                               </button>
                             : <button
-                                onClick={() => {
-                                  setSelectedTx(tx);
-                                  let cName = "", cAddress = "", cTaxId = "", cPhone = "";
-                                  if (tx.CustomerInfo || tx[10]) {
-                                    try {
-                                      const ci = JSON.parse(tx.CustomerInfo || tx[10]);
-                                      cName = ci.name || ci.customerName || "";
-                                      cAddress = ci.address || ci.customerAddress || "";
-                                      cTaxId = ci.taxId || ci.customerTaxId || "";
-                                      cPhone = ci.phone || ci.customerPhone || "";
-                                    } catch (e) {}
-                                  }
-                                  setCustomerInfo({ name: cName, address: cAddress, taxId: cTaxId, phone: cPhone });
-                                  setInvoiceModal(true);
-                                }}
+                                onClick={() => openA4Invoice(tx)}
                                 className="w-full px-3 py-1 text-[10px] font-semibold text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
                               >
                                 + ออกใบกำกับภาษี
