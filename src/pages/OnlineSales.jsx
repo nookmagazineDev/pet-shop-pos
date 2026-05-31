@@ -162,7 +162,7 @@ function OnlineReportPanel({ allTransactions, isLoading, onRefresh, onMarkPaid, 
   const allOnline = useMemo(() => {
     return allTransactions
       .filter(tx => {
-        if (tx.Status === "VOID") return false;
+        if (tx.Status === "CANCELLED") return false;
         const m = tx.PaymentMethod || "";
         return PLATFORMS.some(p => m === p || m.startsWith(p + " ") || m.endsWith(" " + p) || m === `${p} รอชำระ`);
       })

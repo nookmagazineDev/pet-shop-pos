@@ -91,7 +91,7 @@ export default function Shift() {
           // Aggregate transactions since shift opened
           if (Array.isArray(txData)) {
             txData.forEach(tx => {
-              if (tx.Status === "VOID") return;
+              if (tx.Status === "CANCELLED") return;
               const txTime = new Date(tx.Date);
               if (txTime < openTime) return;
 

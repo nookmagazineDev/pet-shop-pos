@@ -155,7 +155,7 @@ export default function Dashboard() {
         fetchApi("getStoreStock")
       ]);
 
-      const transactions = Array.isArray(txsData) ? txsData : [];
+      const transactions = (Array.isArray(txsData) ? txsData : []).filter(tx => tx.Status !== "CANCELLED");
       const products = Array.isArray(prodsData) ? prodsData : [];
       const storeStock = Array.isArray(storeData) ? storeData : [];
       setAllProducts(products);
