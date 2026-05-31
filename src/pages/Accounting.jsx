@@ -848,15 +848,20 @@ export default function Accounting() {
                     {(() => {
                       try {
                         const cart = JSON.parse(selectedTx.CartDetails || selectedTx[5]);
-                        return cart.map((item, i) => (
-                          <tr key={i}>
-                            <td className="py-2 px-2">{i+1}</td>
-                            <td className="py-2 px-2">{item.name || item.Name}</td>
-                            <td className="py-2 px-2 text-center">{item.qty || item.quantity}</td>
-                            <td className="py-2 px-2 text-right">{(item.price || item.Price).toLocaleString("th-TH")}</td>
-                            <td className="py-2 px-2 text-right">{((item.price || item.Price) * (item.qty || item.quantity)).toLocaleString("th-TH")}</td>
-                          </tr>
-                        ));
+                        return cart.map((item, i) => {
+                          const isFreebie = item.isFreebie || item.freeQty;
+                          const qty = isFreebie ? (item.freeQty || item.qty || 1) : (item.qty || item.quantity);
+                          const price = parseFloat(item.price ?? item.Price) || 0;
+                          return (
+                            <tr key={i} className={isFreebie ? "text-emerald-700" : ""}>
+                              <td className="py-2 px-2">{isFreebie ? "" : i+1}</td>
+                              <td className="py-2 px-2">{item.name || item.Name}</td>
+                              <td className="py-2 px-2 text-center">{qty}</td>
+                              <td className="py-2 px-2 text-right">{isFreebie ? "ฟรี" : price.toLocaleString("th-TH")}</td>
+                              <td className="py-2 px-2 text-right">{isFreebie ? "0.00" : (price * qty).toLocaleString("th-TH")}</td>
+                            </tr>
+                          );
+                        });
                       } catch(e) {
                         return <tr><td colSpan="5" className="text-center py-2">เกิดข้อผิดพลาดในการดึงรายการสินค้า</td></tr>;
                       }
@@ -864,25 +869,56 @@ export default function Accounting() {
                   </tbody>
                 </table>
 
-                <div className="ml-auto w-1/2 border-t border-gray-800 pt-3 text-sm">
-                  <div className="flex justify-between mb-1">
-                    <span>มูลค่าสินค้ายกเว้นภาษี (บาท)</span>
-                    <span>0.00</span>
-                  </div>
-                  <div className="flex justify-between mb-1">
-                    <span>มูลค่าสินค้าที่ต้องเสียภาษี (บาท)</span>
-                    {/* Reverse Calculate VAT for Demo */}
-                    <span>{(parseFloat(selectedTx.TotalAmount || selectedTx[2]) * 100 / 107).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
-                  </div>
-                  <div className="flex justify-between mb-1">
-                    <span>ภาษีมูลค่าเพิ่ม (7%)</span>
-                    <span>{(parseFloat(selectedTx.TotalAmount || selectedTx[2]) * 7 / 107).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-base mt-2 pt-2 border-t border-gray-800">
-                    <span>จำนวนเงินรวมทั้งสิ้น (บาท)</span>
-                    <span>{parseFloat(selectedTx.TotalAmount || selectedTx[2]).toLocaleString("th-TH", {minimumFractionDigits:2})}</span>
-                  </div>
-                </div>
+                {(() => {
+                  const fmt = (n) => Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  const total    = parseFloat(selectedTx.TotalAmount || selectedTx[2]) || 0;
+                  const taxAmt   = parseFloat(selectedTx.Tax || selectedTx[3]) || 0;
+                  const discount = parseFloat(selectedTx.DiscountAmount || selectedTx[11]) || 0;
+                  // taxable goods value (VAT-inclusive) derived from the stored VAT amount
+                  const vatInclTaxable = taxAmt > 0 ? taxAmt * (107 / 7) : 0;
+                  // taxable goods value excluding VAT (ฐานภาษี)
+                  const preVatTaxable  = taxAmt > 0 ? taxAmt * (100 / 7) : 0;
+                  // tax-exempt goods value = everything that is not taxable
+                  const nonVatValue    = Math.max(0, total - vatInclTaxable);
+                  // sum of line items (gross subtotal before discount)
+                  let grossSubtotal = total + discount;
+                  try {
+                    const c = JSON.parse(selectedTx.CartDetails || selectedTx[5]);
+                    if (Array.isArray(c) && c.length) {
+                      grossSubtotal = c.reduce((s, it) => s + ((parseFloat(it.price ?? it.Price) || 0) * (parseFloat(it.qty ?? it.quantity) || 0)), 0);
+                    }
+                  } catch (e) { /* fall back to total + discount */ }
+                  return (
+                    <div className="ml-auto w-1/2 border-t border-gray-800 pt-3 text-sm">
+                      <div className="flex justify-between mb-1">
+                        <span>รวมมูลค่าสินค้า (บาท)</span>
+                        <span>{fmt(grossSubtotal)}</span>
+                      </div>
+                      {discount > 0 && (
+                        <div className="flex justify-between mb-1 text-rose-600">
+                          <span>หักส่วนลด / ของแถม (บาท)</span>
+                          <span>-{fmt(discount)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between mb-1">
+                        <span>มูลค่าสินค้ายกเว้นภาษี (บาท)</span>
+                        <span>{fmt(nonVatValue)}</span>
+                      </div>
+                      <div className="flex justify-between mb-1">
+                        <span>มูลค่าสินค้าที่ต้องเสียภาษี (บาท)</span>
+                        <span>{fmt(preVatTaxable)}</span>
+                      </div>
+                      <div className="flex justify-between mb-1">
+                        <span>ภาษีมูลค่าเพิ่ม (7%)</span>
+                        <span>{fmt(taxAmt)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-base mt-2 pt-2 border-t border-gray-800">
+                        <span>จำนวนเงินรวมทั้งสิ้น (บาท)</span>
+                        <span>{fmt(total)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="mt-12 text-center text-xs text-gray-500">
                   <p>....................................................................</p>

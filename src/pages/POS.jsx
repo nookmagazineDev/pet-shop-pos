@@ -656,7 +656,13 @@ export default function POS() {
           tax,
           discount: discountAmount,
           paymentMethod: paymentMethodStr,
-          cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price })),
+          cart: [
+            ...cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price, vatStatus: c.vatStatus || "VAT" })),
+            // ของแถม (display-only, qty:0 → ไม่ตัดสต็อกซ้ำ)
+            ...freeItemLines.map(fi => ({ Barcode: "", Name: `🎁 ของแถม: ${fi.name}${fi.promoName ? " (" + fi.promoName + ")" : ""}`, qty: 0, freeQty: fi.qty || 1, price: 0, isFreebie: true })),
+            // คูปองส่วนลด (display-only)
+            ...couponLines.filter(cl => (cl.discount || 0) > 0).map(cl => ({ Barcode: "", Name: `🎟 ${cl.name || "คูปองส่วนลด"}`, qty: 0, price: 0, discount: cl.discount, isFreebie: true })),
+          ],
           receiptType,
           customerName: customerName.trim() || "",
           customerInfo: (receiptType === "ใบกำกับภาษี" || hasCreditSplit) ? { name: customerName, phone: customerPhone, address: customerAddress, taxId: customerTaxId } : null,
