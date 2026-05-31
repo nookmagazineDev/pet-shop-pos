@@ -748,13 +748,13 @@ export default function Inventory() {
       {activeTab === "stock" && (
         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-0 overflow-hidden">
           <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-            <div className="flex gap-2 max-w-md w-full">
-              <div className="relative flex-1">
+            <div className="flex flex-wrap gap-2 w-full items-center">
+              <div className="relative flex-1 min-w-[220px]">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                   <Search size={18} />
                 </div>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm bg-white"
                   placeholder="ค้นหาสินค้า, โลเคชั่น หรือสแกนบาร์โค้ด..."
                   value={searchQuery}
