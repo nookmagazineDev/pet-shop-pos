@@ -115,10 +115,32 @@ export default function POS() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart]);
 
+  // จำนวนคงเหลือของสินค้า — ถ้าไม่มีการtrack stock (ค่าว่าง) ถือว่าขายได้ไม่จำกัด
+  const getStock = (p) => {
+    const raw = p?.Quantity;
+    if (raw === undefined || raw === null || String(raw).trim() === "") return Infinity;
+    const n = Number(raw);
+    return isNaN(n) ? Infinity : n;
+  };
+
   const addToCart = (product, qtyToAdd = 1) => {
+    const key = product.Barcode || product.Name;
+    const stock = getStock(product);
+    // สินค้าหมด — ห้ามขาย
+    if (stock <= 0) {
+      toast.error(`สินค้า "${product.Name}" หมดสต็อก ไม่สามารถขายได้`);
+      setBarcodeInput("");
+      return;
+    }
+    // เกินจำนวนคงเหลือ (รวมที่อยู่ในตะกร้าแล้ว)
+    const currentQty = cart.find(item => item.id === key)?.qty || 0;
+    if (currentQty + qtyToAdd > stock) {
+      toast.error(`สินค้า "${product.Name}" คงเหลือ ${stock} ชิ้น${currentQty > 0 ? ` (อยู่ในตะกร้าแล้ว ${currentQty})` : ""}`);
+      setBarcodeInput("");
+      return;
+    }
     setCart(prev => {
       // Use Barcode as unique key (new unified schema has no ID)
-      const key = product.Barcode || product.Name;
       const existing = prev.find(item => item.id === key);
       if (existing) {
         return prev.map(item => item.id === key ? { ...item, qty: item.qty + qtyToAdd } : item);
@@ -133,6 +155,7 @@ export default function POS() {
         image: product.ImageURL || "https://placehold.co/300x300?text=No+Image",
         vatStatus: product.VatStatus || "VAT",
         EarnPoints: product.EarnPoints || "YES",
+        maxStock: stock,
         qty: qtyToAdd
       }, ...prev];
     });
@@ -211,13 +234,17 @@ export default function POS() {
     : [];
 
   const updateQuantity = (id, delta) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === id) {
-        const newQty = Math.max(1, item.qty + delta);
-        return { ...item, qty: newQty };
+    setCart(prev => {
+      const item = prev.find(i => i.id === id);
+      if (!item) return prev;
+      const max = item.maxStock ?? Infinity;
+      const newQty = Math.max(1, item.qty + delta);
+      if (delta > 0 && newQty > max) {
+        toast.error(`สินค้า "${item.name || item.Name}" คงเหลือ ${max} ชิ้น`);
+        return prev;
       }
-      return item;
-    }));
+      return prev.map(i => i.id === id ? { ...i, qty: newQty } : i);
+    });
   };
 
   const removeItem = (id) => {
@@ -863,20 +890,32 @@ export default function POS() {
           {/* Autocomplete Dropdown */}
           {barcodeInput.trim() && searchResults.length > 0 && !products.find(p => String(p.Barcode) === barcodeInput.trim()) && (
             <div className="absolute z-50 left-4 right-4 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto divide-y divide-gray-100">
-              {searchResults.map((p, idx) => (
-                <button 
-                  key={p.Barcode || idx} 
+              {searchResults.map((p, idx) => {
+                const stock = getStock(p);
+                const outOfStock = stock <= 0;
+                return (
+                <button
+                  key={p.Barcode || idx}
                   type="button"
                   onClick={() => addToCart(p)}
-                  className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between group transition-colors"
+                  disabled={outOfStock}
+                  className={clsx(
+                    "w-full text-left px-4 py-3 flex items-center justify-between group transition-colors",
+                    outOfStock ? "opacity-60 cursor-not-allowed bg-rose-50/40" : "hover:bg-gray-50"
+                  )}
                 >
                   <div>
-                    <div className="font-semibold text-gray-900 group-hover:text-primary transition-colors">{p.Name}</div>
-                    <div className="text-xs text-gray-500 mt-0.5 mt-0.5">บาร์โค้ด: {p.Barcode}</div>
+                    <div className={clsx("font-semibold transition-colors", outOfStock ? "text-gray-500" : "text-gray-900 group-hover:text-primary")}>
+                      {p.Name}
+                      {outOfStock && <span className="ml-2 text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded">สินค้าหมด</span>}
+                      {!outOfStock && stock !== Infinity && stock <= 5 && <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">เหลือ {stock}</span>}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">บาร์โค้ด: {p.Barcode}</div>
                   </div>
                   <div className="font-bold text-gray-900">฿{(Number(p.Price) || 0).toLocaleString()}</div>
                 </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
