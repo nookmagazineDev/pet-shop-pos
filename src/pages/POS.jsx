@@ -456,6 +456,26 @@ export default function POS() {
   // ราคาสินค้าก่อน VAT (สำหรับแสดงผล)
   const preVatDisplay = subtotalAfterDiscount - tax;
 
+  // ── ใบกำกับภาษีเต็มรูป: บังคับกรอกข้อมูลลูกค้าให้ครบ ──
+  const isTaxInvoice = receiptType === "ใบกำกับภาษี";
+  const taxInvoiceMissing = isTaxInvoice && (
+    !customerName.trim() || !customerPhone.trim() || !customerAddress.trim() || !customerTaxId.trim()
+  );
+  const taxIdInvalid = isTaxInvoice && customerTaxId.trim() !== "" && !/^\d{13}$/.test(customerTaxId.trim());
+  // คืนค่า true หากกรอกครบและถูกต้อง (หรือไม่ใช่ใบกำกับภาษี)
+  const validateTaxInvoiceFields = () => {
+    if (!isTaxInvoice) return true;
+    if (taxInvoiceMissing) {
+      toast.error("กรุณากรอกข้อมูลลูกค้าให้ครบทุกช่อง (ชื่อ, เบอร์โทร, ที่อยู่, เลขประจำตัวผู้เสียภาษี) สำหรับใบกำกับภาษีเต็มรูป");
+      return false;
+    }
+    if (taxIdInvalid) {
+      toast.error("เลขประจำตัวผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก");
+      return false;
+    }
+    return true;
+  };
+
   // ── Split payment derived values ──
   const NON_CASH_METHODS = ["เครดิต", "พ้อย"]; // methods that don't count as cash income
   const hasCashSplit   = splitPayments.some(p => p.method === "เงินสด");
@@ -577,6 +597,7 @@ export default function POS() {
   } : null;
 
   const openPreview = () => {
+    if (!validateTaxInvoiceFields()) return;
     const pkgItem = buildPkgCartItem();
     const previewCart = pkgItem ? [pkgItem, ...cart.map(c => ({ ...c }))] : cart.map(c => ({ ...c }));
     setReceiptData({
@@ -599,6 +620,7 @@ export default function POS() {
 
   const handleCheckout = async () => {
     if (cart.length === 0 && !pendingPackage) return;
+    if (!validateTaxInvoiceFields()) return;
     setIsCheckingOut(true);
 
     let pkgResult = null;
@@ -637,15 +659,26 @@ export default function POS() {
 
     // ── Normal cart checkout (if cart has items) ──
     if (cart.length > 0) {
-      // Save customer if tax invoice
+      // Save customer if tax invoice — upsert (เพิ่มใหม่ หรืออัพเดทข้อมูลลูกค้าเดิม)
       if (receiptType === "ใบกำกับภาษี" && customerName.trim() !== "") {
-        const isExisting = customers.some(c => c.Name === customerName.trim());
-        if (!isExisting) {
-          try {
-            await postApi({ action: "saveCustomer", payload: { name: customerName.trim(), phone: customerPhone.trim(), taxAddress: customerAddress.trim(), taxId: customerTaxId.trim() } });
-            setCustomers(prev => [...prev, { Name: customerName.trim(), Phone: customerPhone.trim(), TaxAddress: customerAddress.trim(), TaxID: customerTaxId.trim() }]);
-          } catch (error) { console.error("Error saving new customer:", error); }
-        }
+        const nameTrim = customerName.trim();
+        const custPayload = {
+          name: nameTrim,
+          phone: customerPhone.trim(),
+          taxAddress: customerAddress.trim(),
+          address: customerAddress.trim(),
+          taxId: customerTaxId.trim(),
+        };
+        try {
+          await postApi({ action: "saveCustomer", payload: custPayload });
+          setCustomers(prev => {
+            const exists = prev.some(c => String(c.Name || "").trim() === nameTrim);
+            const merged = { Name: nameTrim, Phone: customerPhone.trim(), TaxAddress: customerAddress.trim(), Address: customerAddress.trim(), TaxID: customerTaxId.trim() };
+            return exists
+              ? prev.map(c => String(c.Name || "").trim() === nameTrim ? { ...c, ...merged } : c)
+              : [...prev, merged];
+          });
+        } catch (error) { console.error("Error saving customer:", error); }
       }
 
       const cartTotal = subtotalAfterDiscount; // cart-only total (excl. package)
@@ -1142,11 +1175,13 @@ export default function POS() {
                     <div className="flex-1 border-t border-gray-200" />
                   </div>
 
-                  {/* Manual fields */}
-                  <input type="text" placeholder="ชื่อ-นามสกุล / บริษัท *" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary" />
-                  <input type="text" placeholder="เบอร์โทรศัพท์" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary" />
-                  <input type="text" placeholder="ที่อยู่" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className="w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary" />
-                  <input type="text" placeholder="เลขประจำตัวผู้เสียภาษี" value={customerTaxId} onChange={e => setCustomerTaxId(e.target.value)} className="w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary" />
+                  {/* Manual fields — บังคับกรอกครบทุกช่องสำหรับใบกำกับภาษีเต็มรูป */}
+                  <p className="text-xs text-rose-500 font-medium">* จำเป็นต้องกรอกให้ครบทุกช่อง</p>
+                  <input type="text" placeholder="ชื่อ-นามสกุล / บริษัท *" value={customerName} onChange={e => setCustomerName(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerName.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                  <input type="text" placeholder="เบอร์โทรศัพท์ *" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerPhone.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                  <input type="text" placeholder="ที่อยู่ *" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerAddress.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                  <input type="text" inputMode="numeric" maxLength={13} placeholder="เลขประจำตัวผู้เสียภาษี (13 หลัก) *" value={customerTaxId} onChange={e => setCustomerTaxId(e.target.value.replace(/\D/g, ""))} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", (!customerTaxId.trim() || taxIdInvalid) ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                  {taxIdInvalid && <p className="text-xs text-rose-600">เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก</p>}
                   {(customerName || customerPhone || customerAddress || customerTaxId) && (
                     <button type="button" onClick={clearCustomer} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 transition-colors">
                       <X size={12} /> ล้างข้อมูลลูกค้า
@@ -1492,6 +1527,11 @@ export default function POS() {
                 ยังค้างชำระอีก ฿{remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
             )}
+            {(taxInvoiceMissing || taxIdInvalid) && (
+              <div className="text-center text-sm text-rose-600 font-medium bg-rose-50 border border-rose-100 rounded-xl py-2">
+                กรุณากรอกข้อมูลลูกค้าให้ครบ (ชื่อ, เบอร์โทร, ที่อยู่, เลขผู้เสียภาษี 13 หลัก) สำหรับใบกำกับภาษีเต็มรูป
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -1508,6 +1548,7 @@ export default function POS() {
                   if (cart.length === 0 && !pendingPackage) return true;
                   if (isCheckingOut) return true;
                   if (!isPaymentComplete) return true;
+                  if (taxInvoiceMissing || taxIdInvalid) return true;
                   const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
                   if (hasStoreCreditRow && (parseFloat(custObj?.Credits) || 0) < Math.ceil(effectiveStoreCreditPaid)) return true;
                   if (hasPointsRow      && (parseFloat(custObj?.Points)  || 0) < Math.ceil(effectivePointsPaid))      return true;
