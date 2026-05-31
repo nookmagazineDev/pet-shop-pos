@@ -4,10 +4,11 @@ import { usePrinter } from "../context/PrinterContext";
 import clsx from "clsx";
 
 export default function ShiftSlipModal({ isOpen, onClose, shiftData, bills = [] }) {
-  if (!isOpen || !shiftData) return null;
-
   const [viewTab, setViewTab] = useState("slip");
   const { settings } = usePrinter();
+
+  if (!isOpen || !shiftData) return null;
+
   const paperMm = parseInt(settings.paperWidth) || 80;
   const paperW = paperMm <= 58 ? "58mm" : "80mm";
 

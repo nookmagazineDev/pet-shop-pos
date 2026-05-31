@@ -17,9 +17,10 @@ async function getLogoBase64() {
 }
 
 export default function TaxInvoiceModal({ isOpen, onClose, cart, paymentMethod, subtotal, discountAmount = 0, freeItemLines = [], couponDiscount = 0, couponName = "", couponLines = [], tax, total, receiptType, customerInfo, taxInvoiceNo }) {
+  const { settings } = usePrinter();
+
   if (!isOpen) return null;
 
-  const { settings } = usePrinter();
   const paperMm = parseInt(settings.paperWidth) || 80;
 
   const now = new Date();

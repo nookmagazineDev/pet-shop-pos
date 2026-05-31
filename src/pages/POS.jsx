@@ -714,7 +714,7 @@ export default function POS() {
         payload: {
           totalAmount: cartTotal,
           tax,
-          discount: discountAmount,
+          discount: discountAmount + couponDiscount,
           paymentMethod: paymentMethodStr,
           cart: [
             ...cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price, vatStatus: c.vatStatus || "VAT" })),
