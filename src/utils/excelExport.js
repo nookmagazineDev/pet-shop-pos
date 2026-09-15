@@ -1,6 +1,5 @@
 import * as XLSX from 'xlsx';
-
-const r2 = (n) => Math.round(n * 100) / 100;
+export { breakdownFromTransaction, breakdownFromCart } from './vat';
 
 // Original simple export (kept for compatibility)
 export const exportToExcel = (dataArray, sheetName, fileName) => {
@@ -20,13 +19,14 @@ export const exportToExcel = (dataArray, sheetName, fileName) => {
  * @param {string} opts.title - Report title (e.g. "รายงานภาษีขาย")
  * @param {object} opts.company - { name, branch, taxId, address }
  * @param {string} opts.period - Date range string
+ * @param {string} opts.periodLabel - ป้ายกำกับช่วงเวลา เช่น "เดือนภาษี"
  * @param {Array}  opts.headers - [{ key, label }]
  * @param {Array}  opts.rows - array of plain objects
  * @param {object|null} opts.totals - { key: value } for grand total row, or null
  * @param {string} opts.sheetName
  * @param {string} opts.fileName
  */
-export const exportReportToExcel = ({ title, company, period, headers, rows, totals, sheetName, fileName, textCols = [] }) => {
+export const exportReportToExcel = ({ title, company, period, periodLabel = "ช่วงวันที่", headers, rows, totals, sheetName, fileName, textCols = [] }) => {
   if (!rows || rows.length === 0) {
     alert("ไม่มีข้อมูลที่จะส่งออกดาวน์โหลด");
     return;
@@ -39,14 +39,14 @@ export const exportReportToExcel = ({ title, company, period, headers, rows, tot
 
   // Row 2: Company name + branch + tax id
   aoa.push([
-    `สถานที่ประกอบการ: ${company.name}  สาขา: ${company.branch}  เลขประจำตัวผู้เสียภาษี: ${company.taxId}`
+    `ชื่อสถานประกอบการ: ${company.name}    ${company.branch}    เลขประจำตัวผู้เสียภาษี: ${company.taxId}`
   ]);
 
   // Row 3: Address
   aoa.push([`ที่อยู่: ${company.address}`]);
 
-  // Row 4: Period
-  aoa.push([`period: ${period}`]);
+  // Row 4: Period (เดือนภาษี/ปีภาษี ตามแบบรายงานภาษีขาย)
+  aoa.push([`${periodLabel}: ${period}`]);
 
   // Row 5: Empty separator
   aoa.push([]);
@@ -99,25 +99,6 @@ export const exportReportToExcel = ({ title, company, period, headers, rows, tot
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, `${fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
-};
-
-/** Parse CartDetails and split revenue into nonVAT / vatableTotal */
-export const getCartVatSplit = (cartDetails, productsArr) => {
-  let nonVAT = 0, vatableTotal = 0;
-  try {
-    const cart = typeof cartDetails === 'string' ? JSON.parse(cartDetails) : cartDetails;
-    if (Array.isArray(cart)) {
-      cart.forEach(item => {
-        const bc = String(item.Barcode || item.barcode || "");
-        const prod = (productsArr || []).find(p => String(p.Barcode) === bc) || {};
-        const vatStatus = prod.VatStatus || item.VatStatus || "VAT";
-        const revenue = r2((parseFloat(item.price || item.Price || 0)) * (parseFloat(item.qty || 1)));
-        if (vatStatus === "NON VAT") nonVAT += revenue;
-        else vatableTotal += revenue;
-      });
-    }
-  } catch (e) {}
-  return { nonVAT: r2(nonVAT), vatableTotal: r2(vatableTotal) };
 };
 
 /** Format Thai period string */

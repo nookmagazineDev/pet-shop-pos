@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:vat": "node src/utils/vat.test.mjs && node backend/vat.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

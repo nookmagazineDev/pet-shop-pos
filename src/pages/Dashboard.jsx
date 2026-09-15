@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { TrendingUp, Package, Users, DollarSign, Activity, Loader2, RefreshCcw, AlertTriangle, Store } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi } from "../api";
+import { toLocalDateStr } from "../utils/vat";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -86,8 +87,8 @@ export default function Dashboard() {
   const defaultEndDate = new Date();
   const defaultStartDate = new Date();
   defaultStartDate.setDate(defaultEndDate.getDate() - 13);
-  const [startDateStr, setStartDateStr] = useState(defaultStartDate.toISOString().split('T')[0]);
-  const [endDateStr, setEndDateStr] = useState(defaultEndDate.toISOString().split('T')[0]);
+  const [startDateStr, setStartDateStr] = useState(toLocalDateStr(defaultStartDate));
+  const [endDateStr, setEndDateStr] = useState(toLocalDateStr(defaultEndDate));
 
   // Raw data store — fetched once (or on manual refresh), not re-fetched on date change
   const [rawTransactions, setRawTransactions] = useState([]);

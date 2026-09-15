@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { fetchApi, postApi, invalidateCache } from "../api";
 import { exportReportToExcel } from "../utils/excelExport";
+import { toLocalDateStr } from "../utils/vat";
 import toast from "react-hot-toast";
 
 // ── constants ────────────────────────────────────────────
@@ -40,7 +41,7 @@ const MANUAL_REASONS = [
   "อื่นๆ",
 ];
 
-const today = new Date().toISOString().split("T")[0];
+const today = toLocalDateStr();
 
 function fmt(val) {
   if (!val) return "-";
@@ -390,7 +391,7 @@ export default function Packages() {
     // Default: 30 days from current expiry or today
     const base = cp.ExpiryDate ? new Date(cp.ExpiryDate) : new Date();
     base.setDate(base.getDate() + 30);
-    setExtendDate(base.toISOString().split("T")[0]);
+    setExtendDate(toLocalDateStr(base));
     setShowExtendModal(true);
   };
 

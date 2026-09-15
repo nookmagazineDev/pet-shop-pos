@@ -44,3 +44,51 @@
     @apply bg-gray-50 text-gray-900;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   พิมพ์ใบกำกับภาษีเต็มรูป (A4)
+   หน้าเว็บทั้งหน้าจะถูกซ่อน เหลือเฉพาะตัวเอกสาร เพื่อไม่ให้เมนู/ตาราง
+   ของระบบติดไปบนเอกสารภาษีที่ต้องเก็บเป็นหลักฐาน
+   ───────────────────────────────────────────────────────────── */
+@media print {
+  html.printing-tax-invoice,
+  html.printing-tax-invoice body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  html.printing-tax-invoice body * {
+    visibility: hidden !important;
+  }
+
+  html.printing-tax-invoice #printable-tax-invoice,
+  html.printing-tax-invoice #printable-tax-invoice * {
+    visibility: visible !important;
+  }
+
+  html.printing-tax-invoice #printable-tax-invoice {
+    position: absolute !important;
+    inset: 0 auto auto 0;
+    width: 100% !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    color: #000 !important;
+  }
+
+  html.printing-tax-invoice #printable-tax-invoice table {
+    page-break-inside: auto;
+  }
+
+  html.printing-tax-invoice #printable-tax-invoice tr {
+    page-break-inside: avoid;
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}

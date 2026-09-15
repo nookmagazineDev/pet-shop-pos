@@ -4,8 +4,15 @@ import { Wallet, FileText, Printer, CheckCircle, FileUp, Loader2, RefreshCw, X, 
 import clsx from "clsx";
 import * as XLSX from "xlsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
+import { usePrinter } from "../context/PrinterContext";
+import {
+  breakdownFromTransaction, allocateExVatLines, branchLabel, formatTaxId,
+  thaiBahtText, fmtMoney, formatTaxDate, lineQty, isValidTaxId, r2,
+  toLocalDateStr, startOfLocalDay, endOfLocalDay,
+} from "../utils/vat";
 
 export default function Accounting() {
+  const { settings } = usePrinter();
   const [activeTab, setActiveTab] = useState("income");
   const [transactions, setTransactions] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -14,25 +21,27 @@ export default function Accounting() {
   const printRef = useRef(null);
 
   // Date filter
-  const today = new Date().toISOString().split('T')[0];
-  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const today = toLocalDateStr(new Date());
+  const firstOfMonth = toLocalDateStr(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [dateFrom, setDateFrom] = useState(firstOfMonth);
   const [dateTo, setDateTo] = useState(today);
 
-  // Computed filtered data
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(tx => {
-      const d = new Date(tx.Date || tx.Timestamp || tx[1]);
-      return d >= new Date(dateFrom) && d <= new Date(dateTo + 'T23:59:59');
-    });
-  }, [transactions, dateFrom, dateTo]);
+  // ช่วงวันที่แบบเวลาท้องถิ่น — `new Date("YYYY-MM-DD")` ตีความเป็น UTC
+  // ทำให้บิลช่วง 00:00-07:00 ของวันแรกหลุดออกจากรายงาน
+  const rangeStart = useMemo(() => startOfLocalDay(dateFrom), [dateFrom]);
+  const rangeEnd = useMemo(() => endOfLocalDay(dateTo), [dateTo]);
+  const inRange = (value) => { const d = new Date(value); return !isNaN(d.getTime()) && d >= rangeStart && d <= rangeEnd; };
 
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter(exp => {
-      const d = new Date(exp.Date || exp.Timestamp || exp[1] || exp[0]);
-      return d >= new Date(dateFrom) && d <= new Date(dateTo + 'T23:59:59');
-    });
-  }, [expenses, dateFrom, dateTo]);
+  // Computed filtered data
+  const filteredTransactions = useMemo(
+    () => transactions.filter(tx => inRange(tx.Date || tx.Timestamp || tx[1])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transactions, rangeStart, rangeEnd]);
+
+  const filteredExpenses = useMemo(
+    () => expenses.filter(exp => inRange(exp.Date || exp.Timestamp || exp[1] || exp[0])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [expenses, rangeStart, rangeEnd]);
 
   const activeTxs = useMemo(() => filteredTransactions.filter(tx => (tx.Status || tx[13]) !== "CANCELLED"), [filteredTransactions]);
 
@@ -78,7 +87,7 @@ export default function Accounting() {
 
   // Expense form state
   const [expenseData, setExpenseData] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: toLocalDateStr(new Date()),
     description: "",
     category: "วัตถุดิบ/สินค้า",
     amount: "",
@@ -89,7 +98,7 @@ export default function Accounting() {
   // Invoice modal
   const [invoiceModal, setInvoiceModal] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
-  const [customerInfo, setCustomerInfo] = useState({ name: "", address: "", taxId: "", phone: "" });
+  const [customerInfo, setCustomerInfo] = useState({ name: "", address: "", taxId: "", phone: "", branch: "สำนักงานใหญ่" });
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
 
   // Expense Items modal
@@ -103,6 +112,21 @@ export default function Accounting() {
   // Tax Invoice Viewer (80mm modal)
   const [viewTaxInvoiceTx, setViewTaxInvoiceTx] = useState(null);
 
+  /** อ่านข้อมูลผู้ซื้อจากบิล (ใช้ทั้งใบกำกับภาษีเต็มรูปและการพิมพ์ซ้ำ) */
+  const readCustomerInfo = (tx) => {
+    try {
+      const ci = JSON.parse(tx.CustomerInfo || tx[10] || "{}");
+      if (!ci || typeof ci !== "object") return null;
+      const name = ci.name || ci.customerName || "";
+      if (!name) return null;
+      return {
+        customerName: name,
+        customerAddress: ci.taxAddress || ci.address || ci.customerAddress || "",
+        customerTaxId: ci.taxId || ci.customerTaxId || "",
+      };
+    } catch { return null; }
+  };
+
   // เปิด "ใบกำกับภาษี" แบบเต็ม A4 (มีชื่อ-ที่อยู่-เลขผู้เสียภาษีของลูกค้า)
   const openA4Invoice = (tx) => {
     setSelectedTx(tx);
@@ -115,32 +139,40 @@ export default function Accounting() {
       try {
         const ci = JSON.parse(tx.CustomerInfo || tx[10]);
         cName = ci.name || ci.customerName || "";
-        cAddress = ci.address || ci.customerAddress || "";
+        cAddress = ci.taxAddress || ci.address || ci.customerAddress || "";
         cTaxId = ci.taxId || ci.customerTaxId || "";
         cPhone = ci.phone || ci.customerPhone || "";
-      } catch (e) {}
+      } catch { /* ไม่มีข้อมูลลูกค้าในบิลนี้ */ }
     }
-    setCustomerInfo({ name: cName, address: cAddress, taxId: cTaxId, phone: cPhone });
+    setCustomerInfo({ name: cName, address: cAddress, taxId: cTaxId, phone: cPhone, branch: "สำนักงานใหญ่" });
     setInvoiceModal(true);
   };
 
-  // เปิด "ใบเสร็จอย่างย่อ" (80mm) — ไม่ใช่ใบกำกับภาษี
+  // เปิด "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ" (80mm) — พิมพ์ซ้ำจากบิลที่บันทึกไว้
   const openReceiptView = (tx) => {
     let cart = [];
-    try { cart = JSON.parse(tx.CartDetails || tx[5] || "[]"); } catch (e) {}
-    const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
-    const tax   = parseFloat(tx.Tax || tx[3] || 0);
-    const subtotal = cart.reduce((s, c) => s + ((parseFloat(c.price || c.Price) || 0) * (parseFloat(c.qty || c.quantity) || 1)), 0);
-    const discountAmount = Math.max(0, subtotal - total);
+    try { cart = JSON.parse(tx.CartDetails || tx[5] || "[]"); } catch { cart = []; }
+    const bd = breakdownFromTransaction(tx);
     setViewTaxInvoiceTx({
-      cart: cart.map(c => ({ ...c, qty: parseFloat(c.qty || c.quantity) || 1, price: parseFloat(c.price || c.Price) || 0, name: c.name || c.Name || "" })),
+      cart: cart.map(c => ({
+        ...c,
+        qty: lineQty(c),
+        price: parseFloat(c.price ?? c.Price) || 0,
+        name: c.name || c.Name || "",
+        vatStatus: c.vatStatus || c.VatStatus || "VAT",
+      })),
       paymentMethod: tx.PaymentMethod || tx[4] || "",
-      subtotal,
-      discountAmount,
-      tax,
-      total,
+      discountAmount: bd.discount,
+      tax: bd.vatAmount,
+      total: bd.netTotal,
+      breakdown: bd,
       receiptType: "ใบเสร็จอย่างย่อ",
-      taxInvoiceNo: tx.ReceiptNo || tx.OrderID || tx[0] || "",
+      // เลขที่ต้องเป็นเลขรันที่บันทึกไว้จริง ไม่ใช่รหัสภายในระบบ
+      receiptNo: tx.ReceiptNo || tx[16] || tx.OrderID || tx[0] || "",
+      taxInvoiceNo: "",
+      issuedAt: tx.Date || tx.Timestamp || tx[1] || null,
+      cashReceived: parseFloat(tx.CashReceived || tx[6]) || 0,
+      changeReturn: parseFloat(tx.ChangeReturn || tx[7]) || 0,
       customerInfo: null,
     });
   };
@@ -296,7 +328,7 @@ export default function Accounting() {
     if (res.success) {
       alert("บันทึกรายจ่ายเรียบร้อยแล้ว!");
       setExpenseData({
-        date: new Date().toISOString().split('T')[0],
+        date: toLocalDateStr(new Date()),
         description: "",
         category: "วัตถุดิบ/สินค้า",
         amount: "",
@@ -311,13 +343,27 @@ export default function Accounting() {
 
   const handleIssueTaxInvoice = async () => {
     if (!selectedTx) return;
+    const issues = taxInvoiceIssues();
+    if (issues.length > 0) {
+      alert("ใบกำกับภาษีเต็มรูปต้องระบุข้อมูลให้ครบตามที่สรรพากรกำหนด:\n- " + issues.join("\n- "));
+      return;
+    }
+    if ((selectedTx.Status || selectedTx[13]) === "CANCELLED") {
+      alert("บิลนี้ถูกยกเลิกแล้ว ไม่สามารถออกใบกำกับภาษีได้");
+      return;
+    }
     setIsSavingInvoice(true);
+    // ส่งโครงสร้างภาษีชุดเดียวกับที่พิมพ์บนเอกสาร เพื่อให้ชีท TaxInvoices
+    // (ที่ใช้ทำรายงานภาษีขาย) ตรงกับใบกำกับภาษีที่ออกให้ลูกค้าทุกบาท
+    const bd = breakdownFromTransaction(selectedTx);
     const res = await postApi({
       action: "saveTaxInvoice",
       payload: {
         orderId: selectedTx.OrderID || selectedTx[0],
-        totalAmount: parseFloat(selectedTx.TotalAmount || selectedTx[2]) || 0,
-        taxAmount: parseFloat(selectedTx.Tax || selectedTx[3]) || 0,
+        totalAmount: bd.netTotal,
+        taxAmount: bd.vatAmount,
+        vatableAmount: bd.vatableExVat,
+        nonVatAmount: bd.nonVatAmount,
         customerInfo
       }
     });
@@ -357,7 +403,22 @@ export default function Accounting() {
     }
   };
 
+  /** ใบกำกับภาษีเต็มรูปต้องมีข้อมูลผู้ซื้อครบตาม ป.รัษฎากร ม.86/4(4) */
+  const taxInvoiceIssues = () => {
+    const issues = [];
+    if (!customerInfo.name.trim()) issues.push("ชื่อผู้ซื้อ");
+    if (!customerInfo.address.trim()) issues.push("ที่อยู่ผู้ซื้อ");
+    if (!customerInfo.taxId.trim()) issues.push("เลขประจำตัวผู้เสียภาษีผู้ซื้อ");
+    else if (!isValidTaxId(customerInfo.taxId)) issues.push("เลขประจำตัวผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก");
+    return issues;
+  };
+
   const handlePrintTaxInvoice = async () => {
+    const issues = taxInvoiceIssues();
+    if (issues.length > 0) {
+      alert("ใบกำกับภาษีเต็มรูปต้องระบุข้อมูลให้ครบตามที่สรรพากรกำหนด:\n- " + issues.join("\n- "));
+      return;
+    }
     if (customerInfo.name) {
       postApi({
         action: "saveCustomer",
@@ -365,15 +426,25 @@ export default function Accounting() {
           name: customerInfo.name,
           phone: customerInfo.phone,
           address: customerInfo.address,
+          taxAddress: customerInfo.address,
           taxId: customerInfo.taxId,
           lastInvoiceId: selectedTx.OrderID || selectedTx[0] || "",
           lastInvoiceDate: new Date().toISOString()
         }
       });
     }
-    // Set timeout to allow React to render any UI state, though optional.
+    // ซ่อนส่วนอื่นของหน้าเว็บระหว่างพิมพ์ ให้เหลือเฉพาะตัวใบกำกับภาษี
+    const root = document.documentElement;
+    root.classList.add("printing-tax-invoice");
+    const cleanup = () => {
+      root.classList.remove("printing-tax-invoice");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
     setTimeout(() => {
       window.print();
+      // สำรองสำหรับเบราว์เซอร์ที่ไม่ยิง afterprint
+      setTimeout(cleanup, 1000);
     }, 100);
   };
 
@@ -488,9 +559,10 @@ export default function Accounting() {
                 ) : filteredTransactions.length === 0 ? (
                   <tr><td colSpan="8" className="py-8 text-center text-gray-400">ไม่มีรายการในช่วงวันที่เลือก</td></tr>
                 ) : filteredTransactions.map((tx, idx) => {
-                  const totalAmt = parseFloat(tx.TotalAmount || tx[2]) || 0;
-                  const preVat = totalAmt * 100 / 107;
-                  const vatAmt = totalAmt * 7 / 107;
+                  const rowBd = breakdownFromTransaction(tx);
+                  const totalAmt = rowBd.netTotal;
+                  const preVat = r2(rowBd.nonVatAmount + rowBd.vatableExVat);
+                  const vatAmt = rowBd.vatAmount;
                   const isCancelled = (tx.Status || tx[13]) === "CANCELLED";
                   return (
                     <tr key={idx} className={`transition-colors group ${isCancelled ? "bg-red-100 hover:bg-red-100 border-l-4 border-red-500" : "hover:bg-emerald-50/30"}`}>
@@ -530,22 +602,31 @@ export default function Accounting() {
                             onClick={() => {
                               try {
                                 const cart = JSON.parse(tx.CartDetails || tx[5] || "[]");
-                                const total = parseFloat(tx.TotalAmount || tx[2]) || 0;
-                                const tax = parseFloat(tx.Tax || tx[3] || 0) || (total * 7 / 107);
-                                const subtotal = cart.reduce((sum, item) => sum + ((item.price || item.Price || 0) * (item.qty || item.quantity || 1)), 0);
-                                const discountAmount = subtotal - total;
+                                const bd = breakdownFromTransaction(tx);
+                                const isFull = (tx.ReceiptType || tx[9]) === "ใบกำกับภาษี";
                                 setSlipData({
-                                  cart: cart.map(c => ({...c, qty: c.qty || c.quantity, price: c.price || c.Price, name: c.name || c.Name})),
+                                  cart: cart.map(c => ({
+                                    ...c,
+                                    qty: lineQty(c),
+                                    price: parseFloat(c.price ?? c.Price) || 0,
+                                    name: c.name || c.Name || "",
+                                    vatStatus: c.vatStatus || c.VatStatus || "VAT",
+                                  })),
                                   paymentMethod: tx.PaymentMethod || tx[4],
-                                  subtotal,
-                                  discountAmount: discountAmount > 0 ? discountAmount : 0,
-                                  tax,
-                                  total,
-                                  receiptType: tx.ReceiptType || tx[6] || "ใบเสร็จรับเงิน",
-                                  taxInvoiceNo: tx.TaxInvoiceNo || tx[15] || tx.ReceiptNo || tx.OrderID || tx[0]
+                                  discountAmount: bd.discount,
+                                  tax: bd.vatAmount,
+                                  total: bd.netTotal,
+                                  breakdown: bd,
+                                  receiptType: isFull ? "ใบกำกับภาษี" : "ใบเสร็จ",
+                                  taxInvoiceNo: tx.TaxInvoiceNo || tx[15] || "",
+                                  receiptNo: tx.ReceiptNo || tx[16] || tx.OrderID || tx[0] || "",
+                                  issuedAt: tx.Date || tx.Timestamp || tx[1] || null,
+                                  customerInfo: readCustomerInfo(tx),
+                                  cashReceived: parseFloat(tx.CashReceived || tx[6]) || 0,
+                                  changeReturn: parseFloat(tx.ChangeReturn || tx[7]) || 0,
                                 });
                                 setSlipModalOpen(true);
-                              } catch(e) {
+                              } catch {
                                 alert("ไม่สามารถโหลดข้อมูลสลิปได้");
                               }
                             }}
@@ -764,7 +845,14 @@ export default function Accounting() {
                       const val = e.target.value;
                       const match = customers.find(c => c.Name === val);
                       if (match) {
-                        setCustomerInfo({ name: match.Name, phone: match.Phone || "", address: match.Address || "", taxId: match.TaxID || "" });
+                        setCustomerInfo({
+                          name: match.Name,
+                          phone: match.Phone || "",
+                          // ที่อยู่สำหรับออกใบกำกับภาษีมาก่อนที่อยู่จัดส่ง
+                          address: match.TaxAddress || match.Address || "",
+                          taxId: match.TaxID || "",
+                          branch: match.Branch || "สำนักงานใหญ่",
+                        });
                       } else {
                         setCustomerInfo({...customerInfo, name: val});
                       }
@@ -780,129 +868,207 @@ export default function Accounting() {
                 <div className="col-span-2">
                   <textarea placeholder="ที่อยู่..." className="w-full px-3 py-2 border rounded-lg h-16" value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})}></textarea>
                 </div>
-                <div className="col-span-2">
-                  <input type="text" placeholder="เลขประจำตัวผู้เสียภาษี (13 หลัก)" className="w-full px-3 py-2 border rounded-lg" value={customerInfo.taxId} onChange={e => setCustomerInfo({...customerInfo, taxId: e.target.value})} />
+                <div className="col-span-2 sm:col-span-1">
+                  <input
+                    type="text" inputMode="numeric" maxLength={13}
+                    placeholder="เลขประจำตัวผู้เสียภาษี (13 หลัก)"
+                    className={clsx("w-full px-3 py-2 border rounded-lg",
+                      customerInfo.taxId && !isValidTaxId(customerInfo.taxId) ? "border-rose-400 bg-rose-50/40" : "")}
+                    value={customerInfo.taxId}
+                    onChange={e => setCustomerInfo({ ...customerInfo, taxId: e.target.value.replace(/\D/g, "") })}
+                  />
                 </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <input
+                    type="text" placeholder="สาขาของผู้ซื้อ (เช่น สำนักงานใหญ่)"
+                    className="w-full px-3 py-2 border rounded-lg"
+                    value={customerInfo.branch || ""}
+                    onChange={e => setCustomerInfo({ ...customerInfo, branch: e.target.value })}
+                  />
+                </div>
+                {taxInvoiceIssues().length > 0 && (
+                  <p className="col-span-2 text-xs text-rose-600">
+                    ต้องกรอกให้ครบก่อนออก/พิมพ์ใบกำกับภาษีเต็มรูป: {taxInvoiceIssues().join(", ")}
+                  </p>
+                )}
               </div>
 
               {/* Printable Area below */}
               <div id="printable-tax-invoice" className="font-sans text-gray-900 bg-white">
-                <div className="text-center mb-6 border-b pb-4 border-gray-800">
-                  <h1 className="text-2xl font-bold mb-1">ใบกำกับภาษี / ใบเสร็จรับเงิน</h1>
-                  <p className="text-sm">TAX INVOICE / RECEIPT</p>
-                  <p className="text-sm mt-2 font-bold">บริษัทมะมามี (1989) จำกัด</p>
-                  <p className="text-xs text-gray-600">100/116 พุทธมณฑลสาย 2 ซอย 24 แขวงศาลาธรรมสพน์ เขตทวีวัฒนา กรุงเทพมหานคร 10170</p>
-                  <p className="text-xs text-gray-600">โทร : 0853638383</p>
-                  <p className="text-xs text-gray-600">เลขประจำตัวผู้เสียภาษี 0105565009021 สาขา 00001</p>
-                </div>
-
-                <div className="flex justify-between items-start mb-6 text-sm">
-                  <div className="w-1/2 pr-4 space-y-1">
-                    <p><span className="font-semibold">ชื่อลูกค้า:</span> {customerInfo.name || "-"}</p>
-                    <p><span className="font-semibold">เบอร์โทรศัพท์:</span> {customerInfo.phone || "-"}</p>
-                    <p><span className="font-semibold">ที่อยู่:</span> {customerInfo.address || "-"}</p>
-                    <p><span className="font-semibold">เลขประจำตัวผู้เสียภาษี:</span> {customerInfo.taxId || "-"}</p>
-                  </div>
-                  <div className="w-1/2 pl-4 text-right space-y-1">
-                    {(selectedTx.TaxInvoiceNo || selectedTx[15]) && (
-                      <p><span className="font-semibold">เลขที่ใบกำกับภาษี:</span> <span className="uppercase">{selectedTx.TaxInvoiceNo || selectedTx[15]}</span></p>
-                    )}
-                    <p><span className="font-semibold">เลขที่ใบเสร็จ:</span> {selectedTx.ReceiptNo || selectedTx.OrderID || selectedTx[0]}</p>
-                    <p><span className="font-semibold">วันที่:</span> {new Date(selectedTx.Date || selectedTx.Timestamp || selectedTx[1]).toLocaleString("th-TH")}</p>
-                    <p><span className="font-semibold">ช่องทางชำระ:</span> {selectedTx.PaymentMethod || selectedTx[4]}</p>
-                  </div>
-                </div>
-
-                <table className="w-full text-sm text-left mb-6">
-                  <thead>
-                    <tr className="border-y border-gray-800 bg-gray-50/50">
-                      <th className="py-2 px-2">ลำดับ</th>
-                      <th className="py-2 px-2">รายการสินค้า</th>
-                      <th className="py-2 px-2 text-center">จำนวน</th>
-                      <th className="py-2 px-2 text-right">ราคาต่อหน่วย</th>
-                      <th className="py-2 px-2 text-right">จำนวนเงิน</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-dashed divide-gray-200">
-                    {(() => {
-                      try {
-                        const cart = JSON.parse(selectedTx.CartDetails || selectedTx[5]);
-                        return cart.map((item, i) => {
-                          const isFreebie = item.isFreebie || item.freeQty;
-                          const qty = isFreebie ? (item.freeQty || item.qty || 1) : (item.qty || item.quantity);
-                          const price = parseFloat(item.price ?? item.Price) || 0;
-                          return (
-                            <tr key={i} className={isFreebie ? "text-emerald-700" : ""}>
-                              <td className="py-2 px-2">{isFreebie ? "" : i+1}</td>
-                              <td className="py-2 px-2">{item.name || item.Name}</td>
-                              <td className="py-2 px-2 text-center">{qty}</td>
-                              <td className="py-2 px-2 text-right">{isFreebie ? "ฟรี" : price.toLocaleString("th-TH")}</td>
-                              <td className="py-2 px-2 text-right">{isFreebie ? "0.00" : (price * qty).toLocaleString("th-TH")}</td>
-                            </tr>
-                          );
-                        });
-                      } catch(e) {
-                        return <tr><td colSpan="5" className="text-center py-2">เกิดข้อผิดพลาดในการดึงรายการสินค้า</td></tr>;
-                      }
-                    })()}
-                  </tbody>
-                </table>
-
                 {(() => {
-                  const fmt = (n) => Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                  const total    = parseFloat(selectedTx.TotalAmount || selectedTx[2]) || 0;
-                  const taxAmt   = parseFloat(selectedTx.Tax || selectedTx[3]) || 0;
-                  const discount = parseFloat(selectedTx.DiscountAmount || selectedTx[11]) || 0;
-                  // taxable goods value (VAT-inclusive) derived from the stored VAT amount
-                  const vatInclTaxable = taxAmt > 0 ? taxAmt * (107 / 7) : 0;
-                  // taxable goods value excluding VAT (ฐานภาษี)
-                  const preVatTaxable  = taxAmt > 0 ? taxAmt * (100 / 7) : 0;
-                  // tax-exempt goods value = everything that is not taxable
-                  const nonVatValue    = Math.max(0, total - vatInclTaxable);
-                  // sum of line items (gross subtotal before discount)
-                  let grossSubtotal = total + discount;
-                  try {
-                    const c = JSON.parse(selectedTx.CartDetails || selectedTx[5]);
-                    if (Array.isArray(c) && c.length) {
-                      grossSubtotal = c.reduce((s, it) => s + ((parseFloat(it.price ?? it.Price) || 0) * (parseFloat(it.qty ?? it.quantity) || 0)), 0);
-                    }
-                  } catch (e) { /* fall back to total + discount */ }
+                  // ── ข้อมูลผู้ประกอบการ: อ่านจากตั้งค่าเครื่องพิมพ์ (ที่เดียวกับใบเสร็จ 80mm) ──
+                  const shopName    = settings.shopName || "";
+                  const shopAddress = settings.shopAddress || "";
+                  const shopPhone   = settings.shopPhone || "";
+                  const shopTaxId   = settings.shopTaxId || "";
+                  const shopBranch  = branchLabel(settings.shopBranch);
+
+                  const txDate      = selectedTx.Date || selectedTx.Timestamp || selectedTx[1];
+                  const taxInvNo    = selectedTx.TaxInvoiceNo || selectedTx[15] || "";
+                  const receiptNo   = selectedTx.ReceiptNo || selectedTx[16] || selectedTx.OrderID || selectedTx[0] || "";
+                  const isCancelled = (selectedTx.Status || selectedTx[13]) === "CANCELLED";
+
+                  let cart = [];
+                  try { cart = JSON.parse(selectedTx.CartDetails || selectedTx[5] || "[]"); } catch { cart = []; }
+
+                  // โครงสร้างภาษีชุดเดียวกับที่ใช้ในรายงานภาษีขายที่ยื่นสรรพากร
+                  const bd = breakdownFromTransaction(selectedTx);
+                  // ม.86/4(6)(7): ต้องแยก "มูลค่าสินค้า" ออกจาก "ภาษีมูลค่าเพิ่ม" ให้ชัดแจ้ง
+                  // จึงแสดงราคาต่อหน่วยและจำนวนเงินรายบรรทัดแบบไม่รวม VAT
+                  // และกระจายเศษสตางค์ให้ผลรวมคอลัมน์เท่ากับฐานภาษีพอดี
+                  const exLines = allocateExVatLines(cart);
+                  const goodsLines = exLines.filter(l => !l.displayOnly);
+                  const freebieLines = exLines.filter(l => l.displayOnly);
+                  const grossExVat = r2(goodsLines.reduce((s, l) => s + l.amountExVat, 0));
+                  // ส่วนลดในฐาน "ไม่รวม VAT" = มูลค่าสินค้าก่อนลด - (ยกเว้นภาษี + ฐานภาษี) หลังลด
+                  const discountExVat = r2(grossExVat - bd.nonVatAmount - bd.vatableExVat);
+
                   return (
-                    <div className="ml-auto w-1/2 border-t border-gray-800 pt-3 text-sm">
-                      <div className="flex justify-between mb-1">
-                        <span>รวมมูลค่าสินค้า (บาท)</span>
-                        <span>{fmt(grossSubtotal)}</span>
+                    <>
+                      <div className="text-center mb-5 border-b pb-3 border-gray-800 relative">
+                        {isCancelled && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-5xl font-black text-red-500/30 rotate-[-15deg]">ยกเลิก</span>
+                          </div>
+                        )}
+                        <h1 className="text-2xl font-bold mb-1">ใบกำกับภาษี / ใบเสร็จรับเงิน</h1>
+                        <p className="text-sm">TAX INVOICE / RECEIPT</p>
+                        <p className="text-xs text-gray-600">(ต้นฉบับ / ORIGINAL)</p>
+                        <p className="text-sm mt-2 font-bold">{shopName}</p>
+                        {shopAddress && <p className="text-xs text-gray-600">{shopAddress}</p>}
+                        {shopPhone && <p className="text-xs text-gray-600">โทร. {shopPhone}</p>}
+                        <p className="text-xs text-gray-600">
+                          เลขประจำตัวผู้เสียภาษี {formatTaxId(shopTaxId)} &nbsp;&nbsp; {shopBranch}
+                        </p>
                       </div>
-                      {discount > 0 && (
-                        <div className="flex justify-between mb-1 text-rose-600">
-                          <span>หักส่วนลด / ของแถม (บาท)</span>
-                          <span>-{fmt(discount)}</span>
+
+                      <div className="flex justify-between items-start mb-5 text-sm gap-4">
+                        <div className="w-1/2 space-y-1">
+                          <p className="font-semibold text-gray-500 text-xs">ผู้ซื้อ / CUSTOMER</p>
+                          <p><span className="font-semibold">ชื่อลูกค้า:</span> {customerInfo.name || "-"}</p>
+                          <p><span className="font-semibold">ที่อยู่:</span> {customerInfo.address || "-"}</p>
+                          <p>
+                            <span className="font-semibold">เลขประจำตัวผู้เสียภาษี:</span>{" "}
+                            {customerInfo.taxId ? formatTaxId(customerInfo.taxId) : "-"}
+                            {customerInfo.taxId && !isValidTaxId(customerInfo.taxId) && (
+                              <span className="ml-2 text-[10px] text-rose-600 font-bold print:hidden">
+                                * ต้องเป็นตัวเลข 13 หลัก
+                              </span>
+                            )}
+                          </p>
+                          <p><span className="font-semibold">สาขา:</span> {customerInfo.branch || "สำนักงานใหญ่"}</p>
+                          <p><span className="font-semibold">เบอร์โทรศัพท์:</span> {customerInfo.phone || "-"}</p>
                         </div>
-                      )}
-                      <div className="flex justify-between mb-1">
-                        <span>มูลค่าสินค้ายกเว้นภาษี (บาท)</span>
-                        <span>{fmt(nonVatValue)}</span>
+                        <div className="w-1/2 text-right space-y-1">
+                          <p>
+                            <span className="font-semibold">เลขที่ใบกำกับภาษี:</span>{" "}
+                            <span className="uppercase font-mono">{taxInvNo || "ยังไม่ได้ออกเลขที่"}</span>
+                          </p>
+                          <p><span className="font-semibold">เลขที่ใบเสร็จ:</span> <span className="font-mono">{receiptNo}</span></p>
+                          <p><span className="font-semibold">วันที่ออกเอกสาร:</span> {formatTaxDate(txDate)}</p>
+                          <p><span className="font-semibold">ช่องทางชำระ:</span> {selectedTx.PaymentMethod || selectedTx[4]}</p>
+                          {isCancelled && (
+                            <p className="text-rose-600 font-bold">
+                              ยกเลิก: {selectedTx.CancelNote || selectedTx[14] || "-"}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex justify-between mb-1">
-                        <span>มูลค่าสินค้าที่ต้องเสียภาษี (บาท)</span>
-                        <span>{fmt(preVatTaxable)}</span>
+
+                      <table className="w-full text-sm text-left mb-4">
+                        <thead>
+                          <tr className="border-y border-gray-800 bg-gray-50/50">
+                            <th className="py-2 px-2 w-12">ลำดับ</th>
+                            <th className="py-2 px-2">รายการสินค้า / บริการ</th>
+                            <th className="py-2 px-2 text-center w-20">จำนวน</th>
+                            <th className="py-2 px-2 text-right w-32">ราคาต่อหน่วย</th>
+                            <th className="py-2 px-2 text-right w-32">จำนวนเงิน</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-dashed divide-gray-200">
+                          {goodsLines.length === 0 && freebieLines.length === 0 && (
+                            <tr><td colSpan="5" className="text-center py-3 text-gray-400">ไม่มีรายการสินค้าในบิลนี้</td></tr>
+                          )}
+                          {goodsLines.map((item, i) => (
+                            <tr key={`g${i}`}>
+                              <td className="py-2 px-2">{i + 1}</td>
+                              <td className="py-2 px-2">
+                                {item.name || item.Name}
+                                {item.vatStatus === "NON VAT" && (
+                                  <span className="ml-1 text-[10px] text-gray-500">(ยกเว้น VAT)</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-2 text-center">{lineQty(item)}</td>
+                              <td className="py-2 px-2 text-right">{fmtMoney(item.unitExVat)}</td>
+                              <td className="py-2 px-2 text-right">{fmtMoney(item.amountExVat)}</td>
+                            </tr>
+                          ))}
+                          {freebieLines.map((item, i) => (
+                            <tr key={`f${i}`} className="text-emerald-700">
+                              <td className="py-2 px-2"></td>
+                              <td className="py-2 px-2">{item.name || item.Name}</td>
+                              <td className="py-2 px-2 text-center">{item.freeQty || lineQty(item) || 1}</td>
+                              <td className="py-2 px-2 text-right">ฟรี</td>
+                              <td className="py-2 px-2 text-right">0.00</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      <div className="flex justify-between items-start gap-6">
+                        <div className="w-1/2 text-xs text-gray-600 pt-3">
+                          <p className="font-semibold text-gray-700">จำนวนเงินเป็นตัวอักษร</p>
+                          <p className="mt-1">({thaiBahtText(bd.netTotal)})</p>
+                          <p className="mt-3 text-[11px] leading-relaxed">
+                            ราคาต่อหน่วยและจำนวนเงินในตารางเป็นราคาที่ยังไม่รวมภาษีมูลค่าเพิ่ม
+                          </p>
+                        </div>
+
+                        <div className="w-1/2 border-t border-gray-800 pt-3 text-sm">
+                          <div className="flex justify-between mb-1">
+                            <span>รวมมูลค่าสินค้า/บริการ (บาท)</span>
+                            <span>{fmtMoney(grossExVat)}</span>
+                          </div>
+                          {discountExVat > 0 && (
+                            <div className="flex justify-between mb-1 text-rose-600">
+                              <span>หักส่วนลด / ของแถม (บาท)</span>
+                              <span>-{fmtMoney(discountExVat)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between mb-1">
+                            <span>มูลค่าสินค้ายกเว้นภาษี (บาท)</span>
+                            <span>{fmtMoney(bd.nonVatAmount)}</span>
+                          </div>
+                          <div className="flex justify-between mb-1">
+                            <span>มูลค่าสินค้าที่ต้องเสียภาษี (บาท)</span>
+                            <span>{fmtMoney(bd.vatableExVat)}</span>
+                          </div>
+                          <div className="flex justify-between mb-1">
+                            <span>ภาษีมูลค่าเพิ่ม 7% (บาท)</span>
+                            <span>{fmtMoney(bd.vatAmount)}</span>
+                          </div>
+                          <div className="flex justify-between font-bold text-base mt-2 pt-2 border-t border-gray-800">
+                            <span>จำนวนเงินรวมทั้งสิ้น (บาท)</span>
+                            <span>{fmtMoney(bd.netTotal)}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between mb-1">
-                        <span>ภาษีมูลค่าเพิ่ม (7%)</span>
-                        <span>{fmt(taxAmt)}</span>
+
+                      <div className="mt-12 flex justify-between text-center text-xs text-gray-500 gap-8">
+                        <div className="flex-1">
+                          <p>....................................................................</p>
+                          <p className="mt-2 text-sm">(ผู้รับเงิน / Authorized Signature)</p>
+                          <p className="mt-1">วันที่ {formatTaxDate(txDate, false)}</p>
+                        </div>
+                        <div className="flex-1">
+                          <p>....................................................................</p>
+                          <p className="mt-2 text-sm">(ผู้รับสินค้า / Received By)</p>
+                          <p className="mt-1">วันที่ ............../.............../..............</p>
+                        </div>
                       </div>
-                      <div className="flex justify-between font-bold text-base mt-2 pt-2 border-t border-gray-800">
-                        <span>จำนวนเงินรวมทั้งสิ้น (บาท)</span>
-                        <span>{fmt(total)}</span>
-                      </div>
-                    </div>
+                    </>
                   );
                 })()}
-
-                <div className="mt-12 text-center text-xs text-gray-500">
-                  <p>....................................................................</p>
-                  <p className="mt-2 text-sm">(ผู้รับเงิน / Authorized Signature)</p>
-                </div>
               </div>
             </div>
 
@@ -1001,12 +1167,17 @@ export default function Accounting() {
           onClose={() => { setSlipModalOpen(false); setSlipData(null); }}
           cart={slipData.cart}
           paymentMethod={slipData.paymentMethod}
-          subtotal={slipData.subtotal}
           discountAmount={slipData.discountAmount}
           tax={slipData.tax}
           total={slipData.total}
+          breakdown={slipData.breakdown}
           receiptType={slipData.receiptType}
+          customerInfo={slipData.customerInfo}
           taxInvoiceNo={slipData.taxInvoiceNo}
+          receiptNo={slipData.receiptNo}
+          issuedAt={slipData.issuedAt}
+          cashReceived={slipData.cashReceived}
+          changeReturn={slipData.changeReturn}
         />
       )}
 
@@ -1017,7 +1188,6 @@ export default function Accounting() {
           onClose={() => setViewTaxInvoiceTx(null)}
           cart={viewTaxInvoiceTx.cart}
           paymentMethod={viewTaxInvoiceTx.paymentMethod}
-          subtotal={viewTaxInvoiceTx.subtotal}
           discountAmount={viewTaxInvoiceTx.discountAmount}
           freeItemLines={[]}
           couponDiscount={0}
@@ -1025,9 +1195,14 @@ export default function Accounting() {
           couponLines={[]}
           tax={viewTaxInvoiceTx.tax}
           total={viewTaxInvoiceTx.total}
+          breakdown={viewTaxInvoiceTx.breakdown}
           receiptType={viewTaxInvoiceTx.receiptType}
           customerInfo={viewTaxInvoiceTx.customerInfo}
           taxInvoiceNo={viewTaxInvoiceTx.taxInvoiceNo}
+          receiptNo={viewTaxInvoiceTx.receiptNo}
+          issuedAt={viewTaxInvoiceTx.issuedAt}
+          cashReceived={viewTaxInvoiceTx.cashReceived}
+          changeReturn={viewTaxInvoiceTx.changeReturn}
         />
       )}
 
