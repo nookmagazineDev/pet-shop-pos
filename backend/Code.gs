@@ -26,10 +26,10 @@ function setup() {
     "PointsHistory": ["HistoryID", "CustomerName", "Date", "Type", "Points", "Balance", "Reference", "OrderID", "Actor"],
     "Coupons": ["CouponID", "Name", "Type", "Value", "Price", "MinOrderAmount", "ExpiryDays", "Description", "Status", "CreatedAt", "FreeItemBarcode", "FreeItemName"],
     "CustomerCoupons": ["ID", "CustomerName", "CouponID", "CouponName", "Type", "Value", "MinOrderAmount", "Price", "Status", "IssuedAt", "ExpiryDate", "UsedAt", "OrderID", "IssuedBy", "FreeItemBarcode", "FreeItemName"],
-    "Transactions": ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"],
+    "Transactions": TX_HEADERS,
     "Shifts": ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"],
     "Promotions": ["PromoID", "Name", "ConditionType", "ConditionValue1", "ConditionValue2", "DiscountType", "DiscountValue", "Status", "ExpiryDate", "StartDate", "EndDate", "ActiveDays", "BonusPoints", "DiscountValue2"],
-    "TaxInvoices": ["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"],
+    "TaxInvoices": TAXINV_HEADERS,
     "Users": ["UserID", "Username", "Password", "DisplayName", "Role", "IsActive", "CreatedAt", "LastLogin"],
     "ActivityLog": ["Timestamp", "User", "Role", "Module", "Action", "ReferenceID", "Details"],
     "Suppliers": ["SupplierID", "Name", "ContactPerson", "Phone", "Email", "Address", "TaxID", "CreatedAt"]
@@ -354,95 +354,204 @@ function doPost(e) {
   }
 }
 
+// ─────────────────────────────────────────────────────
+// เอกสารภาษี: เลขรัน + โครงสร้างคอลัมน์
+// ─────────────────────────────────────────────────────
+// เลขที่ใบเสร็จ/ใบกำกับภาษีต้องเรียงลำดับและห้ามซ้ำตามที่สรรพากรกำหนด
+// จึงต้องออกเลขภายใต้ LockService และหาเลขถัดไปจาก "ค่าสูงสุด" ของทั้งชีท
+// ไม่ใช่หยุดที่แถวแรกที่เจอ (แถวอาจถูกเรียง/แทรกภายหลัง)
+
+const TX_HEADERS = [
+  "OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails",
+  "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo",
+  "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo",
+  "GrossSubtotal", "VatableAmount", "NonVatAmount"
+];
+
+const TAXINV_HEADERS = [
+  "TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID",
+  "CustomerBranch", "TotalAmount", "TaxAmount", "VatableAmount", "NonVatAmount",
+  "Status", "CancelNote", "IssuedBy"
+];
+
+const LOCK_FAILED = { __lockFailed: true };
+
+/**
+ * รันงานภายใต้ล็อกของสคริปต์ — กันเลขเอกสารซ้ำเมื่อมีหลายเครื่องขายพร้อมกัน
+ * ถ้าจับล็อกไม่ได้จะคืน LOCK_FAILED โดยไม่เขียนอะไรลงชีท
+ * (ยอมให้รายการล้มเหลวดีกว่าออกเลขที่ใบเสร็จซ้ำ ซึ่งผิดหลักเกณฑ์สรรพากร)
+ */
+function _withDocumentLock(fn) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    return LOCK_FAILED;
+  }
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _lockBusyResponse() {
+  return jsonResponse({ error: "ระบบกำลังออกเลขที่เอกสารให้รายการอื่นอยู่ กรุณากดบันทึกอีกครั้ง" });
+}
+
+/** เติมคอลัมน์ที่ยังไม่มีไว้ท้ายตาราง โดยไม่ย้ายคอลัมน์เดิม */
+function _ensureHeaders(sheet, headers) {
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const current = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
+  let nextCol = lastCol;
+  // ตัดคอลัมน์ว่างท้ายตารางออกก่อน
+  while (nextCol > 0 && current[nextCol - 1] === "") nextCol--;
+
+  headers.forEach(h => {
+    if (current.indexOf(h) === -1) {
+      nextCol++;
+      sheet.getRange(1, nextCol).setValue(h).setFontWeight("bold");
+      current[nextCol - 1] = h;
+    }
+  });
+  return sheet.getRange(1, 1, 1, Math.max(nextCol, 1)).getValues()[0].map(h => String(h || "").trim());
+}
+
+/** เพิ่มแถวโดยจับคู่ตามชื่อคอลัมน์จริงในชีท (ไม่พึ่งลำดับคอลัมน์ที่ hard-code ไว้) */
+function _appendByHeader(sheet, headers, obj) {
+  const actual = _ensureHeaders(sheet, headers);
+  const row = actual.map(h => (Object.prototype.hasOwnProperty.call(obj, h) ? obj[h] : ""));
+  sheet.appendRow(row);
+  return actual;
+}
+
+/** เลขรันถัดไปของ prefix ที่กำหนด = (ค่าสูงสุดที่เคยออก) + 1 */
+function _nextRunningNo(sheet, colIndex0, prefix, padLength) {
+  let maxSeq = 0;
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1 && colIndex0 >= 0) {
+    const values = sheet.getRange(2, colIndex0 + 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const no = String(values[i][0] || "").trim().toUpperCase();
+      if (no.indexOf(prefix) !== 0) continue;
+      const seq = parseInt(no.slice(prefix.length), 10);
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+    }
+  }
+  return prefix + String(maxSeq + 1).padStart(padLength, "0");
+}
+
+/** ตัวเลขที่ปัดเป็นทศนิยม 2 ตำแหน่ง */
+function _money(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : Math.round(n * 100) / 100;
+}
+
+/**
+ * โครงสร้างภาษีของบิล — ต้องเป็นชุดเดียวกับที่พิมพ์บนใบเสร็จ
+ * ถ้าหน้าจอส่งมาครบก็ใช้ตามนั้น ถ้าไม่ครบ (client รุ่นเก่า) จึงคำนวณย้อนจากยอดสุทธิ + VAT
+ * เงื่อนไขที่ต้องเป็นจริง: NonVatAmount + VatableAmount + Tax = TotalAmount
+ */
+function _resolveVatBreakdown(payload) {
+  const total = _money(payload.totalAmount);
+  const vat = _money(payload.tax);
+
+  // ฐานภาษี: ใช้ค่าที่หน้าจอส่งมา (ตรงกับที่พิมพ์บนใบเสร็จ)
+  // ถ้าไม่ได้ส่งมา จึงย้อนจาก VAT: ฐานภาษี = VAT x 100/7
+  const hasVatable = payload.vatableAmount !== undefined && payload.vatableAmount !== null;
+  let vatable = hasVatable ? _money(payload.vatableAmount) : (vat > 0 ? _money(vat * 100 / 7) : 0);
+
+  // มูลค่ายกเว้นภาษีเป็นตัวปิดยอด เพื่อบังคับให้ผลรวมเท่ากับยอดสุทธิเสมอ
+  // (เศษจากการปัดจะไปลงที่นี่ ไม่ทำให้ VAT ที่ยื่นสรรพากรคลาดเคลื่อน)
+  let nonVat = _money(total - vatable - vat);
+  if (nonVat < 0) {
+    nonVat = 0;
+    vatable = _money(total - vat);
+  }
+
+  const gross = payload.grossSubtotal === undefined || payload.grossSubtotal === null
+    ? _money(total + _money(payload.discount))
+    : _money(payload.grossSubtotal);
+
+  return { total: total, vat: vat, vatable: vatable, nonVat: nonVat, gross: gross };
+}
+
 function processCheckout(payload) {
+  const res = _withDocumentLock(function () { return _processCheckoutLocked(payload); });
+  return res === LOCK_FAILED ? _lockBusyResponse() : res;
+}
+
+function _processCheckoutLocked(payload) {
   const ss = getSpreadsheet();
-  const txSheet = ss.getSheetByName("Transactions");
+  let txSheet = ss.getSheetByName("Transactions");
+  if (!txSheet) {
+    txSheet = ss.insertSheet("Transactions");
+    txSheet.appendRow(TX_HEADERS);
+    txSheet.getRange(1, 1, 1, TX_HEADERS.length).setFontWeight("bold");
+  }
   const orderId = "TX" + new Date().getTime();
   const now = new Date();
-  
-  let generatedTaxInvoiceNo = null;
 
+  const bd = _resolveVatBreakdown(payload);
+
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+
+  // ── เลขที่ใบเสร็จ (เลขลำดับใบกำกับภาษีอย่างย่อ) ──
+  const txHeaders = _ensureHeaders(txSheet, TX_HEADERS);
+  const receiptNo = _nextRunningNo(txSheet, txHeaders.indexOf("ReceiptNo"), "TX" + yy + mm, 4);
+
+  // ── เลขที่ใบกำกับภาษีเต็มรูป (ออกเฉพาะเมื่อลูกค้าขอ) ──
+  let generatedTaxInvoiceNo = null;
   if (payload.receiptType === "ใบกำกับภาษี") {
     let taxSheet = ss.getSheetByName("TaxInvoices");
-    if (!taxSheet) {
-      taxSheet = ss.insertSheet("TaxInvoices");
-      taxSheet.appendRow(["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"]);
-    }
-    
-    const yearStr = String(now.getFullYear()).slice(-2);
-    const monthStr = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = "IN" + yearStr + monthStr;
-    
-    let sequence = 1;
-    const taxData = taxSheet.getDataRange().getValues();
-    if (taxData.length > 1) {
-      for (let i = taxData.length - 1; i >= 1; i--) {
-        const lastNo = String(taxData[i][0]).trim();
-        if (lastNo.startsWith(prefix)) {
-          const lastSeq = parseInt(lastNo.slice(prefix.length), 10);
-          if (!isNaN(lastSeq)) {
-            sequence = lastSeq + 1;
-          }
-          break;
-        }
-      }
-    }
-    
-    generatedTaxInvoiceNo = prefix + String(sequence).padStart(4, '0');
-    
+    if (!taxSheet) taxSheet = ss.insertSheet("TaxInvoices");
+    const taxHeaders = _ensureHeaders(taxSheet, TAXINV_HEADERS);
+    generatedTaxInvoiceNo = _nextRunningNo(taxSheet, taxHeaders.indexOf("TaxInvoiceNo"), "IN" + yy + mm, 4);
+
     const cInfo = payload.customerInfo || {};
-    taxSheet.appendRow([
-      generatedTaxInvoiceNo,
-      now,
-      orderId,
-      cInfo.name || cInfo.customerName || "-",
-      cInfo.address || cInfo.customerAddress || "-",
-      cInfo.taxId || cInfo.customerTaxId || "-",
-      payload.totalAmount,
-      payload.tax || 0
-    ]);
+    _appendByHeader(taxSheet, TAXINV_HEADERS, {
+      TaxInvoiceNo: generatedTaxInvoiceNo,
+      Date: now,
+      OrderID: orderId,
+      CustomerName: cInfo.name || cInfo.customerName || "-",
+      CustomerAddress: cInfo.taxAddress || cInfo.address || cInfo.customerAddress || "-",
+      CustomerTaxID: cInfo.taxId || cInfo.customerTaxId || "-",
+      CustomerBranch: cInfo.branch || cInfo.customerBranch || "สำนักงานใหญ่",
+      TotalAmount: bd.total,
+      TaxAmount: bd.vat,
+      VatableAmount: bd.vatable,
+      NonVatAmount: bd.nonVat,
+      Status: "ACTIVE",
+      CancelNote: "",
+      IssuedBy: payload._actor ? payload._actor.username : ""
+    });
   }
 
-  // Generate ReceiptNo: TX + YY + MM + 4-digit running number
-  const rxYY = String(now.getFullYear()).slice(-2);
-  const rxMM = String(now.getMonth() + 1).padStart(2, '0');
-  const rxPrefix = "TX" + rxYY + rxMM;
-  let rxSeq = 1;
-  const existingTxData = txSheet.getDataRange().getValues();
-  const existingTxHeaders = existingTxData[0];
-  const rnoIdx = existingTxHeaders.indexOf("ReceiptNo");
-  const colToSearch = rnoIdx >= 0 ? rnoIdx : 16;
-  if (existingTxData.length > 1) {
-    for (let i = existingTxData.length - 1; i >= 1; i--) {
-      const lastNo = String(existingTxData[i][colToSearch] || "").trim();
-      if (lastNo.startsWith(rxPrefix)) {
-        const lastSeq = parseInt(lastNo.slice(rxPrefix.length), 10);
-        if (!isNaN(lastSeq)) { rxSeq = lastSeq + 1; break; }
-      }
-    }
-  }
-  const receiptNo = rxPrefix + String(rxSeq).padStart(4, '0');
+  _appendByHeader(txSheet, TX_HEADERS, {
+    OrderID: orderId,
+    Date: now,
+    TotalAmount: bd.total,
+    Tax: bd.vat,
+    PaymentMethod: payload.paymentMethod,
+    CartDetails: JSON.stringify(payload.cart),
+    CashReceived: _money(payload.cashReceived),
+    ChangeReturn: _money(payload.changeReturn),
+    ShopPlatform: payload.shopPlatform || "Store",
+    ReceiptType: payload.receiptType || "ใบเสร็จ",
+    CustomerInfo: payload.customerInfo ? JSON.stringify(payload.customerInfo) : "",
+    DiscountAmount: _money(payload.discount),
+    Username: payload._actor ? payload._actor.username : "",
+    Status: "COMPLETED",
+    CancelNote: "",
+    TaxInvoiceNo: generatedTaxInvoiceNo || "",
+    ReceiptNo: receiptNo,
+    // โครงสร้างภาษีที่พิมพ์บนใบเสร็จ — บันทึกไว้เพื่อให้รายงานภาษีขายตรงกับเอกสารเสมอ
+    GrossSubtotal: bd.gross,
+    VatableAmount: bd.vatable,
+    NonVatAmount: bd.nonVat
+  });
 
-  txSheet.appendRow([
-    orderId,
-    now,
-    payload.totalAmount,
-    payload.tax || 0,
-    payload.paymentMethod,
-    JSON.stringify(payload.cart),
-    payload.cashReceived || 0,
-    payload.changeReturn || 0,
-    payload.shopPlatform || "Store",
-    payload.receiptType || "ใบเสร็จ",
-    payload.customerInfo ? JSON.stringify(payload.customerInfo) : "",
-    payload.discount || 0,
-    payload._actor ? payload._actor.username : "",
-    "COMPLETED",
-    "",
-    generatedTaxInvoiceNo || "",
-    receiptNo
-  ]);
-  
   // Deduct Inventory — always deduct from Products (คลังสินค้า) and also sync StoreStock
   const storeSheet = ss.getSheetByName("StoreStock");
   const prodSheet = ss.getSheetByName("Products");
@@ -513,7 +622,17 @@ function processCheckout(payload) {
   }
 
   logActivity("POS/Online", "Checkout", orderId, payload._actor);
-  return jsonResponse({ success: true, orderId: orderId, receiptNo: receiptNo, taxInvoiceNo: generatedTaxInvoiceNo });
+  return jsonResponse({
+    success: true,
+    orderId: orderId,
+    receiptNo: receiptNo,
+    taxInvoiceNo: generatedTaxInvoiceNo,
+    date: now.toISOString(),
+    vatableAmount: bd.vatable,
+    nonVatAmount: bd.nonVat,
+    tax: bd.vat,
+    totalAmount: bd.total
+  });
 }
 
 function updateTransactionPayment(payload) {
@@ -545,6 +664,13 @@ function cancelTransaction(payload) {
   if (!orderId) return jsonResponse({ error: "No Order ID provided" });
   if (!cancelNote) return jsonResponse({ error: "กรุณาระบุหมายเหตุการยกเลิก" });
 
+  // อ่านคอลัมน์ตามชื่อหัวตาราง ไม่ใช่ตำแหน่งตายตัว (ชีทเก่ามีจำนวนคอลัมน์ไม่เท่ากัน)
+  const headers = _ensureHeaders(txSheet, TX_HEADERS);
+  const statusCol = headers.indexOf("Status") + 1;
+  const noteCol = headers.indexOf("CancelNote") + 1;
+  const cartIdx = headers.indexOf("CartDetails");
+  if (statusCol === 0 || noteCol === 0) return jsonResponse({ error: "ชีท Transactions ไม่มีคอลัมน์ Status/CancelNote" });
+
   const data = txSheet.getDataRange().getValues();
   let foundRow = -1;
   let cartDetailsStr = "";
@@ -553,8 +679,8 @@ function cancelTransaction(payload) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === orderId) {
       foundRow = i + 1;
-      cartDetailsStr = String(data[i][5]);
-      currentStatus = String(data[i][13]);
+      cartDetailsStr = String(data[i][cartIdx] || "");
+      currentStatus = String(data[i][statusCol - 1] || "");
       break;
     }
   }
@@ -562,15 +688,26 @@ function cancelTransaction(payload) {
   if (foundRow === -1) return jsonResponse({ error: "ไม่พบข้อมูลออเดอร์นี้" });
   if (currentStatus === "CANCELLED") return jsonResponse({ error: "ออเดอร์นี้ถูกยกเลิกไปแล้ว" });
 
-  const headers = data[0];
-  let statusCol = headers.indexOf("Status") + 1;
-  let noteCol = headers.indexOf("CancelNote") + 1;
-  
-  if (statusCol === 0) statusCol = 14; 
-  if (noteCol === 0) noteCol = 15;
-
   txSheet.getRange(foundRow, statusCol).setValue("CANCELLED");
   txSheet.getRange(foundRow, noteCol).setValue(cancelNote);
+
+  // ยกเลิกใบกำกับภาษีที่ผูกกับบิลนี้ด้วย — เก็บเลขที่เดิมไว้เป็นหลักฐาน
+  // ห้ามลบแถวหรือนำเลขที่กลับมาใช้ซ้ำ เพราะเลขต้องเรียงต่อเนื่องตามที่สรรพากรกำหนด
+  const taxSheet = ss.getSheetByName("TaxInvoices");
+  if (taxSheet && taxSheet.getLastRow() > 1) {
+    const taxHeaders = _ensureHeaders(taxSheet, TAXINV_HEADERS);
+    const tOrderIdx = taxHeaders.indexOf("OrderID");
+    const tStatusCol = taxHeaders.indexOf("Status") + 1;
+    const tNoteCol = taxHeaders.indexOf("CancelNote") + 1;
+    const taxData = taxSheet.getDataRange().getValues();
+    for (let i = 1; i < taxData.length; i++) {
+      if (String(taxData[i][tOrderIdx]).trim() === orderId) {
+        if (tStatusCol > 0) taxSheet.getRange(i + 1, tStatusCol).setValue("CANCELLED");
+        if (tNoteCol > 0) taxSheet.getRange(i + 1, tNoteCol).setValue(cancelNote);
+        break;
+      }
+    }
+  }
 
   // Return Stock to StoreStock and Products (warehouse)
   let cart = [];
@@ -719,71 +856,96 @@ function processReturn(payload) {
 }
 
 function saveTaxInvoice(payload) {
+  const res = _withDocumentLock(function () { return _saveTaxInvoiceLocked(payload); });
+  return res === LOCK_FAILED ? _lockBusyResponse() : res;
+}
+
+function _saveTaxInvoiceLocked(payload) {
   const ss = getSpreadsheet();
   const txSheet = ss.getSheetByName("Transactions");
   const orderId = String(payload.orderId || "").trim();
 
   if (!orderId) return jsonResponse({ error: "Missing orderId" });
 
-  let taxSheet = ss.getSheetByName("TaxInvoices");
-  if (!taxSheet) {
-    taxSheet = ss.insertSheet("TaxInvoices");
-    taxSheet.appendRow(["TaxInvoiceNo", "Date", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount"]);
+  // ใบกำกับภาษีเต็มรูปต้องมีชื่อ ที่อยู่ และเลขประจำตัวผู้เสียภาษีของผู้ซื้อ (ม.86/4(4))
+  const cInfo = payload.customerInfo || {};
+  const cName = String(cInfo.name || cInfo.customerName || "").trim();
+  const cAddress = String(cInfo.taxAddress || cInfo.address || cInfo.customerAddress || "").trim();
+  const cTaxId = String(cInfo.taxId || cInfo.customerTaxId || "").replace(/\D/g, "");
+  if (!cName || !cAddress || cTaxId.length !== 13) {
+    return jsonResponse({ error: "ใบกำกับภาษีเต็มรูปต้องระบุชื่อ ที่อยู่ และเลขประจำตัวผู้เสียภาษี 13 หลักของผู้ซื้อ" });
   }
 
-  // Return existing invoice if already issued for this order
+  let taxSheet = ss.getSheetByName("TaxInvoices");
+  if (!taxSheet) taxSheet = ss.insertSheet("TaxInvoices");
+  const taxHeaders = _ensureHeaders(taxSheet, TAXINV_HEADERS);
+  const noIdx = taxHeaders.indexOf("TaxInvoiceNo");
+  const orderIdx = taxHeaders.indexOf("OrderID");
+
+  // ออกซ้ำไม่ได้ — หนึ่งบิลมีใบกำกับภาษีได้ใบเดียว
   const taxData = taxSheet.getDataRange().getValues();
   for (let i = 1; i < taxData.length; i++) {
-    if (String(taxData[i][2]).trim() === orderId) {
-      return jsonResponse({ success: true, taxInvoiceNo: String(taxData[i][0]), message: "ออกใบกำกับภาษีนี้ไปแล้ว" });
+    if (String(taxData[i][orderIdx]).trim() === orderId) {
+      return jsonResponse({ success: true, taxInvoiceNo: String(taxData[i][noIdx]), message: "ออกใบกำกับภาษีนี้ไปแล้ว" });
     }
+  }
+
+  // ห้ามออกใบกำกับภาษีให้บิลที่ถูกยกเลิก
+  let txRow = -1;
+  let txHeaders = [];
+  if (txSheet) {
+    txHeaders = _ensureHeaders(txSheet, TX_HEADERS);
+    const statusIdx = txHeaders.indexOf("Status");
+    const txData = txSheet.getDataRange().getValues();
+    for (let i = 1; i < txData.length; i++) {
+      if (String(txData[i][0]).trim() === orderId) {
+        txRow = i + 1;
+        if (statusIdx >= 0 && String(txData[i][statusIdx]).trim() === "CANCELLED") {
+          return jsonResponse({ error: "บิลนี้ถูกยกเลิกแล้ว ไม่สามารถออกใบกำกับภาษีได้" });
+        }
+        break;
+      }
+    }
+    if (txRow === -1) return jsonResponse({ error: "ไม่พบบิลนี้ในระบบ" });
   }
 
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const prefix = "IN" + yy + mm;
+  const taxInvoiceNo = _nextRunningNo(taxSheet, noIdx, "IN" + yy + mm, 4);
 
-  let sequence = 1;
-  if (taxData.length > 1) {
-    for (let i = taxData.length - 1; i >= 1; i--) {
-      const lastNo = String(taxData[i][0]).trim().toUpperCase();
-      if (lastNo.startsWith(prefix)) {
-        const lastSeq = parseInt(lastNo.slice(prefix.length), 10);
-        if (!isNaN(lastSeq)) { sequence = lastSeq + 1; break; }
-      }
-    }
-  }
+  const bd = _resolveVatBreakdown({
+    totalAmount: payload.totalAmount,
+    tax: payload.taxAmount,
+    vatableAmount: payload.vatableAmount,
+    nonVatAmount: payload.nonVatAmount
+  });
 
-  const taxInvoiceNo = prefix + String(sequence).padStart(4, '0');
-  const cInfo = payload.customerInfo || {};
+  _appendByHeader(taxSheet, TAXINV_HEADERS, {
+    TaxInvoiceNo: taxInvoiceNo,
+    Date: now,
+    OrderID: orderId,
+    CustomerName: cName,
+    CustomerAddress: cAddress,
+    CustomerTaxID: cTaxId,
+    CustomerBranch: String(cInfo.branch || cInfo.customerBranch || "สำนักงานใหญ่").trim(),
+    TotalAmount: bd.total,
+    TaxAmount: bd.vat,
+    VatableAmount: bd.vatable,
+    NonVatAmount: bd.nonVat,
+    Status: "ACTIVE",
+    CancelNote: "",
+    IssuedBy: payload._actor ? payload._actor.username : ""
+  });
 
-  taxSheet.appendRow([
-    taxInvoiceNo,
-    now,
-    orderId,
-    cInfo.name || "-",
-    cInfo.address || "-",
-    cInfo.taxId || "-",
-    parseFloat(payload.totalAmount) || 0,
-    parseFloat(payload.taxAmount) || 0
-  ]);
-
-  // Update TaxInvoiceNo column in Transactions sheet
-  if (txSheet) {
-    const txData = txSheet.getDataRange().getValues();
-    const txHeaders = txData[0];
-    const taxInvCol = txHeaders.indexOf("TaxInvoiceNo") + 1 || 16;
-    for (let i = 1; i < txData.length; i++) {
-      if (String(txData[i][0]).trim() === orderId) {
-        txSheet.getRange(i + 1, taxInvCol).setValue(taxInvoiceNo);
-        break;
-      }
-    }
+  // อ้างเลขที่ใบกำกับภาษีกลับไปที่บิลต้นทาง
+  if (txSheet && txRow > 0) {
+    const taxInvCol = txHeaders.indexOf("TaxInvoiceNo");
+    if (taxInvCol >= 0) txSheet.getRange(txRow, taxInvCol + 1).setValue(taxInvoiceNo);
   }
 
   logActivity("Accounting", "Issue Tax Invoice", taxInvoiceNo, payload._actor);
-  return jsonResponse({ success: true, taxInvoiceNo, message: "ออกใบกำกับภาษีเรียบร้อยแล้ว" });
+  return jsonResponse({ success: true, taxInvoiceNo: taxInvoiceNo, date: now.toISOString(), message: "ออกใบกำกับภาษีเรียบร้อยแล้ว" });
 }
 
 function moveToStore(payload) {
@@ -1891,8 +2053,70 @@ function purchasePackage(payload) {
     rewardIssued = { type: "ITEM", barcode: rewardRef, name: itemName, qty: rewardQty, couponIds: couponIds };
   }
 
+  // ── บันทึกการขายแพคเกจเป็นรายการขายจริง ──
+  // เดิมเงินค่าแพคเกจไม่ถูกบันทึกลง Transactions เลย จึงไม่ปรากฏในรายรับ
+  // และไม่มีเลขที่ใบเสร็จ ทั้งที่เป็นเงินที่รับจากลูกค้าจริง
+  const pkgPrice = _money(pkgRow[2]);
+  let pkgReceiptNo = "";
+  let pkgOrderId = "";
+  let pkgDate = new Date();
+  if (pkgPrice > 0) {
+    const txResult = _withDocumentLock(function () {
+      const txSheet = ss.getSheetByName("Transactions");
+      if (!txSheet) return null;
+      const now = new Date();
+      const yy = String(now.getFullYear()).slice(-2);
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const txHeaders = _ensureHeaders(txSheet, TX_HEADERS);
+      const receiptNo = _nextRunningNo(txSheet, txHeaders.indexOf("ReceiptNo"), "TX" + yy + mm, 4);
+      const orderId = "TX" + now.getTime();
+      _appendByHeader(txSheet, TX_HEADERS, {
+        OrderID: orderId,
+        Date: now,
+        TotalAmount: pkgPrice,
+        Tax: 0,
+        PaymentMethod: payload.paymentMethod || "เงินสด",
+        CartDetails: JSON.stringify([{
+          Barcode: "", Name: "แพคเกจ: " + pkgRow[1], qty: 1, price: pkgPrice, vatStatus: "NON VAT"
+        }]),
+        CashReceived: 0,
+        ChangeReturn: 0,
+        ShopPlatform: "Store",
+        ReceiptType: "ใบเสร็จ",
+        CustomerInfo: JSON.stringify({ name: customerName }),
+        DiscountAmount: 0,
+        Username: actor,
+        Status: "COMPLETED",
+        CancelNote: "",
+        TaxInvoiceNo: "",
+        ReceiptNo: receiptNo,
+        // แพคเกจ/บริการนี้ไม่คิด VAT จึงลงเป็นมูลค่ายกเว้นภาษีทั้งจำนวน
+        GrossSubtotal: pkgPrice,
+        VatableAmount: 0,
+        NonVatAmount: pkgPrice
+      });
+      return { receiptNo: receiptNo, orderId: orderId, date: now };
+    });
+    if (txResult && txResult !== LOCK_FAILED && txResult.receiptNo) {
+      pkgReceiptNo = txResult.receiptNo;
+      pkgOrderId = txResult.orderId;
+      pkgDate = txResult.date;
+    } else {
+      // เครดิตถูกเพิ่มให้ลูกค้าไปแล้ว แต่ออกเลขที่ใบเสร็จไม่ได้ — บันทึกไว้ให้ตามแก้
+      logActivity("Accounting", "Package sale NOT recorded (lock busy)", packageId, payload._actor);
+    }
+  }
+
   logActivity("Points", "Purchase Package", packageId, payload._actor);
-  return jsonResponse({ success: true, earnedPoints: earnedPoints, newBalance: newBalance, rewardIssued: rewardIssued });
+  return jsonResponse({
+    success: true,
+    earnedPoints: earnedPoints,
+    newBalance: newBalance,
+    rewardIssued: rewardIssued,
+    receiptNo: pkgReceiptNo,
+    orderId: pkgOrderId,
+    date: pkgDate.toISOString()
+  });
 }
 
 function saveCustomer(payload) {
@@ -2229,8 +2453,8 @@ function readSheetData(sheetName) {
       sheet.getRange(1, 1, 1, PU_HEADERS.length).setFontWeight("bold");
     }
   } else if (sheetName === "Transactions") {
-    const fullHeaders = ["OrderID", "Date", "TotalAmount", "Tax", "PaymentMethod", "CartDetails", "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType", "CustomerInfo", "DiscountAmount", "Username", "Status", "CancelNote", "TaxInvoiceNo", "ReceiptNo"];
-    const currentLastCol = Math.max(sheet.getLastColumn(), fullHeaders.length);
+    const fullHeaders = TX_HEADERS;
+    const currentLastCol = Math.max(sheet.getLastColumn(), 1);
     const headerRow = sheet.getRange(1, 1, 1, currentLastCol).getValues()[0];
     const firstCell = String(headerRow[0] || "");
     if (firstCell.indexOf("ORD-") === 0 || /^TX\d{10,}/.test(firstCell)) {
@@ -2238,15 +2462,13 @@ function readSheetData(sheetName) {
       sheet.insertRowBefore(1);
       sheet.getRange(1, 1, 1, fullHeaders.length).setValues([fullHeaders]);
       sheet.getRange(1, 1, 1, fullHeaders.length).setFontWeight("bold");
-    } else if (firstCell === "OrderID" && !headerRow.includes("Status")) {
-      // Header exists but missing Status/CancelNote/TaxInvoiceNo/ReceiptNo — add them
-      fullHeaders.forEach((h, i) => {
-        if (!headerRow.includes(h)) {
-          sheet.getRange(1, i + 1).setValue(h);
-        }
-      });
-      sheet.getRange(1, 1, 1, fullHeaders.length).setFontWeight("bold");
+    } else if (firstCell === "OrderID") {
+      // เติมคอลัมน์ที่ยังขาด (Status/CancelNote/เลขที่เอกสาร/โครงสร้างภาษี) ไว้ท้ายตาราง
+      // โดยไม่ทับคอลัมน์เดิม — ข้อมูลเก่าจึงไม่เลื่อน
+      _ensureHeaders(sheet, fullHeaders);
     }
+  } else if (sheetName === "TaxInvoices") {
+    _ensureHeaders(sheet, TAXINV_HEADERS);
   } else if (sheetName === "Shifts") {
     const requiredHeaders = ["ShiftID", "Status", "OpenTime", "CloseTime", "ExpectedCash", "ActualCash", "Discrepancy", "DetailsJSON"];
     const currentHeaderRow = sheet.getRange(1, 1, 1, requiredHeaders.length).getValues()[0];

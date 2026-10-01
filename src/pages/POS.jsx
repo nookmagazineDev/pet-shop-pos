@@ -7,6 +7,7 @@ import CustomerModal from "../components/CustomerModal";
 import PurchasePackageModal from "../components/PurchasePackageModal";
 import BuyCouponModal from "../components/BuyCouponModal";
 import { fetchApi, postApi } from "../api";
+import { breakdownFromCart, r2 } from "../utils/vat";
 import { useShift } from "../context/ShiftContext";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -458,30 +459,32 @@ export default function POS() {
     .filter(c => c.Type === "POINTS")
     .reduce((s, c) => s + (parseFloat(c.Value) || 0), 0);
 
-  const vatableSubtotal = cart.reduce((sum, item) => sum + (item.vatStatus === "NON VAT" ? 0 : (item.price * item.qty)), 0);
+  // ── โครงสร้างภาษีของบิล ──
+  // คำนวณจาก src/utils/vat.js ที่เดียว เพื่อให้ตัวเลขบนใบเสร็จ ในชีท Transactions
+  // และในรายงานภาษีขายที่ส่งสรรพากร เป็นชุดเดียวกันเสมอ
+  // ส่วนลดทั้งหมดตกกับตะกร้าสินค้า ส่วนแพคเกจเป็นบริการที่ไม่คิด VAT และไม่ถูกลด
+  const cartBreakdown = breakdownFromCart(cart, {
+    billDiscount: discountAmount,
+    couponDiscount,
+    freeItemLines,
+  });
+  const billBreakdown = packagePrice > 0
+    ? {
+        ...cartBreakdown,
+        grossSubtotal: r2(cartBreakdown.grossSubtotal + packagePrice),
+        grossNonVat: r2(cartBreakdown.grossNonVat + packagePrice),
+        netTotal: r2(cartBreakdown.netTotal + packagePrice),
+        nonVatAmount: r2(cartBreakdown.nonVatAmount + packagePrice),
+      }
+    : cartBreakdown;
 
-  // ── Precise VAT calculation ──
-  // 1. FREE_ITEM promo discounts: attributed to the specific item's VAT bucket
-  const freeItemVatableDiscount = freeItemLines.reduce((sum, fi) => sum + (fi.vatStatus !== "NON VAT" ? fi.price * fi.qty : 0), 0);
-  const freeItemNonVatableDiscount = freeItemLines.reduce((sum, fi) => sum + (fi.vatStatus === "NON VAT" ? fi.price * fi.qty : 0), 0);
-
-  // 2. Remaining discounts (manual/percent promo + coupon) distributed proportionally
-  const remainingDiscount = (discountAmount - freeItemVatableDiscount - freeItemNonVatableDiscount) + couponDiscount;
-  const vatableRatio = subtotal > 0 ? vatableSubtotal / subtotal : 0;
-  const remainingVatableDiscount = remainingDiscount * vatableRatio;
-
-  // 3. Vatable amount after all discounts (VAT-inclusive)
-  const vatableSubtotalAfterDiscount = Math.max(0, vatableSubtotal - freeItemVatableDiscount - remainingVatableDiscount);
-
-  const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount - couponDiscount);
-  // ราคาที่ตั้งไว้รวม VAT อยู่แล้ว → ถอด VAT ออก: preVat = price × 100/107, tax = price - preVat
-  const vatablePreVat = vatableSubtotalAfterDiscount > 0 ? vatableSubtotalAfterDiscount * (100 / 107) : 0;
-  const tax = vatableSubtotalAfterDiscount - vatablePreVat;
-  const total = subtotalAfterDiscount + packagePrice; // รวมราคาแพคเกจ (ถ้ามี)
+  const tax = billBreakdown.vatAmount;
+  const total = billBreakdown.netTotal;
+  const subtotalAfterDiscount = cartBreakdown.netTotal; // ยอดเฉพาะตะกร้า (ไม่รวมแพคเกจ)
   // สำหรับเงินสด: ปัดขึ้นเป็นจำนวนเต็ม (Math.ceil)
   const totalForCash = Math.ceil(total);
   // ราคาสินค้าก่อน VAT (สำหรับแสดงผล)
-  const preVatDisplay = subtotalAfterDiscount - tax;
+  const preVatDisplay = r2(billBreakdown.nonVatAmount + billBreakdown.vatableExVat);
 
   // ── ใบกำกับภาษีเต็มรูป: บังคับกรอกข้อมูลลูกค้าให้ครบ ──
   const isTaxInvoice = receiptType === "ใบกำกับภาษี";
@@ -630,7 +633,6 @@ export default function POS() {
     setReceiptData({
       cart: previewCart,
       paymentMethod: paymentMethodStr,
-      subtotal: subtotal + packagePrice,
       discountAmount,
       freeItemLines: freeItemLines.map(f => ({ ...f })),
       couponDiscount,
@@ -638,9 +640,13 @@ export default function POS() {
       couponName: couponLines.map(l => l.name).filter(Boolean).join(", "),
       tax,
       total,
+      breakdown: billBreakdown,
       receiptType,
       customerInfo: { customerName, customerAddress, customerTaxId },
+      // ยังไม่ผ่านการชำระเงิน → ยังไม่มีเลขที่เอกสารตามกฎหมาย
       taxInvoiceNo: "",
+      receiptNo: "",
+      issuedAt: new Date().toISOString(),
     });
     setIsInvoiceModalOpen(true);
   };
@@ -659,6 +665,7 @@ export default function POS() {
         payload: {
           customerName: pendingPackage.customer.Name,
           packageId: pendingPackage.pkg.PackageID,
+          paymentMethod: paymentMethodStr,
         }
       });
       if (!pkgRes.success) {
@@ -713,8 +720,14 @@ export default function POS() {
         action: "checkout",
         payload: {
           totalAmount: cartTotal,
-          tax,
-          discount: discountAmount + couponDiscount,
+          tax: cartBreakdown.vatAmount,
+          // โครงสร้างภาษีที่บันทึกลงบัญชี — ต้องตรงกับที่พิมพ์บนใบเสร็จทุกบาท
+          grossSubtotal: cartBreakdown.grossSubtotal,
+          vatableAmount: cartBreakdown.vatableExVat,
+          nonVatAmount: cartBreakdown.nonVatAmount,
+          cashReceived: hasCashSplit ? cashPaid : 0,
+          changeReturn: cashChange,
+          discount: r2(discountAmount + couponDiscount),
           paymentMethod: paymentMethodStr,
           cart: [
             ...cart.map(c => ({ Barcode: c.Barcode, Name: c.Name || c.name, qty: c.qty, price: c.price, vatStatus: c.vatStatus || "VAT" })),
@@ -763,17 +776,21 @@ export default function POS() {
         setReceiptData({
           cart: receiptCart,
           paymentMethod: paymentMethodStr,
-          subtotal: subtotal + packagePrice,
           discountAmount,
           freeItemLines: freeItemLines.map(f => ({ ...f })),
           couponDiscount,
           couponLines: couponLines.map(l => ({ ...l })),
           couponName: couponLines.map(l => l.name).filter(Boolean).join(", "),
           tax,
-          total: cartTotal + packagePrice,
+          total,
+          breakdown: billBreakdown,
           receiptType,
           customerInfo: { customerName, customerAddress, customerTaxId },
           taxInvoiceNo: res.taxInvoiceNo || "",
+          receiptNo: res.receiptNo || "",
+          issuedAt: res.date || new Date().toISOString(),
+          cashReceived: hasCashSplit ? cashPaid : 0,
+          changeReturn: cashChange,
         });
         resetAll();
         setIsInvoiceModalOpen(true);
@@ -786,7 +803,6 @@ export default function POS() {
       setReceiptData({
         cart: [pkgItem],
         paymentMethod: paymentMethodStr,
-        subtotal: packagePrice,
         discountAmount: 0,
         freeItemLines: [],
         couponDiscount: 0,
@@ -796,6 +812,8 @@ export default function POS() {
         receiptType,
         customerInfo: { customerName, customerAddress, customerTaxId },
         taxInvoiceNo: pkgResult?.taxInvoiceNo || "",
+        receiptNo: pkgResult?.receiptNo || "",
+        issuedAt: pkgResult?.date || new Date().toISOString(),
       });
       resetAll();
       setIsInvoiceModalOpen(true);
@@ -1610,7 +1628,6 @@ export default function POS() {
         onClose={handleInvoiceClose}
         cart={receiptData?.cart || []}
         paymentMethod={receiptData?.paymentMethod || ""}
-        subtotal={receiptData?.subtotal || 0}
         discountAmount={receiptData?.discountAmount || 0}
         freeItemLines={receiptData?.freeItemLines || []}
         couponDiscount={receiptData?.couponDiscount || 0}
@@ -1621,6 +1638,11 @@ export default function POS() {
         receiptType={receiptData?.receiptType || "ใบเสร็จ"}
         customerInfo={receiptData?.customerInfo || {}}
         taxInvoiceNo={receiptData?.taxInvoiceNo || ""}
+        receiptNo={receiptData?.receiptNo || ""}
+        issuedAt={receiptData?.issuedAt || null}
+        breakdown={receiptData?.breakdown || null}
+        cashReceived={receiptData?.cashReceived || 0}
+        changeReturn={receiptData?.changeReturn || 0}
       />
 
       <CustomerModal

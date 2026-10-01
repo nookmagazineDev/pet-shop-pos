@@ -9,6 +9,7 @@ import * as XLSX from "xlsx";
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
+import { breakdownFromCart } from "../utils/vat";
 import { exportToExcel } from "../utils/excelExport";
 
 const PLATFORMS = ["Shopee", "Lazada", "Lineman", "GrabFood", "อื่นๆ"];
@@ -483,6 +484,7 @@ export default function OnlineSales() {
         id: key, Barcode: product.Barcode, Name: product.Name, name: product.Name,
         price: getPlatformPrice(product, orderPlatform),
         costPrice: Number(product.CostPrice) || 0,
+        vatStatus: product.VatStatus || "VAT",
         productObj: product, qty: qtyToAdd
       }, ...prev];
     });
@@ -523,9 +525,13 @@ export default function OnlineSales() {
     setCart(prev => prev.map(item => item.id === id ? { ...item, qty: Math.max(1, item.qty + delta) } : item));
   const removeItem = (id) => setCart(prev => prev.filter(item => item.id !== id));
 
-  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const tax      = subtotal * 0.07;
-  const total    = subtotal + tax;
+  // ราคาที่ตั้งไว้ทุกแพลตฟอร์มเป็น "ราคารวมภาษีมูลค่าเพิ่มแล้ว" เหมือนหน้าร้าน
+  // จึงต้องถอด VAT ออกจากราคา (x7/107) ไม่ใช่บวกเพิ่มจากราคา (x7%)
+  // และสินค้าที่ยกเว้น VAT ต้องไม่ถูกคิดภาษี
+  const onlineBreakdown = breakdownFromCart(cart);
+  const subtotal = onlineBreakdown.grossSubtotal;
+  const tax      = onlineBreakdown.vatAmount;
+  const total    = onlineBreakdown.netTotal;
 
   const handleSaveOrder = async () => {
     if (cart.length === 0) return;
@@ -533,10 +539,14 @@ export default function OnlineSales() {
     const res = await postApi({
       action: "checkout",
       payload: {
-        totalAmount: total, tax,
+        totalAmount: total,
+        tax,
+        grossSubtotal: onlineBreakdown.grossSubtotal,
+        vatableAmount: onlineBreakdown.vatableExVat,
+        nonVatAmount: onlineBreakdown.nonVatAmount,
         paymentMethod: `${orderPlatform} รอชำระ`,
         receiptType: "online",
-        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name, qty: c.qty, price: c.price, costPrice: c.costPrice }))
+        cart: cart.map(c => ({ Barcode: c.Barcode, Name: c.Name, qty: c.qty, price: c.price, costPrice: c.costPrice, vatStatus: c.vatStatus || "VAT" }))
       }
     });
     setIsSaving(false);
@@ -599,6 +609,7 @@ export default function OnlineSales() {
             id: barcode || nameInput, Barcode: barcode || product?.Barcode || "",
             Name: itemName, name: itemName, qty, price,
             costPrice: Number(product?.CostPrice) || 0, productObj: product || null,
+            vatStatus: product?.VatStatus || "VAT",
             found: !!product, customPrice: !!customPrice,
           });
         });
@@ -618,15 +629,18 @@ export default function OnlineSales() {
     setIsImporting(true);
     let success = 0, failed = 0;
     for (const order of importPreview.orders) {
-      const sub = order.items.reduce((s, i) => s + i.price * i.qty, 0);
-      const t   = sub * 0.07;
+      const bd = breakdownFromCart(order.items);
       const res = await postApi({
         action: "checkout",
         payload: {
-          totalAmount: sub + t, tax: t,
+          totalAmount: bd.netTotal,
+          tax: bd.vatAmount,
+          grossSubtotal: bd.grossSubtotal,
+          vatableAmount: bd.vatableExVat,
+          nonVatAmount: bd.nonVatAmount,
           paymentMethod: `${order.platform} รอชำระ`,
           receiptType: "online",
-          cart: order.items.map(i => ({ Barcode: i.Barcode, Name: i.name, qty: i.qty, price: i.price, costPrice: i.costPrice })),
+          cart: order.items.map(i => ({ Barcode: i.Barcode, Name: i.name, qty: i.qty, price: i.price, costPrice: i.costPrice, vatStatus: i.vatStatus || "VAT" })),
         }
       });
       if (res.success) success++; else failed++;
@@ -786,8 +800,10 @@ export default function OnlineSales() {
 
           {/* Summary + Save */}
           <div className="p-4 border-t border-gray-100 bg-gray-50/50 space-y-3">
-            <div className="flex justify-between text-sm text-gray-500"><span>ราคาสินค้า</span><span>฿{subtotal.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-            <div className="flex justify-between text-sm text-gray-500"><span>ภาษี 7%</span><span>฿{tax.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>ราคาสินค้า (รวม VAT)</span><span>฿{subtotal.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>มูลค่าสินค้ายกเว้นภาษี</span><span>฿{onlineBreakdown.nonVatAmount.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>มูลค่าสินค้าที่ต้องเสียภาษี</span><span>฿{onlineBreakdown.vatableExVat.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>ภาษีมูลค่าเพิ่ม 7% (รวมในราคาแล้ว)</span><span>฿{tax.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
             <div className="flex justify-between items-center pt-2 border-t border-gray-200">
               <span className="font-semibold text-gray-800">ยอดรวม</span>
               <span className="text-2xl font-bold text-violet-600">฿{total.toLocaleString(undefined,{minimumFractionDigits:2})}</span>

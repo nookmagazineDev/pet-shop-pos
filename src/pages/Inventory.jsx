@@ -4,6 +4,7 @@ import { Search, Plus, MapPin, PackagePlus, Calendar, Loader2, Camera, X, Pencil
 import clsx from "clsx";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { fetchApi, postApi } from "../api";
+import { toLocalDateStr } from "../utils/vat";
 import { exportToExcel } from "../utils/excelExport";
 import * as XLSX from "xlsx";
 import { useAuth } from "../context/AuthContext";
@@ -274,7 +275,7 @@ export default function Inventory() {
       location: receiveLocationStr,
       lotNumber: orderNumberStr,
       expiryDate: receiveExpiryStr,
-      receivingDate: new Date().toISOString().split('T')[0]
+      receivingDate: toLocalDateStr()
     };
     setReceiveCart([...receiveCart, newItem]);
 
@@ -463,7 +464,7 @@ export default function Inventory() {
           location: String(row[4] || (product?.Location || "")),
           expiryDate: String(row[5] || ""),
           lotNumber: orderNumberStr,
-          receivingDate: new Date().toISOString().split("T")[0],
+          receivingDate: toLocalDateStr(),
           found: !!product,
           requiresExpiry: product ? product.HasExpiry !== "NO" : true,
         });

@@ -2,25 +2,28 @@ import { useState } from "react";
 import { usePrinter } from "../context/PrinterContext";
 import { Printer, Save, TestTube, CheckCircle, Info, Wifi, Monitor, ServerCrash } from "lucide-react";
 import toast from "react-hot-toast";
+import { breakdownFromCart, branchLabel, formatTaxId, fmtMoney, formatTaxDate } from "../utils/vat";
 
 async function printReceipt(settings, isTest = false) {
   const paperMm = parseInt(settings.paperWidth) || 80;
   const items = isTest
     ? [
-        { name: "สินค้าทดสอบ A", qty: 2, price: 150 },
-        { name: "สินค้าทดสอบ B", qty: 1, price: 89.50 },
+        { name: "สินค้าทดสอบ A", qty: 2, price: 150, vatStatus: "VAT" },
+        { name: "สินค้าทดสอบ B", qty: 1, price: 89.50, vatStatus: "NON VAT" },
       ]
     : [];
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-  const tax = subtotal * 0.07;
-  const total = subtotal + tax;
+  // ราคาที่ตั้งไว้รวม VAT แล้ว จึงถอดภาษีออกจากราคา ไม่ใช่บวกเพิ่ม
+  const bd = breakdownFromCart(items);
+  const subtotal = bd.grossSubtotal;
+  const tax = bd.vatAmount;
+  const total = bd.netTotal;
 
   const rows = items.map(i => `
     <tr>
-      <td>${i.name}</td>
+      <td>${i.name}${i.vatStatus === "NON VAT" ? " (N)" : ""}</td>
       <td style="text-align:center">${i.qty}</td>
-      <td style="text-align:right">${i.price.toFixed(2)}</td>
-      <td style="text-align:right">${(i.price * i.qty).toFixed(2)}</td>
+      <td style="text-align:right">${fmtMoney(i.price)}</td>
+      <td style="text-align:right">${fmtMoney(i.price * i.qty)}</td>
     </tr>`).join("");
 
   if (settings.enableDirectPrint) {
@@ -36,7 +39,9 @@ async function printReceipt(settings, isTest = false) {
           tax,
           total,
           isTest,
-          receiptType: "ใบกำกับภาษีอย่างย่อ",
+          breakdown: bd,
+          branchLabel: branchLabel(settings.shopBranch),
+          receiptType: "ใบเสร็จ",
           logoBase64: await (async () => {
             try {
               const r = await fetch("/logo.png");
@@ -91,11 +96,12 @@ async function printReceipt(settings, isTest = false) {
   </head><body>
     <div class="center bold" style="font-size:1.2em">${settings.shopName}</div>
     <div class="center">${settings.shopAddress}</div>
-    <div class="center">โทร: ${settings.shopPhone}</div>
-    <div class="center">เลขภาษี: ${settings.shopTaxId} ${settings.shopBranch}</div>
+    <div class="center">โทร. ${settings.shopPhone}</div>
+    <div class="center">เลขประจำตัวผู้เสียภาษี ${formatTaxId(settings.shopTaxId)}</div>
+    <div class="center">${branchLabel(settings.shopBranch)}</div>
     <div class="hr"></div>
-    <div class="center bold">${isTest ? "** ใบทดสอบการพิมพ์ **" : "ใบกำกับภาษีอย่างย่อ"}</div>
-    <div>วันที่: ${new Date().toLocaleString("th-TH")}</div>
+    <div class="center bold">** ใบทดสอบการพิมพ์ (ไม่ใช่เอกสารทางภาษี) **</div>
+    <div>วันที่: ${formatTaxDate(new Date())}</div>
     <div class="hr"></div>
     <table>
       <thead>
@@ -110,11 +116,13 @@ async function printReceipt(settings, isTest = false) {
     </table>
     <div class="hr"></div>
     <table>
-      <tr><td>ยอดรวม</td><td style="text-align:right">${subtotal.toFixed(2)}</td></tr>
-      <tr><td>VAT 7%</td><td style="text-align:right">${tax.toFixed(2)}</td></tr>
+      <tr><td>รวมมูลค่าสินค้า</td><td style="text-align:right">${fmtMoney(subtotal)}</td></tr>
+      <tr><td>มูลค่าสินค้ายกเว้นภาษี</td><td style="text-align:right">${fmtMoney(bd.nonVatAmount)}</td></tr>
+      <tr><td>มูลค่าสินค้าที่ต้องเสียภาษี</td><td style="text-align:right">${fmtMoney(bd.vatableExVat)}</td></tr>
+      <tr><td>ภาษีมูลค่าเพิ่ม 7%</td><td style="text-align:right">${fmtMoney(tax)}</td></tr>
     </table>
     <div class="total-line" style="display:flex;justify-content:space-between">
-      <span>รวมทั้งสิ้น</span><span>฿${total.toFixed(2)}</span>
+      <span>จำนวนเงินรวมทั้งสิ้น</span><span>฿${fmtMoney(total)}</span>
     </div>
     <div class="hr"></div>
     <div class="footer">${settings.footerNote}</div>
@@ -264,8 +272,9 @@ export default function PrinterSettings() {
             { key: "shopName", label: "ชื่อร้าน / บริษัท *" },
             { key: "shopAddress", label: "ที่อยู่" },
             { key: "shopPhone", label: "เบอร์โทรศัพท์" },
-            { key: "shopTaxId", label: "เลขประจำตัวผู้เสียภาษี" },
-            { key: "shopBranch", label: "สาขา" },
+            { key: "shopTaxId", label: "เลขประจำตัวผู้เสียภาษี (13 หลัก)" },
+            { key: "shopBranch", label: "สาขา (เว้นว่าง = สำนักงานใหญ่ เช่น 00001)" },
+            { key: "posId", label: "รหัสเครื่องขาย (POS) ที่พิมพ์บนใบเสร็จ" },
             { key: "footerNote", label: "ข้อความท้ายใบเสร็จ" },
           ].map(({ key, label }) => (
             <div key={key}>

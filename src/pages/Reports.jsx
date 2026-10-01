@@ -2,7 +2,11 @@ import { useState, useEffect } from "react";
 import { FileText, ArrowRightLeft, Calendar, FileBox, Calculator, Loader2, X, Download, Search, ChevronDown, ChevronUp, Receipt, RotateCcw, Eye, FileImage, ExternalLink, ClipboardList } from "lucide-react";
 import clsx from "clsx";
 import { fetchApi, postApi } from "../api";
-import { exportToExcel, exportReportToExcel, getCartVatSplit, formatThaiPeriod } from "../utils/excelExport";
+import { exportReportToExcel, formatThaiPeriod } from "../utils/excelExport";
+import {
+  breakdownFromTransaction, lineVatStatus, formatTaxId, branchLabel,
+  toLocalDateStr, startOfLocalDay, endOfLocalDay,
+} from "../utils/vat";
 import ShiftSlipModal from "../components/ShiftSlipModal";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import { usePrinter } from "../context/PrinterContext";
@@ -47,8 +51,8 @@ export default function Reports() {
   const [viewDocMove, setViewDocMove] = useState(null);
 
   // Filter States
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(toLocalDateStr());
+  const [endDate, setEndDate] = useState(toLocalDateStr());
   const [searchQuery, setSearchQuery] = useState("");
 
   const fetchData = async () => {
@@ -85,11 +89,8 @@ export default function Reports() {
   const isBetweenDates = (dateStr) => {
     if (!dateStr) return false;
     const itemDate = new Date(dateStr);
-    const start = new Date(startDate);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-    return itemDate >= start && itemDate <= end;
+    if (isNaN(itemDate.getTime())) return false;
+    return itemDate >= startOfLocalDay(startDate) && itemDate <= endOfLocalDay(endDate);
   };
 
   // Find receiveGoods PO linked to a stock movement (flexible substring match)
@@ -305,7 +306,12 @@ export default function Reports() {
         cart.forEach(item => {
           const barcode = item.Barcode || "Unknown";
           if (!salesByProduct[barcode]) {
-            salesByProduct[barcode] = { name: item.name || item.Name || "Unknown", qty: 0, revenue: 0, cost: 0, profit: 0 };
+            salesByProduct[barcode] = {
+              name: item.name || item.Name || "Unknown",
+              // สถานะ VAT ตอนที่ขายจริง — ไม่ใช่สถานะปัจจุบันในทะเบียนสินค้า
+              vatStatus: lineVatStatus(item, products),
+              qty: 0, revenue: 0, cost: 0, profit: 0,
+            };
           }
           const qty = parseFloat(item.qty || 0);
           const price = parseFloat(item.price || item.Price || 0);
@@ -350,13 +356,13 @@ export default function Reports() {
   const taxInvoicesOnly = filteredTransactions.filter(t => t.ReceiptType === "ใบกำกับภาษี");
 
   const totalRefundAmount = filteredReturns.reduce((acc, ret) => acc + (parseFloat(ret.RefundAmount) || 0), 0);
-  const grossSalesRevenue = filteredTransactions.reduce((acc, tx) => acc + (parseFloat(tx.TotalAmount) || 0), 0);
-  const totalSalesRevenue = grossSalesRevenue - totalRefundAmount;
-  // Compute gross tax from cart details (more accurate than stored Tax field which may be 0/null)
-  const grossTaxCollected = filteredTransactions.reduce((acc, tx) => {
-    const { vatableTotal } = getCartVatSplit(tx.CartDetails, products);
-    return acc + r2(vatableTotal / 107 * 7);
-  }, 0);
+  // บิลที่ถูกยกเลิก (VOID) ไม่ใช่รายได้และไม่มีภาษีขาย — ต้องไม่นับรวมในยอดสรุป
+  const activeTransactions = filteredTransactions.filter(tx => tx.Status !== "CANCELLED");
+  const grossSalesRevenue = activeTransactions.reduce((acc, tx) => acc + (parseFloat(tx.TotalAmount) || 0), 0);
+  const totalSalesRevenue = r2(grossSalesRevenue - totalRefundAmount);
+  // ภาษีขายคิดจากโครงสร้างภาษีของบิล (หักส่วนลดแล้ว) ให้ตรงกับใบกำกับภาษีที่ออกไป
+  const grossTaxCollected = r2(activeTransactions.reduce(
+    (acc, tx) => acc + breakdownFromTransaction(tx, products).vatAmount, 0));
   const taxRefundRatio = grossSalesRevenue > 0 ? totalSalesRevenue / grossSalesRevenue : 1;
   const totalTaxCollected = r2(grossTaxCollected * taxRefundRatio);
 
@@ -443,8 +449,8 @@ export default function Reports() {
   const handleExportExcel = () => {
     const company = {
       name: ps?.shopName || "",
-      branch: ps?.shopBranch || "",
-      taxId: ps?.shopTaxId || "",
+      branch: branchLabel(ps?.shopBranch),
+      taxId: formatTaxId(ps?.shopTaxId),
       address: ps?.shopAddress || "",
     };
     const period = formatThaiPeriod(startDate, endDate);
@@ -463,8 +469,7 @@ export default function Reports() {
         { key: "total",     label: "Total" },
       ];
       const rows = salesByProductArray.map((item, i) => {
-        const prod = products.find(p => String(p.Barcode) === String(item.barcode)) || {};
-        const vatStatus = prod.VatStatus || "VAT";
+        const vatStatus = item.vatStatus || "VAT";
         let nonVAT = 0, beforeVAT = 0, vat = 0;
         if (vatStatus === "NON VAT") {
           nonVAT = r2(item.revenue);
@@ -494,9 +499,10 @@ export default function Reports() {
         { key: "total",        label: "Total" },
       ];
       const rows = filteredTransactions.map((tx, i) => {
-        const { nonVAT, vatableTotal } = getCartVatSplit(tx.CartDetails, products);
-        const beforeVAT = r2(vatableTotal / 1.07);
-        const vat = r2(parseFloat(tx.Tax || 0));
+        const bd = breakdownFromTransaction(tx, products);
+        const nonVAT = bd.nonVatAmount;
+        const beforeVAT = bd.vatableExVat;
+        const vat = bd.vatAmount;
         let customer = "-";
         try { const ci = JSON.parse(tx.CustomerInfo || "{}"); customer = ci.name || ci.customerName || "-"; } catch (e) {}
         const taxInv = taxInvoices.find(t => t.OrderID === tx.OrderID);
@@ -508,11 +514,11 @@ export default function Reports() {
           customer,
           payment: tx.PaymentMethod || "-",
           status: tx.Status || "COMPLETED",
-          nonVAT: r2(nonVAT),
+          nonVAT,
           beforeVAT,
           vat,
           rounding: 0,
-          total: r2(parseFloat(tx.TotalAmount || 0)),
+          total: bd.netTotal,
         };
       });
       const sum = (key) => r2(rows.reduce((s, r) => s + (r[key] || 0), 0));
@@ -520,29 +526,31 @@ export default function Reports() {
       exportReportToExcel({ title: "รายงานประวัติการขาย", company, period, headers, rows, totals, sheetName: "SalesHistory", fileName: "Sales_History" });
 
     } else if (activeTab === "tax") {
+      // คอลัมน์ตามแบบ "รายงานภาษีขาย" ที่ใช้ยื่นประกอบ ภ.พ.30
       const headers = [
-        { key: "no",           label: "No." },
-        { key: "date",         label: "Date" },
-        { key: "taxInvoiceNo", label: "เลขที่ใบกำกับ" },
-        { key: "buyer",        label: "Buyer name" },
-        { key: "taxId",        label: "Tax id" },
-        { key: "branch",       label: "Branch" },
-        { key: "nonVAT",       label: "Non VAT" },
-        { key: "beforeVAT",    label: "Before VAT" },
-        { key: "vat",          label: "VAT" },
-        { key: "rounding",     label: "Rounding" },
-        { key: "total",        label: "Total" },
-        { key: "voidFlag",     label: "VOID" },
+        { key: "no",           label: "ลำดับที่" },
+        { key: "date",         label: "วัน เดือน ปี" },
+        { key: "taxInvoiceNo", label: "เลขที่ใบกำกับภาษี" },
+        { key: "buyer",        label: "ชื่อผู้ซื้อสินค้า/ผู้รับบริการ" },
+        { key: "taxId",        label: "เลขประจำตัวผู้เสียภาษีของผู้ซื้อ" },
+        { key: "branch",       label: "สถานประกอบการ" },
+        { key: "nonVAT",       label: "มูลค่าที่ได้รับยกเว้นภาษี" },
+        { key: "beforeVAT",    label: "มูลค่าสินค้าหรือบริการ" },
+        { key: "vat",          label: "จำนวนเงินภาษีมูลค่าเพิ่ม" },
+        { key: "rounding",     label: "ปัดเศษ" },
+        { key: "total",        label: "รวมเป็นเงิน" },
+        { key: "voidFlag",     label: "ยกเลิก (VOID)" },
       ];
 
       // Helper: build one row from a transaction
       // isVoid=true → negate all amounts and put "VOID" in voidFlag column
       const buildTaxRow = (tx, rowNo, isVoid = false) => {
-        const { nonVAT, vatableTotal } = getCartVatSplit(tx.CartDetails, products);
+        // โครงสร้างภาษีเดียวกับที่พิมพ์บนใบกำกับภาษี/ใบเสร็จ (หักส่วนลดแล้ว)
+        const bd = breakdownFromTransaction(tx, products);
         const sign = isVoid ? -1 : 1;
-        const beforeVAT = r2((vatableTotal / 1.07) * sign);
-        // Compute VAT from cart details (more accurate than stored tx.Tax which may be 0/null)
-        const vat       = r2((vatableTotal / 107 * 7) * sign);
+        const nonVAT    = r2(bd.nonVatAmount * sign);
+        const beforeVAT = r2(bd.vatableExVat * sign);
+        const vat       = r2(bd.vatAmount * sign);
         let buyer = "ลูกค้าทั่วไป", buyerTaxId = "-";
         try {
           const ci = JSON.parse(tx.CustomerInfo || "{}");
@@ -558,11 +566,11 @@ export default function Reports() {
           buyer,
           taxId:        buyerTaxId,
           branch:       company.branch,
-          nonVAT:       r2(nonVAT * sign),
+          nonVAT,
           beforeVAT,
           vat,
           rounding:     0,
-          total:        r2(parseFloat(tx.TotalAmount || 0) * sign),
+          total:        r2(bd.netTotal * sign),
           voidFlag:     isVoid ? "VOID" : "",
         };
       };
@@ -583,8 +591,13 @@ export default function Reports() {
         return [buildTaxRow(tx, ++rowNo, false)];
       });
       const sum = (key) => r2(rows.reduce((s, r) => s + (r[key] || 0), 0));
-      const totals = { no: "Grand total", nonVAT: sum("nonVAT"), beforeVAT: sum("beforeVAT"), vat: sum("vat"), rounding: 0, total: sum("total"), voidFlag: "" };
-      exportReportToExcel({ title: "Output tax report", company, period, headers, rows, totals, sheetName: "TaxReport", fileName: "Tax_Report", textCols: ['taxId'] });
+      const totals = { no: "รวมทั้งสิ้น", nonVAT: sum("nonVAT"), beforeVAT: sum("beforeVAT"), vat: sum("vat"), rounding: 0, total: sum("total"), voidFlag: "" };
+      exportReportToExcel({
+        title: "รายงานภาษีขาย (Output Tax Report)",
+        company, period, periodLabel: "เดือนภาษี",
+        headers, rows, totals,
+        sheetName: "TaxReport", fileName: "Tax_Report", textCols: ['taxId'],
+      });
 
     } else if (activeTab === "returns") {
       const headers = [
@@ -888,10 +901,7 @@ export default function Reports() {
                 <tbody className="divide-y divide-gray-100">
                   {(() => {
                     // Compute VAT from cart details (more accurate than stored Tax field)
-                    const computeVat = (tx) => {
-                      const { vatableTotal } = getCartVatSplit(tx.CartDetails, products);
-                      return r2(vatableTotal / 107 * 7);
-                    };
+                    const computeVat = (tx) => breakdownFromTransaction(tx, products).vatAmount;
 
                     const receiptBadge = (tx) => (
                       <span className={clsx("px-2 py-1 rounded text-xs font-bold",
@@ -1765,10 +1775,8 @@ export default function Reports() {
           qty: parseFloat(item.qty || 1),
           vatStatus: item.vatStatus || item.VatStatus || "VAT",
         }));
-        const cartSubtotal = cartForModal.reduce((s, i) => s + i.price * i.qty, 0);
-        const discAmt = parseFloat(tx.DiscountAmount || 0);
-        const vatAmt = parseFloat(tx.Tax || 0);
-        const total = parseFloat(tx.TotalAmount || 0);
+        // ใช้โครงสร้างภาษีชุดเดียวกับรายงานภาษีขาย เพื่อให้เอกสารที่พิมพ์ซ้ำตรงกับที่ยื่นสรรพากร
+        const bd = breakdownFromTransaction(tx, products);
 
         // Find customer info from taxInvoices table (preferred) or CustomerInfo JSON
         const invRecord = taxInvoices.find(ti => ti.OrderID === tx.OrderID);
@@ -1779,9 +1787,9 @@ export default function Reports() {
           try {
             const ci = typeof tx.CustomerInfo === "string" ? JSON.parse(tx.CustomerInfo) : (tx.CustomerInfo || {});
             custName = ci.name || ci.customerName || "";
-            custAddr = ci.address || ci.customerAddress || "";
+            custAddr = ci.taxAddress || ci.address || ci.customerAddress || "";
             custTaxId = ci.taxId || ci.customerTaxId || "";
-          } catch (e) {}
+          } catch { /* บิลนี้ไม่มีข้อมูลลูกค้า */ }
         }
 
         return (
@@ -1790,17 +1798,21 @@ export default function Reports() {
             onClose={() => setViewInvoiceTx(null)}
             cart={cartForModal}
             paymentMethod={tx.PaymentMethod || ""}
-            subtotal={cartSubtotal || total}
-            discountAmount={discAmt}
+            discountAmount={bd.discount}
             freeItemLines={[]}
             couponDiscount={0}
             couponName=""
             couponLines={[]}
-            tax={vatAmt}
-            total={total}
-            receiptType={tx.ReceiptType || "ใบเสร็จ"}
+            tax={bd.vatAmount}
+            total={bd.netTotal}
+            breakdown={bd}
+            receiptType={tx.ReceiptType === "ใบกำกับภาษี" ? "ใบกำกับภาษี" : "ใบเสร็จ"}
             customerInfo={{ customerName: custName, customerAddress: custAddr, customerTaxId: custTaxId }}
             taxInvoiceNo={tx.TaxInvoiceNo || ""}
+            receiptNo={tx.ReceiptNo || tx.OrderID || ""}
+            issuedAt={tx.Date || null}
+            cashReceived={parseFloat(tx.CashReceived) || 0}
+            changeReturn={parseFloat(tx.ChangeReturn) || 0}
           />
         );
       })()}
