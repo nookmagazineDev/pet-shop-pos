@@ -101,6 +101,16 @@ node scripts/migrate-sheets-to-supabase.mjs
   update "Users" set "Password" = crypt('รหัสผ่านใหม่', gen_salt('bf')) where "Username" = 'admin';
   ```
 
+### ✅ สถานะ 1 ต.ค. 2569 — เฟส 2–3 ทำรวดเดียวแล้ว (สลับทั้งอ่านและเขียน)
+- `supabase/migrations/0003_api_functions.sql`: ทุก action ของ Code.gs (38 ตัว) เป็นฟังก์ชัน `api_<action>(payload)` รับ/คืนค่ารูปแบบเดิม หน้าจอจึงไม่ต้องแก้
+- `src/api.js` เรียก Supabase แทน Apps Script; `src/lib/sheetRows.js` แปลงแถวให้หน้าตาเหมือนที่ชีทเคยส่ง
+- **Login ด้วย Supabase Auth**: พนักงานพิมพ์ username เดิม ระบบแปลงเป็น `<username>@staff.mamameepetshop.app` รหัสผ่านเดิมใช้ได้ (hash เดิม) บัญชีสำรอง `admin/admin1234` ถูกตัดทิ้ง
+- จัดการพนักงานในหน้า Admin → สร้าง/แก้/ปิด/ลบบัญชี Supabase Auth ให้อัตโนมัติ (username ต้องเป็นภาษาอังกฤษ/ตัวเลข)
+- RLS: เฉพาะพนักงานที่ active เท่านั้นที่เห็น/แก้ข้อมูล; อ่าน hash รหัสผ่านไม่ได้; ออกเลขที่เอกสารได้ทางฟังก์ชันขายเท่านั้น (`0004_hide_doc_numbering.sql`)
+- ไฟล์แนบใบเสร็จ/PO เก็บใน Storage bucket `receipts` แทน Google Drive
+- **ย้อนกลับไปใช้ชีท**: ตั้ง env `VITE_BACKEND=sheets` ใน Vercel แล้ว redeploy (ข้อมูลที่ขายบน Supabase ระหว่างนั้นจะไม่อยู่ในชีท)
+- ตรวจแล้ว: รัน Code.gs (จำลองชีท) เทียบกับฟังก์ชัน SQL 68 ขั้นบนข้อมูลจริง ได้ผลตรงกันทุกขั้นทุกตาราง, ทดสอบสิทธิ์/ขายพร้อมกัน 29 ข้อ, เปิดเว็บจริงใน Chromium login → ทุกหน้า → ขาย 1 บิล
+
 ### เฟส 2 — สลับฝั่งอ่าน (1–2 วัน)
 1. `npm install @supabase/supabase-js`
 2. สร้าง `src/lib/supabase.js` (ใช้ **anon key** เท่านั้น) และตั้ง env ใน Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
