@@ -81,6 +81,12 @@ frontend เรียก Supabase โดยตรงผ่าน PostgREST + RPC
 3. จด `Project URL`, `anon key`, `service_role key` จาก Settings → API
 
 ### เฟส 1 — ย้ายข้อมูล (1 ชั่วโมง)
+> ✅ ทำแล้ว 1 ต.ค. 2569: ย้ายข้อมูลจาก API เดิม 20 ตาราง + `Users` และ `InventoryReceipts` จากไฟล์ชีท "ร้านเบส"
+> (API ไม่ส่งรหัสผ่าน/ประวัติรับสินค้า) รหัสผ่านเข้ารหัส bcrypt แล้ว และตั้งเลขที่เอกสารต่อจากของเดิมแล้ว
+> ยอดตรงกับชีท: ยอดขายรวม 142,756.74 / VAT 8,653.55 / สต็อกรวม 6,007 / เครดิตลูกค้า 10,153
+> ยังไม่ได้ย้าย: `ActivityLog` (278 แถว ไม่มี action ใน API — ประวัติเดิมยังอยู่ในชีท)
+> ข้อมูลหลังวันนี้ที่ยังขายผ่านชีทอยู่ ต้องย้ายเพิ่มตอนสลับระบบจริง
+
 ```bash
 export SUPABASE_URL="https://xxxx.supabase.co"
 export SUPABASE_SERVICE_KEY="eyJ..."   # service_role key — ห้าม commit / ห้ามใส่ใน frontend
