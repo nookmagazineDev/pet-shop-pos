@@ -11,6 +11,7 @@
     "test:vat": "node src/utils/vat.test.mjs && node backend/vat.test.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "html5-qrcode": "^2.3.8",

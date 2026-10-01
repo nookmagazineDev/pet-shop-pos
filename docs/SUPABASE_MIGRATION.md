@@ -75,10 +75,18 @@ frontend เรียก Supabase โดยตรงผ่าน PostgREST + RPC
 ### เฟส 0 — เตรียมโปรเจกต์ (ครึ่งวัน)
 1. สมัคร [supabase.com](https://supabase.com) สร้างโปรเจกต์ (เลือก region Singapore ใกล้ไทยสุด)
 2. ไปที่ **SQL Editor** → วางเนื้อหา `supabase/migrations/0001_initial_schema.sql` → Run
+   แล้วตามด้วย `0002_harden_functions.sql` (ปิดช่องโหว่ที่ Security Advisor แจ้ง)
+   > ✅ ทำแล้ว 1 ต.ค. 2569 บนโปรเจกต์ `mamameepetshop Project` (ref `xtnwlrcrwarrdyjywvwr`, Singapore) — ทั้ง 0001 และ 0002
    จะได้ตารางครบ 23 ตาราง + ระบบเลขที่เอกสาร + RPC checkout/login + RLS
 3. จด `Project URL`, `anon key`, `service_role key` จาก Settings → API
 
 ### เฟส 1 — ย้ายข้อมูล (1 ชั่วโมง)
+> ✅ ทำแล้ว 1 ต.ค. 2569: ย้ายข้อมูลจาก API เดิม 20 ตาราง + `Users` และ `InventoryReceipts` จากไฟล์ชีท "ร้านเบส"
+> (API ไม่ส่งรหัสผ่าน/ประวัติรับสินค้า) รหัสผ่านเข้ารหัส bcrypt แล้ว และตั้งเลขที่เอกสารต่อจากของเดิมแล้ว
+> ยอดตรงกับชีท: ยอดขายรวม 142,756.74 / VAT 8,653.55 / สต็อกรวม 6,007 / เครดิตลูกค้า 10,153
+> `ActivityLog` 278 แถวย้ายจากไฟล์ชีทแล้ว (ไม่มี action ใน API) ตรวจ checksum ตรงกับชีท
+> ข้อมูลหลังวันนี้ที่ยังขายผ่านชีทอยู่ ต้องย้ายเพิ่มตอนสลับระบบจริง
+
 ```bash
 export SUPABASE_URL="https://xxxx.supabase.co"
 export SUPABASE_SERVICE_KEY="eyJ..."   # service_role key — ห้าม commit / ห้ามใส่ใน frontend
@@ -92,6 +100,16 @@ node scripts/migrate-sheets-to-supabase.mjs
   ```sql
   update "Users" set "Password" = crypt('รหัสผ่านใหม่', gen_salt('bf')) where "Username" = 'admin';
   ```
+
+### ✅ สถานะ 1 ต.ค. 2569 — เฟส 2–3 ทำรวดเดียวแล้ว (สลับทั้งอ่านและเขียน)
+- `supabase/migrations/0003_api_functions.sql`: ทุก action ของ Code.gs (38 ตัว) เป็นฟังก์ชัน `api_<action>(payload)` รับ/คืนค่ารูปแบบเดิม หน้าจอจึงไม่ต้องแก้
+- `src/api.js` เรียก Supabase แทน Apps Script; `src/lib/sheetRows.js` แปลงแถวให้หน้าตาเหมือนที่ชีทเคยส่ง
+- **Login ด้วย Supabase Auth**: พนักงานพิมพ์ username เดิม ระบบแปลงเป็น `<username>@staff.mamameepetshop.app` รหัสผ่านเดิมใช้ได้ (hash เดิม) บัญชีสำรอง `admin/admin1234` ถูกตัดทิ้ง
+- จัดการพนักงานในหน้า Admin → สร้าง/แก้/ปิด/ลบบัญชี Supabase Auth ให้อัตโนมัติ (username ต้องเป็นภาษาอังกฤษ/ตัวเลข)
+- RLS: เฉพาะพนักงานที่ active เท่านั้นที่เห็น/แก้ข้อมูล; อ่าน hash รหัสผ่านไม่ได้; ออกเลขที่เอกสารได้ทางฟังก์ชันขายเท่านั้น (`0004_hide_doc_numbering.sql`)
+- ไฟล์แนบใบเสร็จ/PO เก็บใน Storage bucket `receipts` แทน Google Drive
+- **ย้อนกลับไปใช้ชีท**: ตั้ง env `VITE_BACKEND=sheets` ใน Vercel แล้ว redeploy (ข้อมูลที่ขายบน Supabase ระหว่างนั้นจะไม่อยู่ในชีท)
+- ตรวจแล้ว: รัน Code.gs (จำลองชีท) เทียบกับฟังก์ชัน SQL 68 ขั้นบนข้อมูลจริง ได้ผลตรงกันทุกขั้นทุกตาราง, ทดสอบสิทธิ์/ขายพร้อมกัน 29 ข้อ, เปิดเว็บจริงใน Chromium login → ทุกหน้า → ขาย 1 บิล
 
 ### เฟส 2 — สลับฝั่งอ่าน (1–2 วัน)
 1. `npm install @supabase/supabase-js`
@@ -120,6 +138,7 @@ node scripts/migrate-sheets-to-supabase.mjs
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `supabase/migrations/0001_initial_schema.sql` | สร้างตารางครบ 23 ตาราง (ชื่อคอลัมน์ตรงกับชีตเดิมเป๊ะ เพื่อให้ frontend แก้น้อยสุด) + เลขที่เอกสารกันซ้ำที่ออกต่อจากข้อมูลเดิม (`next_doc_number`, `sync_document_counters`) + RPC `process_checkout` (atomic, คำนวณโครงสร้างภาษีแบบเดียวกับ `_resolveVatBreakdown` ใน Code.gs), `login_user`/`hash_existing_passwords` (bcrypt), `adjust_customer_points/credits` + เปิด RLS ทุกตาราง |
+| `supabase/migrations/0002_harden_functions.sql` | ล็อก `search_path` ของทุกฟังก์ชัน และปิดไม่ให้เรียก `hash_existing_passwords` ผ่าน API (`login_user` เปิดให้ anon เรียกได้โดยตั้งใจ เพราะเป็นขั้นตอน login) |
 | `scripts/migrate-sheets-to-supabase.mjs` | ย้ายข้อมูลจริงจากชีต → Supabase ผ่าน API เดิม (ไม่ต้อง export CSV เอง) พร้อมแปลงชนิดข้อมูล (ตัวเลข/วันที่/jsonb) |
 | `docs/SUPABASE_MIGRATION.md` | เอกสารฉบับนี้ |
 
