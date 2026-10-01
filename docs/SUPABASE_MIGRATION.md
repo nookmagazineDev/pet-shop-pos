@@ -75,6 +75,8 @@ frontend เรียก Supabase โดยตรงผ่าน PostgREST + RPC
 ### เฟส 0 — เตรียมโปรเจกต์ (ครึ่งวัน)
 1. สมัคร [supabase.com](https://supabase.com) สร้างโปรเจกต์ (เลือก region Singapore ใกล้ไทยสุด)
 2. ไปที่ **SQL Editor** → วางเนื้อหา `supabase/migrations/0001_initial_schema.sql` → Run
+   แล้วตามด้วย `0002_harden_functions.sql` (ปิดช่องโหว่ที่ Security Advisor แจ้ง)
+   > ✅ ทำแล้ว 1 ต.ค. 2569 บนโปรเจกต์ `mamameepetshop Project` (ref `xtnwlrcrwarrdyjywvwr`, Singapore) — ทั้ง 0001 และ 0002
    จะได้ตารางครบ 23 ตาราง + ระบบเลขที่เอกสาร + RPC checkout/login + RLS
 3. จด `Project URL`, `anon key`, `service_role key` จาก Settings → API
 
@@ -120,6 +122,7 @@ node scripts/migrate-sheets-to-supabase.mjs
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `supabase/migrations/0001_initial_schema.sql` | สร้างตารางครบ 23 ตาราง (ชื่อคอลัมน์ตรงกับชีตเดิมเป๊ะ เพื่อให้ frontend แก้น้อยสุด) + เลขที่เอกสารกันซ้ำที่ออกต่อจากข้อมูลเดิม (`next_doc_number`, `sync_document_counters`) + RPC `process_checkout` (atomic, คำนวณโครงสร้างภาษีแบบเดียวกับ `_resolveVatBreakdown` ใน Code.gs), `login_user`/`hash_existing_passwords` (bcrypt), `adjust_customer_points/credits` + เปิด RLS ทุกตาราง |
+| `supabase/migrations/0002_harden_functions.sql` | ล็อก `search_path` ของทุกฟังก์ชัน และปิดไม่ให้เรียก `hash_existing_passwords` ผ่าน API (`login_user` เปิดให้ anon เรียกได้โดยตั้งใจ เพราะเป็นขั้นตอน login) |
 | `scripts/migrate-sheets-to-supabase.mjs` | ย้ายข้อมูลจริงจากชีต → Supabase ผ่าน API เดิม (ไม่ต้อง export CSV เอง) พร้อมแปลงชนิดข้อมูล (ตัวเลข/วันที่/jsonb) |
 | `docs/SUPABASE_MIGRATION.md` | เอกสารฉบับนี้ |
 
