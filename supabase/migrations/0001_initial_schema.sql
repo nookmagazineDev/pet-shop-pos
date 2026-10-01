@@ -5,6 +5,8 @@
 --  * Column names mirror the Google Sheets headers exactly (quoted
 --    CamelCase) so the React frontend keeps working with the same
 --    object keys — PostgREST returns identifiers as-is.
+--    Transactions / TaxInvoices follow TX_HEADERS / TAXINV_HEADERS in
+--    backend/Code.gs (incl. the VAT breakdown columns).
 --  * Every table gets a surrogate `id` primary key; the original
 --    sheet "ID" columns keep their values and get UNIQUE indexes.
 --  * Money/quantity columns are numeric; free-form sheet data that
@@ -131,7 +133,12 @@ create table if not exists "Transactions" (
   "Status"        text default 'COMPLETED',
   "CancelNote"    text,
   "TaxInvoiceNo"  text,
-  "ReceiptNo"     text
+  "ReceiptNo"     text,
+  -- VAT breakdown exactly as printed on the receipt:
+  -- NonVatAmount + VatableAmount + Tax = TotalAmount
+  "GrossSubtotal" numeric,
+  "VatableAmount" numeric,
+  "NonVatAmount"  numeric
 );
 create index if not exists transactions_date_idx on "Transactions" ("Date");
 create index if not exists transactions_status_idx on "Transactions" ("Status");
@@ -144,8 +151,14 @@ create table if not exists "TaxInvoices" (
   "CustomerName"    text,
   "CustomerAddress" text,
   "CustomerTaxID"   text,
+  "CustomerBranch"  text default 'สำนักงานใหญ่',
   "TotalAmount"     numeric,
-  "TaxAmount"       numeric
+  "TaxAmount"       numeric,
+  "VatableAmount"   numeric,
+  "NonVatAmount"    numeric,
+  "Status"          text default 'ACTIVE',   -- CANCELLED when the bill is voided
+  "CancelNote"      text,
+  "IssuedBy"        text
 );
 
 create table if not exists "Returns" (
@@ -422,6 +435,23 @@ create table if not exists document_counters (
   last_value integer not null default 0
 );
 
+-- Highest sequence already issued for a prefix (e.g. 'TX2610') in the
+-- imported sheet data, so numbering continues instead of restarting at 0001.
+create or replace function max_doc_seq(p_prefix text)
+returns integer
+language sql
+stable
+as $$
+  select coalesce(max(substring(no from length(p_prefix) + 1)::integer), 0)
+    from (
+      select upper(trim("ReceiptNo")) as no from "Transactions"
+      union all
+      select upper(trim("TaxInvoiceNo")) from "TaxInvoices"
+    ) s
+   where no like p_prefix || '%'
+     and substring(no from length(p_prefix) + 1) ~ '^[0-9]{1,9}$';
+$$;
+
 create or replace function next_doc_number(p_kind text)
 returns text
 language plpgsql
@@ -431,12 +461,45 @@ declare
   v_next   integer;
 begin
   v_prefix := p_kind || to_char(now() at time zone 'Asia/Bangkok', 'YYMM');
-  insert into document_counters (prefix, last_value)
-  values (v_prefix, 1)
-  on conflict (prefix) do update
-    set last_value = document_counters.last_value + 1
+  update document_counters
+     set last_value = last_value + 1
+   where prefix = v_prefix
   returning last_value into v_next;
+
+  if not found then
+    -- first document of the month: start after anything already imported
+    insert into document_counters (prefix, last_value)
+    values (v_prefix, max_doc_seq(v_prefix) + 1)
+    on conflict (prefix) do update
+      set last_value = document_counters.last_value + 1
+    returning last_value into v_next;
+  end if;
   return v_prefix || lpad(v_next::text, 4, '0');
+end;
+$$;
+
+-- Raise every counter to the highest number found in the data.
+-- Run after importing from Sheets (the migration script calls it).
+create or replace function sync_document_counters()
+returns integer
+language plpgsql
+as $$
+declare
+  v_count integer;
+begin
+  insert into document_counters (prefix, last_value)
+  select left(no, 6), max(substring(no from 7)::integer)
+    from (
+      select upper(trim("ReceiptNo")) as no from "Transactions"
+      union all
+      select upper(trim("TaxInvoiceNo")) from "TaxInvoices"
+    ) s
+   where no ~ '^(TX|IN)[0-9]{4}[0-9]{1,9}$'
+   group by left(no, 6)
+  on conflict (prefix) do update
+    set last_value = greatest(document_counters.last_value, excluded.last_value);
+  get diagnostics v_count = row_count;
+  return v_count;
 end;
 $$;
 
@@ -520,10 +583,17 @@ returns jsonb
 language plpgsql
 as $$
 declare
-  v_order_id   text := 'TX' || (extract(epoch from clock_timestamp()) * 1000)::bigint;
+  v_order_ms   bigint;
+  v_order_id   text;
   v_receipt_no text;
   v_tax_no     text := null;
-  v_actor      text := coalesce(payload #>> '{_actor,username}', 'System');
+  v_username   text := coalesce(payload #>> '{_actor,username}', '');
+  v_actor      text := coalesce(nullif(v_username, ''), 'System');
+  v_total      numeric := round(coalesce((payload ->> 'totalAmount')::numeric, 0), 2);
+  v_vat        numeric := round(coalesce((payload ->> 'tax')::numeric, 0), 2);
+  v_vatable    numeric;
+  v_nonvat     numeric;
+  v_gross      numeric;
   v_cname      text := coalesce(payload ->> 'customerName', payload #>> '{customerInfo,name}', payload #>> '{customerInfo,customerName}', '');
   v_item       jsonb;
   v_qty        numeric;
@@ -534,39 +604,69 @@ declare
   v_promo_pts  numeric := coalesce((payload ->> 'promoPoints')::numeric, 0);
   v_coupon_pts numeric := coalesce((payload ->> 'couponPoints')::numeric, 0);
 begin
+  -- VAT breakdown (mirrors _resolveVatBreakdown in Code.gs):
+  -- use the base the screen printed; else derive it from VAT x 100/7.
+  -- NonVat absorbs rounding so NonVat + Vatable + VAT = Total always.
+  v_vatable := case
+    when payload ->> 'vatableAmount' is not null then round((payload ->> 'vatableAmount')::numeric, 2)
+    when v_vat > 0 then round(v_vat * 100 / 7, 2)
+    else 0
+  end;
+  v_nonvat := round(v_total - v_vatable - v_vat, 2);
+  if v_nonvat < 0 then
+    v_nonvat := 0;
+    v_vatable := round(v_total - v_vat, 2);
+  end if;
+  v_gross := case
+    when payload ->> 'grossSubtotal' is not null then round((payload ->> 'grossSubtotal')::numeric, 2)
+    else v_total + round(coalesce((payload ->> 'discount')::numeric, 0), 2)
+  end;
+
+  -- next_doc_number locks this month's counter row until commit, so
+  -- checkouts are serialized from here; bump the ms-based OrderID when
+  -- two terminals check out within the same millisecond.
   v_receipt_no := next_doc_number('TX');
+  v_order_ms := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+  while exists (select 1 from "Transactions" where "OrderID" = 'TX' || v_order_ms) loop
+    v_order_ms := v_order_ms + 1;
+  end loop;
+  v_order_id := 'TX' || v_order_ms;
 
   if payload ->> 'receiptType' = 'ใบกำกับภาษี' then
     v_tax_no := next_doc_number('IN');
-    insert into "TaxInvoices" ("TaxInvoiceNo", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "TotalAmount", "TaxAmount")
-    values (
+    insert into "TaxInvoices" (
+      "TaxInvoiceNo", "OrderID", "CustomerName", "CustomerAddress", "CustomerTaxID", "CustomerBranch",
+      "TotalAmount", "TaxAmount", "VatableAmount", "NonVatAmount", "Status", "CancelNote", "IssuedBy"
+    ) values (
       v_tax_no,
       v_order_id,
       coalesce(payload #>> '{customerInfo,name}', payload #>> '{customerInfo,customerName}', '-'),
-      coalesce(payload #>> '{customerInfo,address}', payload #>> '{customerInfo,customerAddress}', '-'),
+      coalesce(payload #>> '{customerInfo,taxAddress}', payload #>> '{customerInfo,address}', payload #>> '{customerInfo,customerAddress}', '-'),
       coalesce(payload #>> '{customerInfo,taxId}', payload #>> '{customerInfo,customerTaxId}', '-'),
-      (payload ->> 'totalAmount')::numeric,
-      coalesce((payload ->> 'tax')::numeric, 0)
+      coalesce(payload #>> '{customerInfo,branch}', payload #>> '{customerInfo,customerBranch}', 'สำนักงานใหญ่'),
+      v_total, v_vat, v_vatable, v_nonvat, 'ACTIVE', '', v_username
     );
   end if;
 
   insert into "Transactions" (
     "OrderID", "TotalAmount", "Tax", "PaymentMethod", "CartDetails",
     "CashReceived", "ChangeReturn", "ShopPlatform", "ReceiptType",
-    "CustomerInfo", "DiscountAmount", "Username", "Status", "TaxInvoiceNo", "ReceiptNo"
+    "CustomerInfo", "DiscountAmount", "Username", "Status", "TaxInvoiceNo", "ReceiptNo",
+    "GrossSubtotal", "VatableAmount", "NonVatAmount"
   ) values (
     v_order_id,
-    (payload ->> 'totalAmount')::numeric,
-    coalesce((payload ->> 'tax')::numeric, 0),
+    v_total,
+    v_vat,
     payload ->> 'paymentMethod',
     payload -> 'cart',
-    coalesce((payload ->> 'cashReceived')::numeric, 0),
-    coalesce((payload ->> 'changeReturn')::numeric, 0),
+    round(coalesce((payload ->> 'cashReceived')::numeric, 0), 2),
+    round(coalesce((payload ->> 'changeReturn')::numeric, 0), 2),
     coalesce(payload ->> 'shopPlatform', 'Store'),
     coalesce(payload ->> 'receiptType', 'ใบเสร็จ'),
     payload -> 'customerInfo',
-    coalesce((payload ->> 'discount')::numeric, 0),
-    v_actor, 'COMPLETED', v_tax_no, v_receipt_no
+    round(coalesce((payload ->> 'discount')::numeric, 0), 2),
+    v_username, 'COMPLETED', v_tax_no, v_receipt_no,
+    v_gross, v_vatable, v_nonvat
   );
 
   -- Deduct stock: Products (warehouse) always, StoreStock when present
@@ -613,7 +713,10 @@ begin
   insert into "ActivityLog" ("User", "Role", "Module", "Action", "ReferenceID")
   values (v_actor, coalesce(payload #>> '{_actor,role}', 'system'), 'POS/Online', 'Checkout', v_order_id);
 
-  return jsonb_build_object('success', true, 'orderId', v_order_id, 'receiptNo', v_receipt_no, 'taxInvoiceNo', v_tax_no);
+  return jsonb_build_object(
+    'success', true, 'orderId', v_order_id, 'receiptNo', v_receipt_no, 'taxInvoiceNo', v_tax_no,
+    'date', now(), 'vatableAmount', v_vatable, 'nonVatAmount', v_nonvat, 'tax', v_vat, 'totalAmount', v_total
+  );
 end;
 $$;
 

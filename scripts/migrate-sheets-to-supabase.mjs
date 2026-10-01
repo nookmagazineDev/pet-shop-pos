@@ -35,8 +35,8 @@ const TABLES = [
   { action: "getStoreStock", table: "StoreStock", columns: ["Barcode","Name","Quantity","StoreLocation","UpdatedAt","LowStockThreshold"] },
   { action: "getStockMovements", table: "StockMovements", columns: ["Date","Barcode","Name","Quantity","FromLocation","ToLocation","MovedBy","ReferenceNo"] },
   { action: "getSuppliers", table: "Suppliers", columns: ["SupplierID","Name","ContactPerson","Phone","Email","Address","TaxID","CreatedAt"] },
-  { action: "getTransactions", table: "Transactions", columns: ["OrderID","Date","TotalAmount","Tax","PaymentMethod","CartDetails","CashReceived","ChangeReturn","ShopPlatform","ReceiptType","CustomerInfo","DiscountAmount","Username","Status","CancelNote","TaxInvoiceNo","ReceiptNo"] },
-  { action: "getTaxInvoices", table: "TaxInvoices", columns: ["TaxInvoiceNo","Date","OrderID","CustomerName","CustomerAddress","CustomerTaxID","TotalAmount","TaxAmount"] },
+  { action: "getTransactions", table: "Transactions", columns: ["OrderID","Date","TotalAmount","Tax","PaymentMethod","CartDetails","CashReceived","ChangeReturn","ShopPlatform","ReceiptType","CustomerInfo","DiscountAmount","Username","Status","CancelNote","TaxInvoiceNo","ReceiptNo","GrossSubtotal","VatableAmount","NonVatAmount"] },
+  { action: "getTaxInvoices", table: "TaxInvoices", columns: ["TaxInvoiceNo","Date","OrderID","CustomerName","CustomerAddress","CustomerTaxID","CustomerBranch","TotalAmount","TaxAmount","VatableAmount","NonVatAmount","Status","CancelNote","IssuedBy"] },
   { action: "getReturns", table: "Returns", columns: ["Timestamp","OrderID","Barcode","ProductName","ReturnQty","RefundAmount","ReturnNote","ActionBy"] },
   { action: "getShifts", table: "Shifts", columns: ["ShiftID","Status","OpenTime","CloseTime","ExpectedCash","ActualCash","Discrepancy","DetailsJSON"] },
   { action: "getExpenses", table: "Expenses", columns: ["Timestamp","Date","Description","Category","Amount","ReceiptFileURL","ItemsJSON"] },
@@ -54,7 +54,7 @@ const TABLES = [
   { action: "getUsers", table: "Users", columns: ["UserID","Username","DisplayName","Role","IsActive","CreatedAt","LastLogin"] },
 ];
 
-const NUMERIC_COLS = new Set(["CostPrice","Price","WholesalePrice","ShopeePrice","LazadaPrice","LinemanPrice","GrabFoodPrice","Quantity","LowStockThreshold","PackMultiplier","PackMultiplier2","PackMultiplier3","TotalAmount","Tax","CashReceived","ChangeReturn","DiscountAmount","TaxAmount","ReturnQty","RefundAmount","ExpectedCash","ActualCash","Discrepancy","Amount","Points","Credits","Balance","SessionsUsed","TotalSessions","UsedSessions","PaidAmount","BonusAmount","TotalCredit","UsedCredit","RemainingCredit","BonusPoints","SessionCount","ExpiryDays","BonusSessions","BonusServiceSessions","BonusServiceUsed","RewardQty","Value","MinOrderAmount","DiscountValue","DiscountValue2","UnitCost","TotalCost","OrderTotalCost"]);
+const NUMERIC_COLS = new Set(["CostPrice","Price","WholesalePrice","ShopeePrice","LazadaPrice","LinemanPrice","GrabFoodPrice","Quantity","LowStockThreshold","PackMultiplier","PackMultiplier2","PackMultiplier3","TotalAmount","Tax","CashReceived","ChangeReturn","DiscountAmount","TaxAmount","GrossSubtotal","VatableAmount","NonVatAmount","ReturnQty","RefundAmount","ExpectedCash","ActualCash","Discrepancy","Amount","Points","Credits","Balance","SessionsUsed","TotalSessions","UsedSessions","PaidAmount","BonusAmount","TotalCredit","UsedCredit","RemainingCredit","BonusPoints","SessionCount","ExpiryDays","BonusSessions","BonusServiceSessions","BonusServiceUsed","RewardQty","Value","MinOrderAmount","DiscountValue","DiscountValue2","UnitCost","TotalCost","OrderTotalCost"]);
 const JSONB_COLS = new Set(["CartDetails","CustomerInfo","DetailsJSON","ItemsJSON"]);
 const TIMESTAMP_COLS = new Set(["Date","Timestamp","UpdatedAt","CreatedAt","OpenTime","CloseTime","IssuedAt","UsedAt","PurchaseDate","LastLogin","PointsUpdatedAt"]);
 
@@ -104,6 +104,21 @@ async function insertBatch(table, rows) {
   if (!res.ok) throw new Error(`insert ${table}: HTTP ${res.status} — ${await res.text()}`);
 }
 
+// ตั้งตัวนับเลขที่เอกสารให้ต่อจากเลขสูงสุดที่ย้ายมา (กันเลขใบเสร็จ/ใบกำกับซ้ำกับของเดิม)
+async function syncDocumentCounters() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/sync_document_counters`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!res.ok) throw new Error(`sync_document_counters: HTTP ${res.status} — ${await res.text()}`);
+  return res.json();
+}
+
 async function main() {
   console.log(`🚀 เริ่มย้ายข้อมูล\n   จาก: ${GAS_API_URL.slice(0, 60)}...\n   ไป : ${SUPABASE_URL}\n`);
   let totalRows = 0;
@@ -132,6 +147,14 @@ async function main() {
     } catch (err) {
       console.log(`❌ ${err.message}`);
     }
+  }
+
+  try {
+    const n = await syncDocumentCounters();
+    console.log(`\n🔢 ตั้งเลขที่เอกสารต่อจากของเดิมแล้ว (${n} ชุดเลข)`);
+  } catch (err) {
+    console.log(`\n❌ ${err.message}`);
+    console.log(`   รันเองใน SQL Editor: select sync_document_counters();`);
   }
 
   console.log(`\n🏁 เสร็จสิ้น รวม ${totalRows} แถว`);
