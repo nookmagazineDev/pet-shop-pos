@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle, UserPlus, Users, Star, Gift, Ticket } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Printer, ShoppingCart, Loader2, Camera, X, Lock, Tag, CheckCircle, UserPlus, Star, Gift, Ticket, Crown, BadgeCheck, ChevronDown } from "lucide-react";
 import clsx from "clsx";
 import TaxInvoiceModal from "../components/TaxInvoiceModal";
 import BarcodeScanner from "../components/BarcodeScanner";
@@ -854,770 +854,826 @@ export default function POS() {
     );
   }
 
+  // Member shown in the top bar, and the coupons they can use
+  const memberObj = customerName
+    ? customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase())
+    : null;
+  const couponNow = new Date();
+  const activeCoupons = customerName
+    ? customerCoupons.filter(c =>
+        String(c.CustomerName || "").toLowerCase() === customerName.toLowerCase() &&
+        c.Status === "ACTIVE" &&
+        (!c.ExpiryDate || new Date(c.ExpiryDate) >= couponNow)
+      )
+    : [];
+
   return (
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full">
-      
-      {/* Left side: Search & Cart Items */}
-      <div className="flex-1 flex flex-col min-h-[400px] lg:min-h-0 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden order-1 lg:order-none">
-        {/* Search Bar */}
-        <div className="p-4 border-b border-gray-100 bg-gray-50/50 relative">
-          <form onSubmit={handleScan} className="relative z-10 flex items-center gap-2">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
-                {isLoadingProducts
-                  ? <Loader2 size={20} className="animate-spin text-primary/60" />
-                  : <ScanLine size={20} />
-                }
+    <div className="flex flex-col gap-4 h-full">
+
+      {/* ── Member bar ── */}
+      <div className={clsx(
+        "shrink-0 rounded-2xl border shadow-sm",
+        memberObj ? "bg-gradient-to-r from-amber-50 via-yellow-50 to-white border-amber-200" : "bg-white border-gray-100"
+      )}>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 flex-1">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={clsx(
+                "w-12 h-12 rounded-full flex items-center justify-center shrink-0",
+                memberObj
+                  ? "bg-gradient-to-br from-amber-400 to-yellow-500 text-white ring-4 ring-amber-100 shadow-md shadow-amber-200"
+                  : "bg-gray-50 text-gray-400 border-2 border-dashed border-gray-300"
+              )}>
+                <Crown size={24} strokeWidth={2.2} />
               </div>
-              <input
-                ref={barcodeRef}
-                type="text"
-                className={clsx(
-                  "w-full pl-12 pr-4 py-3 rounded-xl border transition-all text-lg shadow-sm",
-                  isLoadingProducts
-                    ? "bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed"
-                    : "bg-white border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                )}
-                placeholder={isLoadingProducts ? "กำลังโหลดข้อมูลสินค้า..." : "สแกนบาร์โค้ด หรือ พิมพ์ชื่อสินค้าที่นี่..."}
-                value={barcodeInput}
-                onChange={(e) => { if (!isLoadingProducts) setBarcodeInput(e.target.value); }}
-                disabled={isLoadingProducts}
-                autoFocus={!isLoadingProducts}
-              />
-            </div>
-            
-            <button 
-              type="button"
-              onClick={() => setIsScannerOpen(!isScannerOpen)}
-              className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
-              title="เปิดกล้องสแกน"
-            >
-              {isScannerOpen ? <X size={24} /> : <Camera size={24} />}
-            </button>
-            <button type="submit" className="hidden">ตกลง</button>
-          </form>
-
-          {/* Camera Scanner View */}
-          {isScannerOpen && (
-            <BarcodeScanner 
-              onScanSuccess={handleScanSuccess} 
-              onClose={() => setIsScannerOpen(false)} 
-            />
-          )}
-
-          {/* Autocomplete Dropdown */}
-          {barcodeInput.trim() && searchResults.length > 0 && !products.find(p => String(p.Barcode) === barcodeInput.trim()) && (
-            <div className="absolute z-50 left-4 right-4 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto divide-y divide-gray-100">
-              {searchResults.map((p, idx) => {
-                const stock = getStock(p);
-                const outOfStock = stock <= 0;
-                return (
-                <button
-                  key={p.Barcode || idx}
-                  type="button"
-                  onClick={() => addToCart(p)}
-                  disabled={outOfStock}
-                  className={clsx(
-                    "w-full text-left px-4 py-3 flex items-center justify-between group transition-colors",
-                    outOfStock ? "opacity-60 cursor-not-allowed bg-rose-50/40" : "hover:bg-gray-50"
-                  )}
-                >
-                  <div>
-                    <div className={clsx("font-semibold transition-colors", outOfStock ? "text-gray-500" : "text-gray-900 group-hover:text-primary")}>
-                      {p.Name}
-                      {outOfStock && <span className="ml-2 text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded">สินค้าหมด</span>}
-                      {!outOfStock && stock !== Infinity && stock <= 5 && <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">เหลือ {stock}</span>}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-0.5">บาร์โค้ด: {p.Barcode}</div>
-                  </div>
-                  <div className="font-bold text-gray-900">฿{(Number(p.Price) || 0).toLocaleString()}</div>
-                </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Cart Listing */}
-        <div className="flex-1 overflow-auto p-4 flex flex-col">
-          {cart.length === 0 && !pendingPackage ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-4 min-h-[300px]">
-              <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center">
-                <ShoppingCart size={40} className="opacity-50" />
-              </div>
-              <p className="text-lg">ยังไม่มีสินค้าในตะกร้า ลองสแกนดูสิ!</p>
-            </div>
-          ) : (
-            <div className="flex-1 space-y-3">
-              {/* Pending package row */}
-              {pendingPackage && (() => {
-                const { customer, pkg } = pendingPackage;
-                const totalPts = (parseFloat(pkg.Points) || 0) + (parseFloat(pkg.BonusPoints) || 0);
-                return (
-                  <div className="flex items-center gap-4 p-4 rounded-xl border-2 border-yellow-300 bg-yellow-50">
-                    <div className="w-16 h-16 rounded-lg bg-yellow-100 flex items-center justify-center text-yellow-600 text-2xl shrink-0">🎁</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-bold text-yellow-900">{pkg.Name}</h4>
-                        <span className="text-xs font-bold text-yellow-700 bg-yellow-200 rounded-full px-2 py-0.5">เครดิต</span>
-                      </div>
-                      <p className="text-xs text-yellow-700 mt-0.5">ลูกค้า: <span className="font-semibold">{customer.Name}</span></p>
-                      <div className="flex items-center gap-1 mt-0.5 text-xs text-yellow-600 font-semibold">
-                        <Star size={11} /> ได้รับ {totalPts.toLocaleString()} เครดิต
-                        {parseFloat(pkg.BonusPoints) > 0 && <span className="text-green-600">(รวมโบนัส)</span>}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="font-bold text-yellow-900 text-lg">฿{Number(pkg.Price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                    </div>
-                    <button onClick={() => setPendingPackage(null)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1">
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                );
-              })()}
-              {cart.map(item => (
-                <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-primary/30 transition-colors group bg-white shadow-sm hover:shadow-md">
-                  <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover bg-gray-100" />
-
-                  <div className="flex-1 text-center sm:text-left">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-semibold text-gray-900">{item.name}</h4>
-                      {item.vatStatus === "NON VAT" && (
-                        <span className="text-xs font-bold text-gray-400 border border-gray-300 rounded px-1 py-0.5 leading-none">(N)</span>
-                      )}
-                    </div>
-                    <p className="text-gray-500 text-sm">{item.Barcode}</p>
-                    <div className="text-primary font-bold mt-1">฿{item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                  </div>
-
-                  <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1 border border-gray-200">
-                    <button onClick={() => updateQuantity(item.id, -1)} className="p-2 hover:bg-white hover:text-primary rounded-md transition-colors text-gray-500 shadow-sm">
-                      <Minus size={16} />
-                    </button>
-                    <span className="w-8 text-center font-medium">{item.qty}</span>
-                    <button onClick={() => updateQuantity(item.id, 1)} className="p-2 hover:bg-white hover:text-primary rounded-md transition-colors text-gray-500 shadow-sm">
-                      <Plus size={16} />
-                    </button>
-                  </div>
-
-                  <div className="text-right ml-4 font-bold text-lg w-24">
-                    ฿{(item.price * item.qty).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-
-                  <button onClick={() => removeItem(item.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ml-2">
-                    <Trash2 size={20} />
-                  </button>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className={clsx(
+                    "text-xs font-bold px-2 py-0.5 rounded-full",
+                    memberObj ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-500"
+                  )}>
+                    สมาชิก
+                  </span>
+                  {memberObj && <BadgeCheck size={16} className="text-amber-500" />}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Related Promotions section */}
-          {promoHints.length > 0 && (
-            <div className="mt-6 p-4 bg-fuchsia-50 rounded-xl border border-fuchsia-100 shrink-0">
-               <h4 className="font-semibold text-fuchsia-800 mb-2 flex items-center gap-2">
-                 <Tag size={18} /> 
-                 รายการส่งเสริมการขาย (Promotions)
-               </h4>
-               <ul className="space-y-2">
-                 {promoHints.map((hint, idx) => (
-                   <li key={idx} className={`text-sm flex items-start gap-2 ${hint.achieved ? "text-green-700 font-bold" : "text-fuchsia-700"}`}>
-                     <span className="mt-0.5">{hint.achieved ? "🎉" : "•"}</span>
-                     <span>{hint.text}</span>
-                   </li>
-                 ))}
-               </ul>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Right side: Payment Panel */}
-      <div className="w-full lg:w-[400px] flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 shrink-0">
-        <div className="p-6 border-b border-gray-100 space-y-4">
-          <h3 className="font-semibold text-lg text-gray-800">สรุปยอดชำระเงิน</h3>
-          
-          <div className="space-y-3">
-            <div className="flex justify-between text-gray-500 items-center">
-              <span>ส่วนลดเพิ่มเติม</span>
-              <div className="flex items-center gap-1">
-                <input 
-                  type="number" 
-                  min="0" 
-                  placeholder="0"
-                  value={manualDiscountValue}
-                  onChange={(e) => setManualDiscountValue(e.target.value)}
-                  className="w-16 px-2 py-1 text-right border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <select 
-                  value={manualDiscountType} 
-                  onChange={(e) => setManualDiscountType(e.target.value)}
-                  className="px-1 py-1 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-1 focus:ring-primary"
+                {customerName ? (
+                  <div className="flex items-baseline gap-2 min-w-0 mt-0.5">
+                    <span className="text-lg font-bold text-gray-900 truncate">{customerName}</span>
+                    {customerPhone && <span className="text-sm text-gray-500 truncate">{customerPhone}</span>}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400 mt-0.5">ยังไม่ได้เลือกสมาชิก</div>
+                )}
+                {customerName && !memberObj && (
+                  <div className="text-xs text-gray-400">ไม่พบชื่อนี้ในรายชื่อสมาชิก</div>
+                )}
+              </div>
+              {customerName && (
+                <button
+                  type="button"
+                  onClick={clearCustomer}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                  title="ยกเลิกสมาชิก"
                 >
-                  <option value="baht">฿</option>
-                  <option value="percent">%</option>
-                </select>
-              </div>
+                  <X size={18} />
+                </button>
+              )}
             </div>
-
-            <div className="flex justify-between text-gray-500">
-              <span>ราคาสินค้า (ก่อน VAT)</span>
-              <span>฿{preVatDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            
-            {freeItemLines.map((fi, idx) => (
-              <div key={`fi-sum-${idx}`} className="flex justify-between text-green-700 font-bold bg-green-50 px-2 py-1 -mx-2 rounded-lg">
-                <span className="flex items-center gap-1.5 flex-1 pr-2">
-                  <Gift size={14} />
-                  🎁 {fi.name}{fi.promoName ? ` (${fi.promoName})` : ""}
+            {memberObj && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-yellow-100 text-yellow-800 text-xs font-semibold">
+                  <Star size={12} /> เครดิต {(parseFloat(memberObj.Credits) || 0).toLocaleString()} ฿
                 </span>
-                <span>-฿{(fi.price * fi.qty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
-            ))}
-            {discountAmount > 0 && (
-               <div className="flex justify-between text-fuchsia-600 font-bold bg-fuchsia-50 px-2 py-1 -mx-2 rounded-lg">
-                 <span>ส่วนลดโปรโมชั่น</span>
-                 <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-               </div>
-            )}
-            {promoPointsEarned > 0 && (
-               <div className="flex justify-between text-yellow-700 font-bold bg-yellow-50 px-2 py-1 -mx-2 rounded-lg">
-                 <span className="flex items-center gap-1"><Star size={13} /> แต้มจากโปรโมชั่น</span>
-                 <span>+{promoPointsEarned.toLocaleString()} แต้ม</span>
-               </div>
-            )}
-            {couponLines.map((cl, idx) => (
-              <div key={`cl-${idx}`} className={`flex justify-between font-bold px-2 py-1 -mx-2 rounded-lg ${cl.discount > 0 ? "text-amber-700 bg-amber-50" : "text-yellow-700 bg-yellow-50"}`}>
-                <span className="flex items-center gap-1.5">
-                  {cl.discount > 0 ? <Ticket size={14} /> : <Star size={13} />}
-                  {cl.name}
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-100 text-orange-800 text-xs font-semibold">
+                  <Gift size={12} /> แต้ม {(parseFloat(memberObj.Points) || 0).toLocaleString()}
                 </span>
-                <span>{cl.discount > 0 ? `-฿${cl.discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ""}</span>
-              </div>
-            ))}
-            <div className="flex justify-between text-gray-500">
-              <span>ภาษีมูลค่าเพิ่ม 7% (รวมในราคาแล้ว)</span>
-              <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            {pendingPackage && (
-              <div className="flex justify-between text-yellow-700 font-bold bg-yellow-50 px-2 py-1 -mx-2 rounded-lg">
-                <span className="flex items-center gap-1.5"><Gift size={14} /> เครดิต: {pendingPackage.pkg.Name}</span>
-                <span>฿{Number(pendingPackage.pkg.Price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-            <div className="border-t border-gray-200 my-2 pt-2"></div>
-            <div className="flex justify-between items-end">
-              <span className="text-gray-900 font-medium pb-1">ยอดรวมทั้งหมด</span>
-              <span className="text-4xl font-bold text-primary tracking-tight">
-                ฿{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-            {hasCashSplit && total !== totalForCash && (
-              <div className="flex justify-end">
-                <span className="text-xs text-amber-600 font-medium">* ปัดขึ้นเป็น ฿{totalForCash.toLocaleString()}</span>
               </div>
             )}
           </div>
-        </div>
 
-        <div className="p-6 flex-1 flex flex-col">
-          {/* Customer quick-select bar */}
-          <div className="mb-4 flex items-center gap-2">
-            {customerName ? (
-              <div className="flex-1 flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
-                <Users size={15} className="text-primary shrink-0" />
-                <span className="text-sm font-semibold text-primary truncate">{customerName}</span>
-                {customerPhone && <span className="text-xs text-gray-400 truncate hidden sm:block">{customerPhone}</span>}
-                <button onClick={clearCustomer} className="ml-auto text-gray-400 hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
-              </div>
-            ) : (
-              <div className="flex-1 text-sm text-gray-400 flex items-center gap-1.5 px-1">
-                <Users size={14} /> ยังไม่ได้เลือกลูกค้า
-              </div>
-            )}
+          <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto">
             <button
               type="button"
               onClick={() => setIsCustomerModalOpen(true)}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
+              className="flex items-center justify-center gap-1.5 px-2 sm:px-3.5 py-2 rounded-xl bg-primary text-primary-foreground text-xs sm:text-sm font-semibold hover:bg-primary/90 transition-colors shadow-sm"
             >
-              <UserPlus size={14} /> {customerName ? "เปลี่ยน" : "เพิ่ม/เลือก"}
+              <UserPlus size={16} className="shrink-0" />
+              <span className="sm:hidden">{customerName ? "เปลี่ยน" : "เลือก"}</span>
+              <span className="hidden sm:inline">{customerName ? "เปลี่ยนสมาชิก" : "เลือก / เพิ่มสมาชิก"}</span>
             </button>
             <button
               type="button"
               onClick={() => setIsPurchasePkgOpen(true)}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-yellow-500 text-white text-xs font-semibold hover:bg-yellow-600 transition-colors shadow-sm"
-              title="ซื้อเครดิต"
+              className="flex items-center justify-center gap-1.5 px-2 sm:px-3.5 py-2 rounded-xl bg-yellow-500 text-white text-xs sm:text-sm font-semibold hover:bg-yellow-600 transition-colors shadow-sm"
             >
-              <Gift size={14} />
+              <Gift size={16} /> ซื้อเครดิต
             </button>
             <button
               type="button"
               onClick={() => setIsBuyCouponOpen(true)}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
-              title="ซื้อคูปองส่วนลด"
+              className="flex items-center justify-center gap-1.5 px-2 sm:px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs sm:text-sm font-semibold hover:bg-amber-50 transition-colors shadow-sm"
             >
-              <Ticket size={14} />
+              <Ticket size={16} /> ซื้อคูปอง
             </button>
           </div>
+        </div>
 
-          <div className="mb-6 space-y-3">
-             <h4 className="font-medium text-sm text-gray-500 tracking-wider">ประเภทเอกสาร</h4>
-             <div className="flex gap-4 mb-2 border-b pb-4">
-                <button 
-                  onClick={() => setReceiptType("ใบเสร็จ")}
-                  className={clsx("flex-1 py-2 rounded-xl text-sm font-semibold transition-colors border", receiptType === "ใบเสร็จ" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100")}
+        {/* Coupons of the selected member */}
+        {customerName && (activeCoupons.length > 0 || selectedCoupons.length > 0) && (
+          <div className="border-t border-amber-100 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              {activeCoupons.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCouponPicker(p => !p)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-amber-200 text-sm font-semibold text-amber-800 hover:bg-amber-50 transition-colors"
                 >
-                  ใบเสร็จอย่างย่อ
+                  <Ticket size={15} />
+                  คูปองที่ใช้ได้ ({activeCoupons.length} ใบ)
+                  <ChevronDown size={15} className={clsx("transition-transform", showCouponPicker && "rotate-180")} />
                 </button>
-                <button 
-                  onClick={() => setReceiptType("ใบกำกับภาษี")}
-                  className={clsx("flex-1 py-2 rounded-xl text-sm font-semibold transition-colors border", receiptType === "ใบกำกับภาษี" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100")}
-                >
-                  ใบกำกับภาษีเต็มรูป
+              )}
+              {selectedCoupons.map((c, idx) => {
+                const line = couponLines[idx];
+                const isPoints = c.Type === "POINTS";
+                return (
+                  <span key={c.ID} className={clsx(
+                    "flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg border text-sm font-semibold",
+                    isPoints ? "bg-yellow-50 border-yellow-200 text-yellow-700" : "bg-green-50 border-green-200 text-green-700"
+                  )}>
+                    {isPoints ? <Star size={13} /> : <Ticket size={13} />}
+                    {c.Type === "FREE_ITEM" ? `🎁 ${c.FreeItemName || c.CouponName}` : c.CouponName}
+                    <span className="font-bold">
+                      {c.Type === "PERCENT" ? `-${c.Value}%` : c.Type === "FREE_ITEM" ? "฿0" : isPoints ? `+${Number(c.Value).toLocaleString()} แต้ม` : `-฿${(line?.discount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                    </span>
+                    <button type="button" onClick={() => setSelectedCoupons(prev => prev.filter(s => s.ID !== c.ID))}
+                      className="p-0.5 rounded text-gray-400 hover:text-red-500 transition-colors" title="เอาคูปองออก">
+                      <X size={13} />
+                    </button>
+                  </span>
+                );
+              })}
+              {selectedCoupons.length > 0 && (
+                <button type="button" onClick={() => setSelectedCoupons([])}
+                  className="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">
+                  ยกเลิกคูปองทั้งหมด
                 </button>
-             </div>
-             {receiptType === "ใบกำกับภาษี" && (
-                <div className="space-y-2 p-3 bg-gray-50 rounded-xl border border-gray-100 mb-4">
-                  {/* Search existing customers */}
-                  <div className="relative">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <Search size={13} className="text-gray-400" />
-                      <span className="text-xs font-medium text-gray-500">ค้นหาลูกค้าเดิม</span>
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="พิมพ์ชื่อ / เบอร์โทร หรือ เลขภาษี..."
-                      value={customerSearch}
-                      onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true); }}
-                      onFocus={() => setShowCustomerDropdown(true)}
-                      className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-white"
-                    />
-                    {showCustomerDropdown && customerSearch.trim() && (
-                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-44 overflow-y-auto">
-                        {customers
-                          .filter(c => {
-                            const q = customerSearch.toLowerCase();
-                            return (
-                              String(c.Name || "").toLowerCase().includes(q) ||
-                              String(c.Phone || "").includes(q) ||
-                              String(c.TaxID || "").includes(q)
-                            );
-                          })
-                          .map((c, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onMouseDown={() => selectCustomer(c)}
-                              className="w-full text-left px-3 py-2.5 hover:bg-primary/5 flex flex-col border-b border-gray-50 last:border-0 transition-colors"
-                            >
-                              <span className="font-semibold text-gray-900 text-sm">{c.Name}</span>
-                              <span className="text-xs text-gray-400">{c.Phone && `โทร: ${c.Phone}`} {c.TaxID && `| TAX: ${c.TaxID}`}</span>
-                            </button>
-                          ))}
-                        {customers.filter(c => {
-                          const q = customerSearch.toLowerCase();
-                          return String(c.Name||"").toLowerCase().includes(q)||String(c.Phone||"").includes(q)||String(c.TaxID||"").includes(q);
-                        }).length === 0 && (
-                          <div className="px-3 py-3 text-sm text-gray-400 text-center">ไม่พบลูกค้า — กรอกข้อมูลด้านล่างได้เลย</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+              )}
+            </div>
 
-                  {/* Divider */}
-                  <div className="flex items-center gap-2 my-1">
-                    <div className="flex-1 border-t border-gray-200" />
-                    <span className="text-xs text-gray-400">หรือกรอกเอง</span>
-                    <div className="flex-1 border-t border-gray-200" />
-                  </div>
-
-                  {/* Manual fields — บังคับกรอกครบทุกช่องสำหรับใบกำกับภาษีเต็มรูป */}
-                  <p className="text-xs text-rose-500 font-medium">* จำเป็นต้องกรอกให้ครบทุกช่อง</p>
-                  <input type="text" placeholder="ชื่อ-นามสกุล / บริษัท *" value={customerName} onChange={e => setCustomerName(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerName.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
-                  <input type="text" placeholder="เบอร์โทรศัพท์ *" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerPhone.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
-                  <input type="text" placeholder="ที่อยู่ *" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerAddress.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
-                  <input type="text" inputMode="numeric" maxLength={13} placeholder="เลขประจำตัวผู้เสียภาษี (13 หลัก) *" value={customerTaxId} onChange={e => setCustomerTaxId(e.target.value.replace(/\D/g, ""))} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", (!customerTaxId.trim() || taxIdInvalid) ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
-                  {taxIdInvalid && <p className="text-xs text-rose-600">เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก</p>}
-                  {(customerName || customerPhone || customerAddress || customerTaxId) && (
-                    <button type="button" onClick={clearCustomer} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 transition-colors">
-                      <X size={12} /> ล้างข้อมูลลูกค้า
-                    </button>
-                  )}
-                </div>
-             )}
-          </div>
-
-          {/* Coupon selector — show when customer selected */}
-          {customerName && (() => {
-            const now = new Date();
-            const activeCoupons = customerCoupons.filter(c =>
-              String(c.CustomerName || "").toLowerCase() === customerName.toLowerCase() &&
-              c.Status === "ACTIVE" &&
-              (!c.ExpiryDate || new Date(c.ExpiryDate) >= now)
-            );
-            return (
-              <div className="mb-4">
-                {activeCoupons.length > 0 && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setShowCouponPicker(p => !p)}
-                      className="w-full flex items-center justify-between px-4 py-2.5 bg-primary/5 border border-primary/20 rounded-xl text-sm font-semibold text-primary hover:bg-primary/10 transition-colors"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Ticket size={16} />
-                        {selectedCoupons.length > 0 ? `ใช้คูปอง ${selectedCoupons.length} ใบ` : `คูปองที่ใช้ได้ (${activeCoupons.length} ใบ)`}
-                      </span>
-                      <span className="text-xs">{showCouponPicker ? "▲" : "▼"}</span>
-                    </button>
-                    {showCouponPicker && (
-                      <div className="mt-2 space-y-1.5 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
-                        {selectedCoupons.length > 0 && (
-                          <button type="button" onClick={() => setSelectedCoupons([])}
-                            className="w-full text-left px-3 py-2 rounded-lg text-xs text-red-500 hover:bg-red-50 flex items-center gap-1.5 transition-colors">
-                            <X size={12} /> ยกเลิกคูปองทั้งหมด
-                          </button>
-                        )}
-                        {activeCoupons.map((c, i) => {
-                          const isApplied = selectedCoupons.some(s => s.ID === c.ID);
-                          const minOk = !parseFloat(c.MinOrderAmount) || subtotal >= parseFloat(c.MinOrderAmount);
-                          const freeBarcode = c.Type === "FREE_ITEM" ? String(c.FreeItemBarcode || "").trim() : null;
-                          const freeItemInCart = !freeBarcode || cart.some(ci => String(ci.Barcode || "").trim() === freeBarcode);
-                          const couponExp = posExpiryInfo(c.ExpiryDate);
-                          const isDisabled = !minOk || !freeItemInCart;
-                          let discLabel;
-                          if (c.Type === "PERCENT") {
-                            discLabel = `ลด ${c.Value}%`;
-                          } else if (c.Type === "FREE_ITEM") {
-                            const freeProd = freeBarcode ? products.find(p => String(p.Barcode || "").trim() === freeBarcode) : null;
-                            const freePrice = parseFloat(freeProd?.Price || freeProd?.price) || 0;
-                            discLabel = `🎁 ${c.FreeItemName || "ของแถม"}${freePrice > 0 ? ` (฿${freePrice.toLocaleString()})` : ""}`;
-                          } else if (c.Type === "POINTS") {
-                            discLabel = `+${Number(c.Value).toLocaleString()} แต้ม`;
-                          } else {
-                            discLabel = `ลด ฿${Number(c.Value).toLocaleString()}`;
-                          }
-                          return (
-                            <button key={i} type="button"
-                              disabled={isDisabled}
-                              onClick={() => {
-                                setSelectedCoupons(prev =>
-                                  isApplied ? prev.filter(s => s.ID !== c.ID) : [...prev, c]
-                                );
-                              }}
-                              className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all text-sm flex items-center justify-between ${isApplied ? "border-primary bg-primary/5 text-primary" : !isDisabled ? "border-gray-100 hover:border-primary/30 bg-gray-50" : "border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed"}`}>
-                              <div className="flex items-center gap-2">
-                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${isApplied ? "border-primary bg-primary" : "border-gray-300"}`}>
-                                  {isApplied && <span className="text-white text-xs leading-none">✓</span>}
-                                </div>
-                                <div>
-                                  <div className="font-semibold">{c.CouponName}</div>
-                                  {couponExp && (
-                                    <div className={`text-[10px] font-medium ${couponExp.expired ? "text-red-500" : couponExp.cls.split(" ")[0]}`}>
-                                      {couponExp.label}
-                                    </div>
-                                  )}
-                                  {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
-                                  {c.Type === "FREE_ITEM" && !freeItemInCart && (
-                                    <div className="text-xs text-red-400">กรุณาเพิ่ม "{c.FreeItemName || freeBarcode}" ก่อน</div>
-                                  )}
-                                </div>
-                              </div>
-                              <span className={`text-xs font-bold ml-2 shrink-0 ${c.Type === "FREE_ITEM" ? "text-green-600" : "text-primary"}`}>{discLabel}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {selectedCoupons.map((c, idx) => {
-                  const line = couponLines[idx];
+            {showCouponPicker && activeCoupons.length > 0 && (
+              <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1">
+                {activeCoupons.map((c, i) => {
+                  const isApplied = selectedCoupons.some(s => s.ID === c.ID);
+                  const minOk = !parseFloat(c.MinOrderAmount) || subtotal >= parseFloat(c.MinOrderAmount);
+                  const freeBarcode = c.Type === "FREE_ITEM" ? String(c.FreeItemBarcode || "").trim() : null;
+                  const freeItemInCart = !freeBarcode || cart.some(ci => String(ci.Barcode || "").trim() === freeBarcode);
+                  const couponExp = posExpiryInfo(c.ExpiryDate);
+                  const isDisabled = !minOk || !freeItemInCart;
+                  let discLabel;
+                  if (c.Type === "PERCENT") {
+                    discLabel = `ลด ${c.Value}%`;
+                  } else if (c.Type === "FREE_ITEM") {
+                    const freeProd = freeBarcode ? products.find(p => String(p.Barcode || "").trim() === freeBarcode) : null;
+                    const freePrice = parseFloat(freeProd?.Price || freeProd?.price) || 0;
+                    discLabel = `🎁 ${c.FreeItemName || "ของแถม"}${freePrice > 0 ? ` (฿${freePrice.toLocaleString()})` : ""}`;
+                  } else if (c.Type === "POINTS") {
+                    discLabel = `+${Number(c.Value).toLocaleString()} แต้ม`;
+                  } else {
+                    discLabel = `ลด ฿${Number(c.Value).toLocaleString()}`;
+                  }
                   return (
-                    <div key={c.ID} className={`mt-1.5 flex items-center justify-between px-4 py-2 border rounded-xl text-sm ${c.Type === "POINTS" ? "bg-yellow-50 border-yellow-100" : "bg-green-50 border-green-100"}`}>
-                      <span className={`flex items-center gap-1.5 font-semibold ${c.Type === "POINTS" ? "text-yellow-700" : "text-green-700"}`}>
-                        {c.Type === "POINTS" ? <Star size={14} /> : <Ticket size={14} />}
-                        {c.Type === "FREE_ITEM" ? `🎁 ${c.FreeItemName || c.CouponName}` : c.CouponName}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className={`font-bold ${c.Type === "POINTS" ? "text-yellow-700" : "text-green-700"}`}>
-                          {c.Type === "PERCENT" ? `-${c.Value}%` : c.Type === "FREE_ITEM" ? "ราคา ฿0" : c.Type === "POINTS" ? `+${Number(c.Value).toLocaleString()} แต้ม` : `-฿${(line?.discount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-                        </span>
-                        <button type="button" onClick={() => setSelectedCoupons(prev => prev.filter(s => s.ID !== c.ID))}
-                          className="text-gray-400 hover:text-red-500 transition-colors">
-                          <X size={12} />
-                        </button>
+                    <button key={i} type="button"
+                      disabled={isDisabled}
+                      onClick={() => {
+                        setSelectedCoupons(prev =>
+                          isApplied ? prev.filter(s => s.ID !== c.ID) : [...prev, c]
+                        );
+                      }}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all text-sm flex items-start gap-2 ${isApplied ? "border-amber-400 bg-amber-50 text-amber-800" : !isDisabled ? "border-gray-100 hover:border-amber-300 bg-white" : "border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed"}`}>
+                      <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${isApplied ? "border-amber-500 bg-amber-500" : "border-gray-300"}`}>
+                        {isApplied && <span className="text-white text-xs leading-none">✓</span>}
                       </div>
-                    </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold">{c.CouponName || (c.Type === "FREE_ITEM" ? "คูปองของแถม" : "คูปอง")}</span>
+                          <span className={`text-xs font-bold text-right shrink-0 max-w-[55%] ${c.Type === "FREE_ITEM" ? "text-green-600" : "text-amber-700"}`}>{discLabel}</span>
+                        </div>
+                        {couponExp && (
+                          <div className={`text-[10px] font-medium ${couponExp.expired ? "text-red-500" : couponExp.cls.split(" ")[0]}`}>
+                            {couponExp.label}
+                          </div>
+                        )}
+                        {!minOk && <div className="text-xs text-gray-400">ขั้นต่ำ ฿{Number(c.MinOrderAmount).toLocaleString()}</div>}
+                        {c.Type === "FREE_ITEM" && !freeItemInCart && (
+                          <div className="text-xs text-red-400">กรุณาเพิ่ม "{c.FreeItemName || freeBarcode}" ก่อน</div>
+                        )}
+                      </div>
+                    </button>
                   );
                 })}
               </div>
-            );
-          })()}
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4 lg:gap-6">
+        
+        {/* Left side: Search & Cart Items */}
+        <div className="flex-1 flex flex-col min-h-[400px] lg:min-h-0 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden order-1 lg:order-none">
+          {/* Search Bar */}
+          <div className="p-4 border-b border-gray-100 bg-gray-50/50 relative">
+            <form onSubmit={handleScan} className="relative z-10 flex items-center gap-2">
+              <div className="relative flex-1">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+                  {isLoadingProducts
+                    ? <Loader2 size={20} className="animate-spin text-primary/60" />
+                    : <ScanLine size={20} />
+                  }
+                </div>
+                <input
+                  ref={barcodeRef}
+                  type="text"
+                  className={clsx(
+                    "w-full pl-12 pr-4 py-3 rounded-xl border transition-all text-lg shadow-sm",
+                    isLoadingProducts
+                      ? "bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-white border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  )}
+                  placeholder={isLoadingProducts ? "กำลังโหลดข้อมูลสินค้า..." : "สแกนบาร์โค้ด หรือ พิมพ์ชื่อสินค้าที่นี่..."}
+                  value={barcodeInput}
+                  onChange={(e) => { if (!isLoadingProducts) setBarcodeInput(e.target.value); }}
+                  disabled={isLoadingProducts}
+                  autoFocus={!isLoadingProducts}
+                />
+              </div>
+              
+              <button 
+                type="button"
+                onClick={() => setIsScannerOpen(!isScannerOpen)}
+                className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors shadow-sm shrink-0"
+                title="เปิดกล้องสแกน"
+              >
+                {isScannerOpen ? <X size={24} /> : <Camera size={24} />}
+              </button>
+              <button type="submit" className="hidden">ตกลง</button>
+            </form>
 
-          {/* ── Split Payment Section ── */}
-          <h4 className="font-medium text-sm text-gray-500 mb-3 tracking-wider">เลือกวิธีชำระเงิน (แบ่งชำระได้)</h4>
+            {/* Camera Scanner View */}
+            {isScannerOpen && (
+              <BarcodeScanner 
+                onScanSuccess={handleScanSuccess} 
+                onClose={() => setIsScannerOpen(false)} 
+              />
+            )}
 
-          {/* Payment rows */}
-          <div className="space-y-2 mb-3">
-            {splitPayments.map((entry, idx) => {
-              const isCashRow    = entry.method === "เงินสด";
-              const isCreditRow  = entry.method === "เครดิต";
-              const isPointsRow  = entry.method === "พ้อย";
-              const isNonCash    = NON_CASH_METHODS.includes(entry.method);
-              const rowColor = isCashRow
-                ? "border-amber-300 bg-amber-50"
-                : isCreditRow
-                  ? "border-yellow-400 bg-yellow-50"
-                  : isPointsRow
-                    ? "border-orange-300 bg-orange-50"
-                    : entry.method === "บัตรเครดิต"
-                      ? "border-purple-300 bg-purple-50"
-                      : "border-blue-300 bg-blue-50";
-              const methodIcon = {
-                "เงินสด":        <Banknote size={16} className="text-amber-600 shrink-0" />,
-                "โอนเข้าบัญชี": <QrCode size={16} className="text-blue-600 shrink-0" />,
-                "สแกน QR":       <QrCode size={16} className="text-blue-600 shrink-0" />,
-                "บัตรเครดิต":   <CreditCard size={16} className="text-purple-600 shrink-0" />,
-                "เครดิต":        <Star size={16} className="text-yellow-600 shrink-0" />,
-                "พ้อย":          <Gift size={16} className="text-orange-500 shrink-0" />,
-              }[entry.method] || <Banknote size={16} className="shrink-0" />;
-
-              const amountFilledBefore = splitPayments.slice(0, idx).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-              const suggestedAmount = Math.max(0, total - amountFilledBefore);
-
-              return (
-                <div key={idx} className={`flex items-center gap-2 p-2.5 rounded-xl border-2 transition-all ${rowColor}`}>
-                  {methodIcon}
-                  <select
-                    value={entry.method}
-                    onChange={e => {
-                      const newMethod = e.target.value;
-                      if (NON_CASH_METHODS.includes(newMethod) && !customerName) {
-                        alert("กรุณาเลือกลูกค้าก่อนใช้เครดิต/พ้อย"); return;
-                      }
-                      setSplitPayments(prev => prev.map((p, i) => i === idx ? { ...p, method: newMethod } : p));
-                    }}
-                    className="flex-1 bg-transparent border-0 font-semibold text-sm outline-none cursor-pointer min-w-0"
+            {/* Autocomplete Dropdown */}
+            {barcodeInput.trim() && searchResults.length > 0 && !products.find(p => String(p.Barcode) === barcodeInput.trim()) && (
+              <div className="absolute z-50 left-4 right-4 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto divide-y divide-gray-100">
+                {searchResults.map((p, idx) => {
+                  const stock = getStock(p);
+                  const outOfStock = stock <= 0;
+                  return (
+                  <button
+                    key={p.Barcode || idx}
+                    type="button"
+                    onClick={() => addToCart(p)}
+                    disabled={outOfStock}
+                    className={clsx(
+                      "w-full text-left px-4 py-3 flex items-center justify-between group transition-colors",
+                      outOfStock ? "opacity-60 cursor-not-allowed bg-rose-50/40" : "hover:bg-gray-50"
+                    )}
                   >
-                    <optgroup label="── ทั่วไป ──">
-                      {["เงินสด","โอนเข้าบัญชี","สแกน QR","บัตรเครดิต"].map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="── เครดิต/พ้อย ──">
-                      <option value="เครดิต">เครดิต (Store Credit)</option>
-                      <option value="พ้อย">พ้อย (Points)</option>
-                    </optgroup>
-                  </select>
-                  <input
-                    type="number"
-                    min="0"
-                    value={entry.amount}
-                    onChange={e => setSplitPayments(prev => prev.map((p, i) => i === idx ? { ...p, amount: e.target.value } : p))}
-                    placeholder={suggestedAmount > 0 ? suggestedAmount.toFixed(2) : "0.00"}
-                    className="w-28 px-2 py-1.5 border border-white/70 rounded-lg text-right font-bold bg-white/70 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                  {splitPayments.length > 1 && (
-                    <button
-                      onClick={() => setSplitPayments(prev => prev.filter((_, i) => i !== idx))}
-                      className="p-1 text-red-400 hover:text-red-600 hover:bg-white/60 rounded-lg transition-colors shrink-0"
-                    >
-                      <X size={15} />
+                    <div>
+                      <div className={clsx("font-semibold transition-colors", outOfStock ? "text-gray-500" : "text-gray-900 group-hover:text-primary")}>
+                        {p.Name}
+                        {outOfStock && <span className="ml-2 text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded">สินค้าหมด</span>}
+                        {!outOfStock && stock !== Infinity && stock <= 5 && <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">เหลือ {stock}</span>}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">บาร์โค้ด: {p.Barcode}</div>
+                    </div>
+                    <div className="font-bold text-gray-900">฿{(Number(p.Price) || 0).toLocaleString()}</div>
+                  </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Cart Listing */}
+          <div className="flex-1 overflow-auto p-4 flex flex-col">
+            {cart.length === 0 && !pendingPackage ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-4 min-h-[300px]">
+                <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center">
+                  <ShoppingCart size={40} className="opacity-50" />
+                </div>
+                <p className="text-lg">ยังไม่มีสินค้าในตะกร้า ลองสแกนดูสิ!</p>
+              </div>
+            ) : (
+              <div className="flex-1 space-y-3">
+                {/* Pending package row */}
+                {pendingPackage && (() => {
+                  const { customer, pkg } = pendingPackage;
+                  const totalPts = (parseFloat(pkg.Points) || 0) + (parseFloat(pkg.BonusPoints) || 0);
+                  return (
+                    <div className="flex items-center gap-4 p-4 rounded-xl border-2 border-yellow-300 bg-yellow-50">
+                      <div className="w-16 h-16 rounded-lg bg-yellow-100 flex items-center justify-center text-yellow-600 text-2xl shrink-0">🎁</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-bold text-yellow-900">{pkg.Name}</h4>
+                          <span className="text-xs font-bold text-yellow-700 bg-yellow-200 rounded-full px-2 py-0.5">เครดิต</span>
+                        </div>
+                        <p className="text-xs text-yellow-700 mt-0.5">ลูกค้า: <span className="font-semibold">{customer.Name}</span></p>
+                        <div className="flex items-center gap-1 mt-0.5 text-xs text-yellow-600 font-semibold">
+                          <Star size={11} /> ได้รับ {totalPts.toLocaleString()} เครดิต
+                          {parseFloat(pkg.BonusPoints) > 0 && <span className="text-green-600">(รวมโบนัส)</span>}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-bold text-yellow-900 text-lg">฿{Number(pkg.Price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                      </div>
+                      <button onClick={() => setPendingPackage(null)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1">
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  );
+                })()}
+                {cart.map(item => (
+                  <div key={item.id} className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-primary/30 transition-colors group bg-white shadow-sm hover:shadow-md">
+                    <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover bg-gray-100" />
+
+                    <div className="flex-1 text-center sm:text-left">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-semibold text-gray-900">{item.name}</h4>
+                        {item.vatStatus === "NON VAT" && (
+                          <span className="text-xs font-bold text-gray-400 border border-gray-300 rounded px-1 py-0.5 leading-none">(N)</span>
+                        )}
+                      </div>
+                      <p className="text-gray-500 text-sm">{item.Barcode}</p>
+                      <div className="text-primary font-bold mt-1">฿{item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+
+                    <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1 border border-gray-200">
+                      <button onClick={() => updateQuantity(item.id, -1)} className="p-2 hover:bg-white hover:text-primary rounded-md transition-colors text-gray-500 shadow-sm">
+                        <Minus size={16} />
+                      </button>
+                      <span className="w-8 text-center font-medium">{item.qty}</span>
+                      <button onClick={() => updateQuantity(item.id, 1)} className="p-2 hover:bg-white hover:text-primary rounded-md transition-colors text-gray-500 shadow-sm">
+                        <Plus size={16} />
+                      </button>
+                    </div>
+
+                    <div className="text-right ml-4 font-bold text-lg w-24">
+                      ฿{(item.price * item.qty).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+
+                    <button onClick={() => removeItem(item.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 ml-2">
+                      <Trash2 size={20} />
                     </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Related Promotions section */}
+            {promoHints.length > 0 && (
+              <div className="mt-6 p-4 bg-fuchsia-50 rounded-xl border border-fuchsia-100 shrink-0">
+                 <h4 className="font-semibold text-fuchsia-800 mb-2 flex items-center gap-2">
+                   <Tag size={18} /> 
+                   รายการส่งเสริมการขาย (Promotions)
+                 </h4>
+                 <ul className="space-y-2">
+                   {promoHints.map((hint, idx) => (
+                     <li key={idx} className={`text-sm flex items-start gap-2 ${hint.achieved ? "text-green-700 font-bold" : "text-fuchsia-700"}`}>
+                       <span className="mt-0.5">{hint.achieved ? "🎉" : "•"}</span>
+                       <span>{hint.text}</span>
+                     </li>
+                   ))}
+                 </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right side: Payment Panel */}
+        <div className="w-full lg:w-[400px] flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 shrink-0">
+          <div className="p-6 border-b border-gray-100 space-y-4">
+            <h3 className="font-semibold text-lg text-gray-800">สรุปยอดชำระเงิน</h3>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between text-gray-500 items-center">
+                <span>ส่วนลดเพิ่มเติม</span>
+                <div className="flex items-center gap-1">
+                  <input 
+                    type="number" 
+                    min="0" 
+                    placeholder="0"
+                    value={manualDiscountValue}
+                    onChange={(e) => setManualDiscountValue(e.target.value)}
+                    className="w-16 px-2 py-1 text-right border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <select 
+                    value={manualDiscountType} 
+                    onChange={(e) => setManualDiscountType(e.target.value)}
+                    className="px-1 py-1 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="baht">฿</option>
+                    <option value="percent">%</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-between text-gray-500">
+                <span>ราคาสินค้า (ก่อน VAT)</span>
+                <span>฿{preVatDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              
+              {freeItemLines.map((fi, idx) => (
+                <div key={`fi-sum-${idx}`} className="flex justify-between text-green-700 font-bold bg-green-50 px-2 py-1 -mx-2 rounded-lg">
+                  <span className="flex items-center gap-1.5 flex-1 pr-2">
+                    <Gift size={14} />
+                    🎁 {fi.name}{fi.promoName ? ` (${fi.promoName})` : ""}
+                  </span>
+                  <span>-฿{(fi.price * fi.qty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              ))}
+              {discountAmount > 0 && (
+                 <div className="flex justify-between text-fuchsia-600 font-bold bg-fuchsia-50 px-2 py-1 -mx-2 rounded-lg">
+                   <span>ส่วนลดโปรโมชั่น</span>
+                   <span>-฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                 </div>
+              )}
+              {promoPointsEarned > 0 && (
+                 <div className="flex justify-between text-yellow-700 font-bold bg-yellow-50 px-2 py-1 -mx-2 rounded-lg">
+                   <span className="flex items-center gap-1"><Star size={13} /> แต้มจากโปรโมชั่น</span>
+                   <span>+{promoPointsEarned.toLocaleString()} แต้ม</span>
+                 </div>
+              )}
+              {couponLines.map((cl, idx) => (
+                <div key={`cl-${idx}`} className={`flex justify-between font-bold px-2 py-1 -mx-2 rounded-lg ${cl.discount > 0 ? "text-amber-700 bg-amber-50" : "text-yellow-700 bg-yellow-50"}`}>
+                  <span className="flex items-center gap-1.5">
+                    {cl.discount > 0 ? <Ticket size={14} /> : <Star size={13} />}
+                    {cl.name}
+                  </span>
+                  <span>{cl.discount > 0 ? `-฿${cl.discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ""}</span>
+                </div>
+              ))}
+              <div className="flex justify-between text-gray-500">
+                <span>ภาษีมูลค่าเพิ่ม 7% (รวมในราคาแล้ว)</span>
+                <span>฿{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              {pendingPackage && (
+                <div className="flex justify-between text-yellow-700 font-bold bg-yellow-50 px-2 py-1 -mx-2 rounded-lg">
+                  <span className="flex items-center gap-1.5"><Gift size={14} /> เครดิต: {pendingPackage.pkg.Name}</span>
+                  <span>฿{Number(pendingPackage.pkg.Price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              <div className="border-t border-gray-200 my-2 pt-2"></div>
+              <div className="flex justify-between items-end">
+                <span className="text-gray-900 font-medium pb-1">ยอดรวมทั้งหมด</span>
+                <span className="text-4xl font-bold text-primary tracking-tight">
+                  ฿{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              {hasCashSplit && total !== totalForCash && (
+                <div className="flex justify-end">
+                  <span className="text-xs text-amber-600 font-medium">* ปัดขึ้นเป็น ฿{totalForCash.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="p-6 flex-1 flex flex-col">
+            <div className="mb-6 space-y-3">
+               <h4 className="font-medium text-sm text-gray-500 tracking-wider">ประเภทเอกสาร</h4>
+               <div className="flex gap-4 mb-2 border-b pb-4">
+                  <button 
+                    onClick={() => setReceiptType("ใบเสร็จ")}
+                    className={clsx("flex-1 py-2 rounded-xl text-sm font-semibold transition-colors border", receiptType === "ใบเสร็จ" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100")}
+                  >
+                    ใบเสร็จอย่างย่อ
+                  </button>
+                  <button 
+                    onClick={() => setReceiptType("ใบกำกับภาษี")}
+                    className={clsx("flex-1 py-2 rounded-xl text-sm font-semibold transition-colors border", receiptType === "ใบกำกับภาษี" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100")}
+                  >
+                    ใบกำกับภาษีเต็มรูป
+                  </button>
+               </div>
+               {receiptType === "ใบกำกับภาษี" && (
+                  <div className="space-y-2 p-3 bg-gray-50 rounded-xl border border-gray-100 mb-4">
+                    {/* Search existing customers */}
+                    <div className="relative">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Search size={13} className="text-gray-400" />
+                        <span className="text-xs font-medium text-gray-500">ค้นหาลูกค้าเดิม</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="พิมพ์ชื่อ / เบอร์โทร หรือ เลขภาษี..."
+                        value={customerSearch}
+                        onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true); }}
+                        onFocus={() => setShowCustomerDropdown(true)}
+                        className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-white"
+                      />
+                      {showCustomerDropdown && customerSearch.trim() && (
+                        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-44 overflow-y-auto">
+                          {customers
+                            .filter(c => {
+                              const q = customerSearch.toLowerCase();
+                              return (
+                                String(c.Name || "").toLowerCase().includes(q) ||
+                                String(c.Phone || "").includes(q) ||
+                                String(c.TaxID || "").includes(q)
+                              );
+                            })
+                            .map((c, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onMouseDown={() => selectCustomer(c)}
+                                className="w-full text-left px-3 py-2.5 hover:bg-primary/5 flex flex-col border-b border-gray-50 last:border-0 transition-colors"
+                              >
+                                <span className="font-semibold text-gray-900 text-sm">{c.Name}</span>
+                                <span className="text-xs text-gray-400">{c.Phone && `โทร: ${c.Phone}`} {c.TaxID && `| TAX: ${c.TaxID}`}</span>
+                              </button>
+                            ))}
+                          {customers.filter(c => {
+                            const q = customerSearch.toLowerCase();
+                            return String(c.Name||"").toLowerCase().includes(q)||String(c.Phone||"").includes(q)||String(c.TaxID||"").includes(q);
+                          }).length === 0 && (
+                            <div className="px-3 py-3 text-sm text-gray-400 text-center">ไม่พบลูกค้า — กรอกข้อมูลด้านล่างได้เลย</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="flex items-center gap-2 my-1">
+                      <div className="flex-1 border-t border-gray-200" />
+                      <span className="text-xs text-gray-400">หรือกรอกเอง</span>
+                      <div className="flex-1 border-t border-gray-200" />
+                    </div>
+
+                    {/* Manual fields — บังคับกรอกครบทุกช่องสำหรับใบกำกับภาษีเต็มรูป */}
+                    <p className="text-xs text-rose-500 font-medium">* จำเป็นต้องกรอกให้ครบทุกช่อง</p>
+                    <input type="text" placeholder="ชื่อ-นามสกุล / บริษัท *" value={customerName} onChange={e => setCustomerName(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerName.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                    <input type="text" placeholder="เบอร์โทรศัพท์ *" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerPhone.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                    <input type="text" placeholder="ที่อยู่ *" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", !customerAddress.trim() ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                    <input type="text" inputMode="numeric" maxLength={13} placeholder="เลขประจำตัวผู้เสียภาษี (13 หลัก) *" value={customerTaxId} onChange={e => setCustomerTaxId(e.target.value.replace(/\D/g, ""))} className={clsx("w-full text-sm px-3 py-2 border rounded focus:outline-none focus:border-primary", (!customerTaxId.trim() || taxIdInvalid) ? "border-rose-300 bg-rose-50/40" : "border-gray-200")} />
+                    {taxIdInvalid && <p className="text-xs text-rose-600">เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก</p>}
+                    {(customerName || customerPhone || customerAddress || customerTaxId) && (
+                      <button type="button" onClick={clearCustomer} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 transition-colors">
+                        <X size={12} /> ล้างข้อมูลลูกค้า
+                      </button>
+                    )}
+                  </div>
+               )}
+            </div>
+
+            {/* ── Split Payment Section ── */}
+            <h4 className="font-medium text-sm text-gray-500 mb-3 tracking-wider">เลือกวิธีชำระเงิน (แบ่งชำระได้)</h4>
+
+            {/* Payment rows */}
+            <div className="space-y-2 mb-3">
+              {splitPayments.map((entry, idx) => {
+                const isCashRow    = entry.method === "เงินสด";
+                const isCreditRow  = entry.method === "เครดิต";
+                const isPointsRow  = entry.method === "พ้อย";
+                const isNonCash    = NON_CASH_METHODS.includes(entry.method);
+                const rowColor = isCashRow
+                  ? "border-amber-300 bg-amber-50"
+                  : isCreditRow
+                    ? "border-yellow-400 bg-yellow-50"
+                    : isPointsRow
+                      ? "border-orange-300 bg-orange-50"
+                      : entry.method === "บัตรเครดิต"
+                        ? "border-purple-300 bg-purple-50"
+                        : "border-blue-300 bg-blue-50";
+                const methodIcon = {
+                  "เงินสด":        <Banknote size={16} className="text-amber-600 shrink-0" />,
+                  "โอนเข้าบัญชี": <QrCode size={16} className="text-blue-600 shrink-0" />,
+                  "สแกน QR":       <QrCode size={16} className="text-blue-600 shrink-0" />,
+                  "บัตรเครดิต":   <CreditCard size={16} className="text-purple-600 shrink-0" />,
+                  "เครดิต":        <Star size={16} className="text-yellow-600 shrink-0" />,
+                  "พ้อย":          <Gift size={16} className="text-orange-500 shrink-0" />,
+                }[entry.method] || <Banknote size={16} className="shrink-0" />;
+
+                const amountFilledBefore = splitPayments.slice(0, idx).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+                const suggestedAmount = Math.max(0, total - amountFilledBefore);
+
+                return (
+                  <div key={idx} className={`flex items-center gap-2 p-2.5 rounded-xl border-2 transition-all ${rowColor}`}>
+                    {methodIcon}
+                    <select
+                      value={entry.method}
+                      onChange={e => {
+                        const newMethod = e.target.value;
+                        if (NON_CASH_METHODS.includes(newMethod) && !customerName) {
+                          alert("กรุณาเลือกลูกค้าก่อนใช้เครดิต/พ้อย"); return;
+                        }
+                        setSplitPayments(prev => prev.map((p, i) => i === idx ? { ...p, method: newMethod } : p));
+                      }}
+                      className="flex-1 bg-transparent border-0 font-semibold text-sm outline-none cursor-pointer min-w-0"
+                    >
+                      <optgroup label="── ทั่วไป ──">
+                        {["เงินสด","โอนเข้าบัญชี","สแกน QR","บัตรเครดิต"].map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="── เครดิต/พ้อย ──">
+                        <option value="เครดิต">เครดิต (Store Credit)</option>
+                        <option value="พ้อย">พ้อย (Points)</option>
+                      </optgroup>
+                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      value={entry.amount}
+                      onChange={e => setSplitPayments(prev => prev.map((p, i) => i === idx ? { ...p, amount: e.target.value } : p))}
+                      placeholder={suggestedAmount > 0 ? suggestedAmount.toFixed(2) : "0.00"}
+                      className="w-28 px-2 py-1.5 border border-white/70 rounded-lg text-right font-bold bg-white/70 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    {splitPayments.length > 1 && (
+                      <button
+                        onClick={() => setSplitPayments(prev => prev.filter((_, i) => i !== idx))}
+                        className="p-1 text-red-400 hover:text-red-600 hover:bg-white/60 rounded-lg transition-colors shrink-0"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add payment split */}
+            <button
+              onClick={() => setSplitPayments(prev => {
+                const usedMethods = prev.map(p => p.method);
+                const next = ["โอนเข้าบัญชี","สแกน QR","เงินสด","บัตรเครดิต","เครดิต","พ้อย"].find(m => !usedMethods.includes(m)) || "โอนเข้าบัญชี";
+                return [...prev, { method: next, amount: "" }];
+              })}
+              className="w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-primary/40 hover:text-primary transition-colors flex items-center justify-center gap-1.5 mb-3"
+            >
+              <Plus size={14} /> เพิ่มวิธีชำระ (แบ่งจ่าย)
+            </button>
+
+            {/* Payment Summary */}
+            <div className="bg-gray-50 rounded-xl border border-gray-100 p-3 space-y-1.5 mb-3 text-sm">
+              <div className="flex justify-between text-gray-600">
+                <span>ยอดที่ต้องชำระ</span>
+                <span className="font-bold text-gray-900">฿{total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              {totalPaid > 0 && (
+                <div className="flex justify-between text-gray-600">
+                  <span>ชำระแล้ว</span>
+                  <span className={clsx("font-bold", totalPaid >= total ? "text-emerald-600" : "text-gray-700")}>
+                    ฿{totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              {remaining > 0.005 && totalPaid > 0 && (
+                <div className="flex justify-between text-red-600 bg-red-50 px-2 py-1 rounded-lg font-semibold">
+                  <span>คงค้าง</span>
+                  <span>฿{remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {cashChange > 0.005 && (
+                <div className="flex justify-between text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg font-bold">
+                  <span>เงินทอน (เงินสด)</span>
+                  <span>฿{cashChange.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Quick cash denomination buttons — only for เงินสด rows */}
+            {hasCashSplit && (() => {
+              const cashIdx = splitPayments.findIndex(p => p.method === "เงินสด");
+              return (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {[20, 50, 100, 500, 1000].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setSplitPayments(prev => prev.map((p, i) =>
+                        i === cashIdx ? { ...p, amount: String((parseFloat(p.amount) || 0) + d) } : p
+                      ))}
+                      className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm font-bold border border-amber-200 transition-colors"
+                    >
+                      +{d}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSplitPayments(prev => {
+                      const nonCashPaid = prev.filter(p => p.method !== "เงินสด").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+                      const cashNeeded = Math.ceil(Math.max(0, total - nonCashPaid));
+                      return prev.map((p, i) => i === cashIdx ? { ...p, amount: String(cashNeeded) } : p);
+                    })}
+                    className="px-3 py-1.5 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 text-sm font-bold border border-amber-300 transition-colors"
+                  >
+                    พอดี
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSplitPayments(prev => prev.map((p, i) => i === cashIdx ? { ...p, amount: "" } : p))}
+                    className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm font-bold border border-gray-200 transition-colors"
+                  >
+                    ล้าง
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* เครดิต / พ้อย balance info — แสดงแยกกัน */}
+            {hasCreditSplit && customerName && (() => {
+              const custObj        = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
+              const availableCredit = parseFloat(custObj?.Credits) || 0;
+              const availablePoints = parseFloat(custObj?.Points)  || 0;
+              const neededCredit = Math.ceil(effectiveStoreCreditPaid);
+              const neededPoints = Math.ceil(effectivePointsPaid);
+              const creditsExp   = posExpiryInfo(custObj?.CreditsExpiry);
+              const pointsExp    = posExpiryInfo(custObj?.PointsExpiry);
+              return (
+                <div className="mb-3 space-y-2">
+                  {hasStoreCreditRow && (
+                    <div className="p-3 bg-yellow-50 rounded-xl border border-yellow-100 space-y-1.5 text-sm">
+                      <div className="flex justify-between items-center">
+                        <span className="text-yellow-800 font-semibold flex items-center gap-1"><Star size={13} /> เครดิตร้าน ({customerName})</span>
+                        <span className="font-bold text-yellow-700">{availableCredit.toLocaleString()} ฿</span>
+                      </div>
+                      {creditsExp && (
+                        <div className={`text-xs px-2 py-1 rounded-lg border flex items-center gap-1 ${creditsExp.cls}`}>
+                          <Tag size={11}/> {creditsExp.label}
+                        </div>
+                      )}
+                      <div className="flex justify-between text-yellow-700 text-xs">
+                        <span>ใช้ไป (1 เครดิต = ฿1)</span>
+                        <span className="font-bold">{neededCredit.toLocaleString()}</span>
+                      </div>
+                      {creditsExp?.expired && neededCredit > 0 && (
+                        <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">⚠️ เครดิตหมดอายุแล้ว ไม่สามารถใช้งานได้</div>
+                      )}
+                      {!creditsExp?.expired && availableCredit < neededCredit && neededCredit > 0 && (
+                        <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">เครดิตไม่พอ — ขาดอีก {(neededCredit - availableCredit).toLocaleString()}</div>
+                      )}
+                      {!creditsExp?.expired && availableCredit >= neededCredit && neededCredit > 0 && (
+                        <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availableCredit - neededCredit).toLocaleString()}</div>
+                      )}
+                    </div>
+                  )}
+                  {hasPointsRow && (
+                    <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 space-y-1.5 text-sm">
+                      <div className="flex justify-between items-center">
+                        <span className="text-orange-800 font-semibold flex items-center gap-1"><Gift size={13} /> แต้มสะสม ({customerName})</span>
+                        <span className="font-bold text-orange-700">{availablePoints.toLocaleString()} แต้ม</span>
+                      </div>
+                      {pointsExp && (
+                        <div className={`text-xs px-2 py-1 rounded-lg border flex items-center gap-1 ${pointsExp.cls}`}>
+                          <Tag size={11}/> {pointsExp.label}
+                        </div>
+                      )}
+                      <div className="flex justify-between text-orange-700 text-xs">
+                        <span>ใช้ไป (1 แต้ม = ฿1)</span>
+                        <span className="font-bold">{neededPoints.toLocaleString()}</span>
+                      </div>
+                      {pointsExp?.expired && neededPoints > 0 && (
+                        <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">⚠️ แต้มหมดอายุแล้ว ไม่สามารถใช้งานได้</div>
+                      )}
+                      {!pointsExp?.expired && availablePoints < neededPoints && neededPoints > 0 && (
+                        <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">แต้มไม่พอ — ขาดอีก {(neededPoints - availablePoints).toLocaleString()}</div>
+                      )}
+                      {!pointsExp?.expired && availablePoints >= neededPoints && neededPoints > 0 && (
+                        <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availablePoints - neededPoints).toLocaleString()}</div>
+                      )}
+                    </div>
                   )}
                 </div>
               );
-            })}
-          </div>
+            })()}
 
-          {/* Add payment split */}
-          <button
-            onClick={() => setSplitPayments(prev => {
-              const usedMethods = prev.map(p => p.method);
-              const next = ["โอนเข้าบัญชี","สแกน QR","เงินสด","บัตรเครดิต","เครดิต","พ้อย"].find(m => !usedMethods.includes(m)) || "โอนเข้าบัญชี";
-              return [...prev, { method: next, amount: "" }];
-            })}
-            className="w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-primary/40 hover:text-primary transition-colors flex items-center justify-center gap-1.5 mb-3"
-          >
-            <Plus size={14} /> เพิ่มวิธีชำระ (แบ่งจ่าย)
-          </button>
-
-          {/* Payment Summary */}
-          <div className="bg-gray-50 rounded-xl border border-gray-100 p-3 space-y-1.5 mb-3 text-sm">
-            <div className="flex justify-between text-gray-600">
-              <span>ยอดที่ต้องชำระ</span>
-              <span className="font-bold text-gray-900">฿{total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-            </div>
-            {totalPaid > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span>ชำระแล้ว</span>
-                <span className={clsx("font-bold", totalPaid >= total ? "text-emerald-600" : "text-gray-700")}>
-                  ฿{totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            )}
-            {remaining > 0.005 && totalPaid > 0 && (
-              <div className="flex justify-between text-red-600 bg-red-50 px-2 py-1 rounded-lg font-semibold">
-                <span>คงค้าง</span>
-                <span>฿{remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-            {cashChange > 0.005 && (
-              <div className="flex justify-between text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg font-bold">
-                <span>เงินทอน (เงินสด)</span>
-                <span>฿{cashChange.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Quick cash denomination buttons — only for เงินสด rows */}
-          {hasCashSplit && (() => {
-            const cashIdx = splitPayments.findIndex(p => p.method === "เงินสด");
-            return (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {[20, 50, 100, 500, 1000].map(d => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => setSplitPayments(prev => prev.map((p, i) =>
-                      i === cashIdx ? { ...p, amount: String((parseFloat(p.amount) || 0) + d) } : p
-                    ))}
-                    className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm font-bold border border-amber-200 transition-colors"
-                  >
-                    +{d}
-                  </button>
-                ))}
+            <div className="mt-auto space-y-3">
+              {!isPaymentComplete && totalPaid > 0 && remaining > 0.005 && (
+                <div className="text-center text-sm text-red-500 font-medium bg-red-50 border border-red-100 rounded-xl py-2">
+                  ยังค้างชำระอีก ฿{remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+              )}
+              {(taxInvoiceMissing || taxIdInvalid) && (
+                <div className="text-center text-sm text-rose-600 font-medium bg-rose-50 border border-rose-100 rounded-xl py-2">
+                  กรุณากรอกข้อมูลลูกค้าให้ครบ (ชื่อ, เบอร์โทร, ที่อยู่, เลขผู้เสียภาษี 13 หลัก) สำหรับใบกำกับภาษีเต็มรูป
+                </div>
+              )}
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setSplitPayments(prev => {
-                    const nonCashPaid = prev.filter(p => p.method !== "เงินสด").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-                    const cashNeeded = Math.ceil(Math.max(0, total - nonCashPaid));
-                    return prev.map((p, i) => i === cashIdx ? { ...p, amount: String(cashNeeded) } : p);
-                  })}
-                  className="px-3 py-1.5 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 text-sm font-bold border border-amber-300 transition-colors"
+                  onClick={openPreview}
+                  disabled={cart.length === 0}
+                  title="ดูตัวอย่างใบเสร็จ"
+                  className="shrink-0 px-4 py-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  พอดี
+                  <Printer size={20} />
                 </button>
                 <button
-                  type="button"
-                  onClick={() => setSplitPayments(prev => prev.map((p, i) => i === cashIdx ? { ...p, amount: "" } : p))}
-                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm font-bold border border-gray-200 transition-colors"
+                  onClick={handleCheckout}
+                  disabled={(() => {
+                    if (cart.length === 0 && !pendingPackage) return true;
+                    if (isCheckingOut) return true;
+                    if (!isPaymentComplete) return true;
+                    if (taxInvoiceMissing || taxIdInvalid) return true;
+                    const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
+                    if (hasStoreCreditRow && (parseFloat(custObj?.Credits) || 0) < Math.ceil(effectiveStoreCreditPaid)) return true;
+                    if (hasPointsRow      && (parseFloat(custObj?.Points)  || 0) < Math.ceil(effectivePointsPaid))      return true;
+                    if (hasStoreCreditRow && Math.ceil(effectiveStoreCreditPaid) > 0 && posExpiryInfo(custObj?.CreditsExpiry)?.expired) return true;
+                    if (hasPointsRow      && Math.ceil(effectivePointsPaid)      > 0 && posExpiryInfo(custObj?.PointsExpiry)?.expired)  return true;
+                    return false;
+                  })()}
+                  className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
                 >
-                  ล้าง
+                  {isCheckingOut ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle size={20} />}
+                  {isCheckingOut ? "กำลังบันทึก..." : "รับชำระเงินสำเร็จ"}
                 </button>
               </div>
-            );
-          })()}
-
-          {/* เครดิต / พ้อย balance info — แสดงแยกกัน */}
-          {hasCreditSplit && customerName && (() => {
-            const custObj        = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
-            const availableCredit = parseFloat(custObj?.Credits) || 0;
-            const availablePoints = parseFloat(custObj?.Points)  || 0;
-            const neededCredit = Math.ceil(effectiveStoreCreditPaid);
-            const neededPoints = Math.ceil(effectivePointsPaid);
-            const creditsExp   = posExpiryInfo(custObj?.CreditsExpiry);
-            const pointsExp    = posExpiryInfo(custObj?.PointsExpiry);
-            return (
-              <div className="mb-3 space-y-2">
-                {hasStoreCreditRow && (
-                  <div className="p-3 bg-yellow-50 rounded-xl border border-yellow-100 space-y-1.5 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-yellow-800 font-semibold flex items-center gap-1"><Star size={13} /> เครดิตร้าน ({customerName})</span>
-                      <span className="font-bold text-yellow-700">{availableCredit.toLocaleString()} ฿</span>
-                    </div>
-                    {creditsExp && (
-                      <div className={`text-xs px-2 py-1 rounded-lg border flex items-center gap-1 ${creditsExp.cls}`}>
-                        <Tag size={11}/> {creditsExp.label}
-                      </div>
-                    )}
-                    <div className="flex justify-between text-yellow-700 text-xs">
-                      <span>ใช้ไป (1 เครดิต = ฿1)</span>
-                      <span className="font-bold">{neededCredit.toLocaleString()}</span>
-                    </div>
-                    {creditsExp?.expired && neededCredit > 0 && (
-                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">⚠️ เครดิตหมดอายุแล้ว ไม่สามารถใช้งานได้</div>
-                    )}
-                    {!creditsExp?.expired && availableCredit < neededCredit && neededCredit > 0 && (
-                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">เครดิตไม่พอ — ขาดอีก {(neededCredit - availableCredit).toLocaleString()}</div>
-                    )}
-                    {!creditsExp?.expired && availableCredit >= neededCredit && neededCredit > 0 && (
-                      <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availableCredit - neededCredit).toLocaleString()}</div>
-                    )}
-                  </div>
-                )}
-                {hasPointsRow && (
-                  <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 space-y-1.5 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-orange-800 font-semibold flex items-center gap-1"><Gift size={13} /> แต้มสะสม ({customerName})</span>
-                      <span className="font-bold text-orange-700">{availablePoints.toLocaleString()} แต้ม</span>
-                    </div>
-                    {pointsExp && (
-                      <div className={`text-xs px-2 py-1 rounded-lg border flex items-center gap-1 ${pointsExp.cls}`}>
-                        <Tag size={11}/> {pointsExp.label}
-                      </div>
-                    )}
-                    <div className="flex justify-between text-orange-700 text-xs">
-                      <span>ใช้ไป (1 แต้ม = ฿1)</span>
-                      <span className="font-bold">{neededPoints.toLocaleString()}</span>
-                    </div>
-                    {pointsExp?.expired && neededPoints > 0 && (
-                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">⚠️ แต้มหมดอายุแล้ว ไม่สามารถใช้งานได้</div>
-                    )}
-                    {!pointsExp?.expired && availablePoints < neededPoints && neededPoints > 0 && (
-                      <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-medium">แต้มไม่พอ — ขาดอีก {(neededPoints - availablePoints).toLocaleString()}</div>
-                    )}
-                    {!pointsExp?.expired && availablePoints >= neededPoints && neededPoints > 0 && (
-                      <div className="text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle size={12} /> เพียงพอ — คงเหลือ {(availablePoints - neededPoints).toLocaleString()}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          <div className="mt-auto space-y-3">
-            {!isPaymentComplete && totalPaid > 0 && remaining > 0.005 && (
-              <div className="text-center text-sm text-red-500 font-medium bg-red-50 border border-red-100 rounded-xl py-2">
-                ยังค้างชำระอีก ฿{remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </div>
-            )}
-            {(taxInvoiceMissing || taxIdInvalid) && (
-              <div className="text-center text-sm text-rose-600 font-medium bg-rose-50 border border-rose-100 rounded-xl py-2">
-                กรุณากรอกข้อมูลลูกค้าให้ครบ (ชื่อ, เบอร์โทร, ที่อยู่, เลขผู้เสียภาษี 13 หลัก) สำหรับใบกำกับภาษีเต็มรูป
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={openPreview}
-                disabled={cart.length === 0}
-                title="ดูตัวอย่างใบเสร็จ"
-                className="shrink-0 px-4 py-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Printer size={20} />
-              </button>
-              <button
-                onClick={handleCheckout}
-                disabled={(() => {
-                  if (cart.length === 0 && !pendingPackage) return true;
-                  if (isCheckingOut) return true;
-                  if (!isPaymentComplete) return true;
-                  if (taxInvoiceMissing || taxIdInvalid) return true;
-                  const custObj = customers.find(c => String(c.Name || "").toLowerCase() === customerName.toLowerCase());
-                  if (hasStoreCreditRow && (parseFloat(custObj?.Credits) || 0) < Math.ceil(effectiveStoreCreditPaid)) return true;
-                  if (hasPointsRow      && (parseFloat(custObj?.Points)  || 0) < Math.ceil(effectivePointsPaid))      return true;
-                  if (hasStoreCreditRow && Math.ceil(effectiveStoreCreditPaid) > 0 && posExpiryInfo(custObj?.CreditsExpiry)?.expired) return true;
-                  if (hasPointsRow      && Math.ceil(effectivePointsPaid)      > 0 && posExpiryInfo(custObj?.PointsExpiry)?.expired)  return true;
-                  return false;
-                })()}
-                className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
-              >
-                {isCheckingOut ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle size={20} />}
-                {isCheckingOut ? "กำลังบันทึก..." : "รับชำระเงินสำเร็จ"}
-              </button>
             </div>
           </div>
         </div>
