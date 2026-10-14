@@ -75,11 +75,13 @@ frontend เรียก Supabase โดยตรงผ่าน PostgREST + RPC
 3. จด `Project URL`, `anon key`, `service_role key` จาก Settings → API
 
 ### เฟส 1 — ย้ายข้อมูล (1 ชั่วโมง)
-```bash
-export SUPABASE_URL="https://xxxx.supabase.co"
-export SUPABASE_SERVICE_KEY="eyJ..."   # service_role key — ห้าม commit / ห้ามใส่ใน frontend
+รันบนเครื่องคอมของร้าน (ต้องมี Node.js 18 ขึ้นไป — ใช้ตัวติดตั้งในโฟลเดอร์ `setup/` ได้) เปิด PowerShell ที่โฟลเดอร์โปรเจกต์:
+```powershell
+$env:SUPABASE_URL = "https://xxxx.supabase.co"
+$env:SUPABASE_SERVICE_KEY = "eyJ..."   # service_role key — ห้าม commit / ห้ามใส่ใน frontend
 node scripts/migrate-sheets-to-supabase.mjs
 ```
+ถ้าใช้ macOS/Linux ใช้ `export SUPABASE_URL="..."` แทน `$env:...`
 - สคริปต์ดึงข้อมูลจาก API เดิมทุก action แล้ว insert เข้า Supabase (ข้ามตารางที่มีข้อมูลอยู่แล้ว จึงรันซ้ำได้)
 - ตรวจนับ: จำนวนแถวแต่ละตาราง, ยอดขายรวม, สต็อกรวม เทียบกับชีตเดิม
 - ตั้งรหัสผ่านผู้ใช้ใหม่ (API เดิมไม่ส่งรหัสผ่านออกมา):
