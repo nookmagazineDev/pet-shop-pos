@@ -68,30 +68,81 @@ frontend เรียก Supabase โดยตรงผ่าน PostgREST + RPC
 
 ## 3. ขั้นตอนลงมือทำ
 
-### เฟส 0 — เตรียมโปรเจกต์ (ครึ่งวัน)
-1. สมัคร [supabase.com](https://supabase.com) สร้างโปรเจกต์ (เลือก region Singapore ใกล้ไทยสุด)
-2. ไปที่ **SQL Editor** → วางเนื้อหา `supabase/migrations/0001_initial_schema.sql` → Run
-   จะได้ตารางครบ 23 ตาราง + ระบบเลขที่เอกสาร + RPC checkout/login + RLS
-3. จด `Project URL`, `anon key`, `service_role key` จาก Settings → API
+### เฟส 0 — สร้างโปรเจกต์ Supabase (ประมาณ 20 นาที)
 
-### เฟส 1 — ย้ายข้อมูล (1 ชั่วโมง)
-รันบนเครื่องคอมของร้าน (ต้องมี Node.js 18 ขึ้นไป — ใช้ตัวติดตั้งในโฟลเดอร์ `setup/` ได้) เปิด PowerShell ที่โฟลเดอร์โปรเจกต์:
+**ขั้นที่ 1 — สมัครและสร้างโปรเจกต์**
+1. เข้า [supabase.com](https://supabase.com) → **Start your project** → สมัครด้วยบัญชี GitHub หรืออีเมล
+2. กด **New project** แล้วกรอก:
+   - **Name:** `pet-shop-pos` (ตั้งชื่ออะไรก็ได้)
+   - **Database Password:** กด Generate แล้ว**จดเก็บไว้ที่ปลอดภัย**
+   - **Region:** `Southeast Asia (Singapore)` — ใกล้ไทยที่สุด เร็วที่สุด
+   - **Plan:** Free พอสำหรับร้านเดียว
+3. กด **Create new project** แล้วรอประมาณ 2 นาทีจนสถานะขึ้นพร้อมใช้งาน
+
+**ขั้นที่ 2 — สร้างตาราง**
+1. เมนูซ้าย → **SQL Editor** → **New query**
+2. เปิดไฟล์ `supabase/migrations/0001_initial_schema.sql` คัดลอก**ทั้งไฟล์**ไปวาง → กด **Run**
+3. ต้องขึ้น `Success. No rows returned` ถ้าขึ้น error ให้คัดลอกข้อความ error มาถาม
+4. ตรวจผล: เมนูซ้าย → **Table Editor** ต้องเห็นตาราง `Products`, `Transactions`, `Customers` ฯลฯ ครบ 23 ตาราง (ยังว่างอยู่ ถูกต้องแล้ว)
+
+**ขั้นที่ 3 — คัดลอก URL และ key**
+เมนูซ้าย → **Project Settings** (รูปเฟือง) แล้วจดค่าต่อไปนี้:
+- **Project URL** (หน้า Data API หรือ General) เช่น `https://abcdefgh.supabase.co`
+- **Publishable key** (หน้า API Keys) ขึ้นต้นด้วย `sb_publishable_...` — ใช้ใน frontend ตอนเฟส 2
+- **Secret key** (หน้า API Keys → กดแสดง) ขึ้นต้นด้วย `sb_secret_...` — ใช้ย้ายข้อมูลเท่านั้น
+
+> ถ้าโปรเจกต์ยังมีแท็บ *Legacy API keys* อยู่ ใช้ `service_role` (ขึ้นต้น `eyJ...`) แทน secret key ก็ได้ สคริปต์รองรับทั้งสองแบบ แต่ Supabase กำลังเลิกใช้ key แบบเก่า ควรใช้แบบใหม่
+
+### เฟส 1 — ย้ายข้อมูลจาก Google Sheets (ประมาณ 30 นาที)
+
+ต้องรัน**บนเครื่องคอมของร้าน** (เครื่องที่เปิดเว็บ POS ได้ปกติ) เพราะสคริปต์ดึงข้อมูลผ่าน API ของ Google Sheets ตัวเดิม
+
+**ขั้นที่ 4 — เตรียมเครื่อง**
+1. ต้องมี Node.js 18 ขึ้นไป — เปิด PowerShell พิมพ์ `node -v` ถ้าไม่ขึ้นเลขเวอร์ชัน ให้ติดตั้งด้วย `setup/install-nodejs.bat`
+2. ดาวน์โหลดโค้ด branch นี้ลงเครื่อง (`git pull` หรือ Download ZIP จาก GitHub)
+3. เปิด PowerShell ที่โฟลเดอร์โปรเจกต์ (คลิกขวาในโฟลเดอร์ → *Open in Terminal*)
+
+**ขั้นที่ 5 — รันสคริปต์**
 ```powershell
-$env:SUPABASE_URL = "https://xxxx.supabase.co"
-$env:SUPABASE_SERVICE_KEY = "eyJ..."   # service_role key — ห้าม commit / ห้ามใส่ใน frontend
+$env:SUPABASE_URL = "https://abcdefgh.supabase.co"
+$env:SUPABASE_SERVICE_KEY = "sb_secret_..."
 node scripts/migrate-sheets-to-supabase.mjs
 ```
-ถ้าใช้ macOS/Linux ใช้ `export SUPABASE_URL="..."` แทน `$env:...`
-- สคริปต์ดึงข้อมูลจาก API เดิมทุก action แล้ว insert เข้า Supabase (ข้ามตารางที่มีข้อมูลอยู่แล้ว จึงรันซ้ำได้)
-- ตรวจนับ: จำนวนแถวแต่ละตาราง, ยอดขายรวม, สต็อกรวม เทียบกับชีตเดิม
-- ตั้งรหัสผ่านผู้ใช้ใหม่ (API เดิมไม่ส่งรหัสผ่านออกมา):
-  ```sql
-  update "Users" set "Password" = crypt('รหัสผ่านใหม่', gen_salt('bf')) where "Username" = 'admin';
-  ```
+(macOS/Linux ใช้ `export SUPABASE_URL="..."` แทน `$env:...`)
+
+จะเห็นผลทีละตาราง เช่น
+```
+▸ Products           ✅ 342 แถว
+▸ StoreStock         ✅ 120 แถว
+▸ Transactions       ✅ 5180 แถว
+```
+- `✅` = ย้ายสำเร็จ · `ไม่มีข้อมูลในชีต` = ชีตนั้นว่าง ปกติ · `❌` = มีปัญหา ให้คัดลอกข้อความมาถาม
+- **รันซ้ำได้ปลอดภัย** — ตารางที่มีข้อมูลแล้วจะถูกข้าม ไม่ซ้ำ ถ้าบางตารางขึ้น ❌ แก้แล้วรันใหม่ได้เลย
+- ต้องการล้างแล้วย้ายใหม่ทั้งหมด: SQL Editor → `truncate "Products", "Transactions";` (ใส่ชื่อตารางที่ต้องการ) แล้วรันสคริปต์ใหม่
+
+**ขั้นที่ 6 — ตั้งรหัสผ่านพนักงานใหม่**
+API เดิมไม่ส่งรหัสผ่านออกมา (ถูกต้องแล้วตามหลักความปลอดภัย) จึงต้องตั้งใหม่ใน SQL Editor ทีละคน — รหัสจะถูกเข้ารหัสแบบ bcrypt ไม่เก็บเป็นตัวอักษรตรง ๆ อีกต่อไป:
+```sql
+update "Users" set "Password" = crypt('รหัสผ่านใหม่', gen_salt('bf')) where "Username" = 'admin';
+```
+
+**ขั้นที่ 7 — ตรวจความถูกต้อง** (SQL Editor) แล้วเทียบกับชีตเดิม:
+```sql
+select 'Products' t, count(*) from "Products" union all
+select 'Transactions', count(*) from "Transactions" union all
+select 'Customers', count(*) from "Customers";
+
+select sum("TotalAmount") as ยอดขายรวม from "Transactions" where "Status" <> 'CANCELLED';
+select sum("Quantity") as สต็อกรวม from "Products";
+```
+ตัวเลขตรงกับชีต = **เฟส 1 เสร็จสมบูรณ์** ✅
+
+> ระหว่างเฟส 0–1 หน้าร้านยังใช้ Google Sheets ได้ตามปกติ ไม่กระทบการขาย แต่ถ้ามีการขายเพิ่มหลังย้ายข้อมูล ข้อมูลใหม่จะยังไม่อยู่ใน Supabase — ก่อนสลับระบบจริง (เฟส 2) ให้ truncate แล้วรันสคริปต์อีกรอบหลังปิดร้าน
 
 ### เฟส 2 — สลับฝั่งอ่าน (1–2 วัน)
 1. `npm install @supabase/supabase-js`
-2. สร้าง `src/lib/supabase.js` (ใช้ **anon key** เท่านั้น) และตั้ง env ใน Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+2. สร้าง `src/lib/supabase.js` (ใช้ **publishable key** เท่านั้น) และตั้ง env ใน Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - RLS ใน schema อนุญาตเฉพาะผู้ใช้ที่ล็อกอินแล้ว (`authenticated`) จึงต้องให้หน้า Login เข้าสู่ระบบผ่าน **Supabase Auth** (`supabase.auth.signInWithPassword`) ในเฟสนี้ด้วย — สร้างบัญชีพนักงานที่ Authentication → Users ไม่อย่างนั้น query จะได้ข้อมูลว่าง
 3. แก้ `fetchApi` ใน `src/api.js` ให้ map action → `supabase.from(table).select()` (ตาราง action↔table อยู่ใน `scripts/migrate-sheets-to-supabase.mjs` แล้ว)
 4. เพิ่ม `.order()` และ `.limit()` ให้ตารางใหญ่ (Transactions, StockMovements) — ได้ความเร็วเพิ่มทันที
 
@@ -104,7 +155,7 @@ node scripts/migrate-sheets-to-supabase.mjs
 5. เสร็จแล้วปิด Apps Script deployment เพื่อปิดช่องโหว่ API สาธารณะ
 
 ### เฟส 4 — ยกระดับ (ทำทีหลังได้)
-- ย้ายผู้ใช้ไป **Supabase Auth** เต็มตัว แล้วเขียน RLS แยกตาม role (เช่น staff ห้ามลบผู้ใช้ / ห้ามดูต้นทุน)
+- เขียน RLS แยกตาม role (ต่อจาก Supabase Auth ที่เริ่มใช้ในเฟส 2) (เช่น staff ห้ามลบผู้ใช้ / ห้ามดูต้นทุน)
 - เปลี่ยน FK จาก `CustomerName` → `CustomerID`
 - ใช้ **Realtime** ให้สต็อกอัปเดตสดข้ามเครื่อง POS หลายจุด
 - ตั้ง scheduled backup (Supabase มี daily backup ให้ใน Pro plan; ฟรีเทียร์ export เองได้)
@@ -120,5 +171,5 @@ node scripts/migrate-sheets-to-supabase.mjs
 | `docs/SUPABASE_MIGRATION.md` | เอกสารฉบับนี้ |
 
 **ข้อควรระวังเรื่อง key:**
-- `anon key` → ใช้ใน frontend ได้ (ถูกจำกัดด้วย RLS)
-- `service_role key` → ข้าม RLS ทั้งหมด ใช้เฉพาะในสคริปต์ migration บนเครื่องตัวเอง ห้าม commit ลง git และห้ามใส่ใน frontend เด็ดขาด
+- **Publishable key** (`sb_publishable_...`) → ใช้ใน frontend ได้ (ถูกจำกัดด้วย RLS)
+- **Secret key** (`sb_secret_...`) → ข้าม RLS ทั้งหมด ใช้เฉพาะในสคริปต์ migration บนเครื่องตัวเอง ห้าม commit ลง git และห้ามใส่ใน frontend เด็ดขาด

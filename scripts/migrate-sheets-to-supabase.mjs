@@ -7,7 +7,8 @@
 //      (Supabase Dashboard → SQL Editor → วางแล้ว Run)
 //   2. ตั้งค่า environment variables:
 //        SUPABASE_URL          เช่น https://xxxx.supabase.co
-//        SUPABASE_SERVICE_KEY  service_role key (Settings → API)
+//        SUPABASE_SERVICE_KEY  Secret key (sb_secret_...) จาก Project Settings → API Keys
+//                              (หรือ service_role key แบบเก่าที่ขึ้นต้นด้วย eyJ ก็ใช้ได้)
 //        GAS_API_URL           (ไม่ใส่ก็ได้ จะใช้ URL ใน src/api.js)
 //   3. node scripts/migrate-sheets-to-supabase.mjs
 //
@@ -23,6 +24,12 @@ const GAS_API_URL = process.env.GAS_API_URL
   || "https://script.google.com/macros/s/AKfycbw55ZnPhKMRIV_y1OoqhJEuhovL4_w8fikg4ARvFx_O7X9zHhiP3clE2F6-hDnXechNCw/exec";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+// Secret keys แบบใหม่ (sb_secret_...) ไม่ใช่ JWT ส่งเป็น Bearer แล้วจะโดนปฏิเสธ
+// จึงใส่ Authorization เฉพาะ key แบบเก่า (JWT ขึ้นต้นด้วย eyJ)
+const AUTH_HEADERS = SERVICE_KEY && SERVICE_KEY.startsWith("eyJ")
+  ? { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }
+  : { apikey: SERVICE_KEY };
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
   console.error("❌ กรุณาตั้งค่า SUPABASE_URL และ SUPABASE_SERVICE_KEY ก่อนรัน");
@@ -60,6 +67,7 @@ const TIMESTAMP_COLS = new Set(["Date","Timestamp","UpdatedAt","CreatedAt","Open
 
 function coerce(col, value) {
   if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
   if (NUMERIC_COLS.has(col)) {
     const n = parseFloat(value);
     return Number.isFinite(n) ? n : null;
@@ -75,6 +83,23 @@ function coerce(col, value) {
   return String(value);
 }
 
+// ชีต Products บางร้านใช้หัวคอลัมน์ภาษาไทย — map แบบเดียวกับ fetchApi ใน src/api.js
+function normalizeProduct(item) {
+  const isVat = (v) => v === "VAT" || v === "NON VAT";
+  return {
+    ...item,
+    VatStatus: (isVat(item.Price) ? item.Price : item.VatStatus) || "VAT",
+    CostPrice: item.CostPrice || item["ต้นทุน"] || 0,
+    Price: (!isVat(item.Price) && item.Price) ? item.Price : (item["ขายปลีก"] || item["ราคาปลีก"] || item["ราคา"] || 0),
+    WholesalePrice: item.WholesalePrice || item["ขายส่ง"] || item["ราคาส่ง"] || 0,
+    ShopeePrice: item.ShopeePrice || item["shopee"] || item["shoppe"] || 0,
+    LazadaPrice: item.LazadaPrice || item["lazada"] || 0,
+    LinemanPrice: item.LinemanPrice || item["line"] || item["lineman"] || 0,
+    GrabFoodPrice: item.GrabFoodPrice || item["grab"] || item["grabfood"] || 0,
+    Category: item.Category || item["ประเภท"] || item["หมวดหมู่"] || "ทั่วไป",
+  };
+}
+
 async function fetchRows(action) {
   const res = await fetch(`${GAS_API_URL}?action=${action}`);
   if (!res.ok) throw new Error(`GAS API ${action}: HTTP ${res.status}`);
@@ -84,20 +109,21 @@ async function fetchRows(action) {
 
 async function tableIsEmpty(table) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}?select=id&limit=1`, {
-    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+    headers: AUTH_HEADERS,
   });
   if (!res.ok) throw new Error(`ตรวจตาราง ${table} ไม่สำเร็จ: HTTP ${res.status} — รัน 0001_initial_schema.sql หรือยัง?`);
   return (await res.json()).length === 0;
 }
 
-async function insertBatch(table, rows) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}`, {
+async function insertBatch(table, columns, rows) {
+  const cols = columns.map((c) => `"${c}"`).join(",");
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}?columns=${encodeURIComponent(cols)}`, {
     method: "POST",
     headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
+      ...AUTH_HEADERS,
       "Content-Type": "application/json",
-      Prefer: "return=minimal",
+      // missing=default: คอลัมน์ที่ไม่ได้ส่งมาใช้ค่า default ของตาราง (เช่น VatStatus='VAT')
+      Prefer: "return=minimal,missing=default",
     },
     body: JSON.stringify(rows),
   });
@@ -119,13 +145,18 @@ async function main() {
       if (raw.length === 0) { console.log("ไม่มีข้อมูลในชีต"); continue; }
 
       const rows = raw.map((r) => {
+        const src = table === "Products" ? normalizeProduct(r) : r;
         const out = {};
-        for (const col of columns) out[col] = coerce(col, r[col]);
+        for (const col of columns) {
+          const v = coerce(col, src[col]);
+          // วันที่ว่างต้องคง null ไว้ ไม่ให้ default now() ทำให้บิลเก่ากลายเป็นบิลวันนี้
+          if (v !== null || TIMESTAMP_COLS.has(col)) out[col] = v;
+        }
         return out;
       }).filter((r) => Object.values(r).some((v) => v !== null));
 
       for (let i = 0; i < rows.length; i += 500) {
-        await insertBatch(table, rows.slice(i, i + 500));
+        await insertBatch(table, columns, rows.slice(i, i + 500));
       }
       totalRows += rows.length;
       console.log(`✅ ${rows.length} แถว`);

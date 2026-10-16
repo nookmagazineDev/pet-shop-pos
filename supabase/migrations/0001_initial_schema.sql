@@ -626,6 +626,7 @@ create or replace function hash_existing_passwords()
 returns integer
 language plpgsql
 security definer
+set search_path = public, extensions
 as $$
 declare
   v_count integer;
@@ -642,6 +643,7 @@ create or replace function login_user(p_username text, p_password text)
 returns jsonb
 language plpgsql
 security definer
+set search_path = public, extensions
 as $$
 declare
   u record;
