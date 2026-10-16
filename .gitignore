@@ -25,3 +25,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# NAS database stack (secrets, data, backups)
+nas/.env
+nas/data/
+nas/backups/

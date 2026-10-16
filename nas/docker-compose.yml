@@ -1,0 +1,77 @@
+# Pet Shop POS — ฐานข้อมูลบน NAS
+# db     : PostgreSQL เก็บข้อมูลทั้งหมด (ไม่เปิดพอร์ตออกนอก NAS)
+# api    : PostgREST แปลงฐานข้อมูลเป็น REST API ให้หน้าเว็บเรียก (พอร์ต 3000 ในวงแลน)
+# tunnel : Cloudflare Tunnel เปิด api ให้เข้าจากนอกร้านผ่าน HTTPS โดยไม่ต้องเปิดพอร์ตเราเตอร์
+# backup : สำรองฐานข้อมูลทุกวันลงโฟลเดอร์ ./backups เก็บย้อนหลัง 30 วัน
+#
+# ค่าลับทั้งหมดอยู่ในไฟล์ .env (คัดลอกจาก .env.example) — ดูขั้นตอนใน docs/NAS_SETUP.md
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ตั้งค่า POSTGRES_PASSWORD ใน .env}
+      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD:?ตั้งค่า AUTHENTICATOR_PASSWORD ใน .env}
+      JWT_SECRET: ${JWT_SECRET:?ตั้งค่า JWT_SECRET ใน .env}
+      TZ: Asia/Bangkok
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      # สคริปต์เหล่านี้รันครั้งเดียวตอนสร้างฐานข้อมูลใหม่ (โฟลเดอร์ data ยังว่าง)
+      - ./init/00-roles.sh:/docker-entrypoint-initdb.d/00-roles.sh:ro
+      - ../supabase/migrations/0001_initial_schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+      - ./init/20-nas-auth.sql:/docker-entrypoint-initdb.d/20-nas-auth.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_OPENAPI_MODE: disabled
+    ports:
+      - "3000:3000"
+
+  tunnel:
+    image: cloudflare/cloudflared:2024.12.2
+    restart: unless-stopped
+    depends_on:
+      - api
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?ตั้งค่า CLOUDFLARE_TUNNEL_TOKEN ใน .env}
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+      TZ: Asia/Bangkok
+    volumes:
+      - ./backups:/backups
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          f=/backups/petshop-$$(date +%Y%m%d-%H%M).dump
+          if pg_dump -Fc -f "$$f.tmp"; then mv "$$f.tmp" "$$f"; echo "backup ok: $$f"; else rm -f "$$f.tmp"; echo "backup FAILED"; fi
+          find /backups -name 'petshop-*.dump' -mtime +30 -delete
+          sleep 86400
+        done

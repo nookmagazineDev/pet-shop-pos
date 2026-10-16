@@ -1,38 +1,57 @@
 #!/usr/bin/env node
 // ============================================================
-// Migrate data: Google Sheets (ผ่าน Apps Script API เดิม) → Supabase
+// Migrate data: Google Sheets (ผ่าน Apps Script API เดิม) → Supabase หรือ NAS
 // ============================================================
 // วิธีใช้:
-//   1. รัน SQL ใน supabase/migrations/0001_initial_schema.sql ก่อน
-//      (Supabase Dashboard → SQL Editor → วางแล้ว Run)
-//   2. ตั้งค่า environment variables:
+//   1. สร้างตารางก่อน
+//      - Supabase: รัน supabase/migrations/0001_initial_schema.sql ใน SQL Editor
+//      - NAS: docker compose up สร้างให้อัตโนมัติ (docs/NAS_SETUP.md)
+//   2. ตั้งค่า environment variables แบบใดแบบหนึ่ง:
+//      Supabase:
 //        SUPABASE_URL          เช่น https://xxxx.supabase.co
 //        SUPABASE_SERVICE_KEY  Secret key (sb_secret_...) จาก Project Settings → API Keys
 //                              (หรือ service_role key แบบเก่าที่ขึ้นต้นด้วย eyJ ก็ใช้ได้)
+//      NAS:
+//        REST_URL              เช่น http://192.168.1.50:3000
+//        JWT_SECRET            ค่าเดียวกับในไฟล์ nas/.env
+//      ใส่ได้ทั้งคู่:
 //        GAS_API_URL           (ไม่ใส่ก็ได้ จะใช้ URL ใน src/api.js)
 //   3. node scripts/migrate-sheets-to-supabase.mjs
 //
 // รันซ้ำได้: สคริปต์จะ "เติมเฉพาะตารางที่ยังว่าง" (ข้ามตารางที่มีข้อมูลแล้ว)
-// เพื่อไม่ให้ข้อมูลซ้ำ ถ้าต้องการล้างแล้วลงใหม่ ให้ truncate ตารางใน SQL Editor ก่อน
+// เพื่อไม่ให้ข้อมูลซ้ำ ถ้าต้องการล้างแล้วลงใหม่ ให้ truncate ตารางก่อน
 //
 // หมายเหตุ: ตาราง Users จะย้ายมา "โดยไม่มีรหัสผ่าน" เพราะ API เดิม
-// ไม่ส่งรหัสผ่านออกมา (ถูกต้องแล้ว) — ให้ตั้งรหัสผ่านใหม่ใน Supabase
-// ตามขั้นตอนใน docs/SUPABASE_MIGRATION.md
+// ไม่ส่งรหัสผ่านออกมา (ถูกต้องแล้ว) — ให้ตั้งรหัสผ่านใหม่
+// ตามขั้นตอนใน docs/SUPABASE_MIGRATION.md หรือ docs/NAS_SETUP.md
 // ============================================================
+
+import { createHmac } from "node:crypto";
 
 const GAS_API_URL = process.env.GAS_API_URL
   || "https://script.google.com/macros/s/AKfycbw55ZnPhKMRIV_y1OoqhJEuhovL4_w8fikg4ARvFx_O7X9zHhiP3clE2F6-hDnXechNCw/exec";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const JWT_SECRET = process.env.JWT_SECRET;
+const REST_URL = (process.env.REST_URL || (SUPABASE_URL ? `${SUPABASE_URL}/rest/v1` : "")).replace(/\/+$/, "");
 
-// Secret keys แบบใหม่ (sb_secret_...) ไม่ใช่ JWT ส่งเป็น Bearer แล้วจะโดนปฏิเสธ
+// token ชั่วคราวสิทธิ์ service_role สำหรับ PostgREST บน NAS (หมดอายุใน 2 ชั่วโมง)
+function serviceToken(secret) {
+  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const body = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ role: "service_role", exp: Math.floor(Date.now() / 1000) + 7200 })}`;
+  return `${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`;
+}
+
+// Secret keys แบบใหม่ของ Supabase (sb_secret_...) ไม่ใช่ JWT ส่งเป็น Bearer แล้วจะโดนปฏิเสธ
 // จึงใส่ Authorization เฉพาะ key แบบเก่า (JWT ขึ้นต้นด้วย eyJ)
-const AUTH_HEADERS = SERVICE_KEY && SERVICE_KEY.startsWith("eyJ")
-  ? { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }
-  : { apikey: SERVICE_KEY };
+const AUTH_HEADERS = JWT_SECRET
+  ? { Authorization: `Bearer ${serviceToken(JWT_SECRET)}` }
+  : SERVICE_KEY && SERVICE_KEY.startsWith("eyJ")
+    ? { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }
+    : { apikey: SERVICE_KEY };
 
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error("❌ กรุณาตั้งค่า SUPABASE_URL และ SUPABASE_SERVICE_KEY ก่อนรัน");
+if (!REST_URL || !(SERVICE_KEY || JWT_SECRET)) {
+  console.error("❌ กรุณาตั้งค่า SUPABASE_URL + SUPABASE_SERVICE_KEY (Supabase) หรือ REST_URL + JWT_SECRET (NAS) ก่อนรัน");
   process.exit(1);
 }
 
@@ -108,7 +127,7 @@ async function fetchRows(action) {
 }
 
 async function tableIsEmpty(table) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}?select=id&limit=1`, {
+  const res = await fetch(`${REST_URL}/${encodeURIComponent(table)}?select=id&limit=1`, {
     headers: AUTH_HEADERS,
   });
   if (!res.ok) throw new Error(`ตรวจตาราง ${table} ไม่สำเร็จ: HTTP ${res.status} — รัน 0001_initial_schema.sql หรือยัง?`);
@@ -117,7 +136,7 @@ async function tableIsEmpty(table) {
 
 async function insertBatch(table, columns, rows) {
   const cols = columns.map((c) => `"${c}"`).join(",");
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}?columns=${encodeURIComponent(cols)}`, {
+  const res = await fetch(`${REST_URL}/${encodeURIComponent(table)}?columns=${encodeURIComponent(cols)}`, {
     method: "POST",
     headers: {
       ...AUTH_HEADERS,
@@ -131,7 +150,7 @@ async function insertBatch(table, columns, rows) {
 }
 
 async function main() {
-  console.log(`🚀 เริ่มย้ายข้อมูล\n   จาก: ${GAS_API_URL.slice(0, 60)}...\n   ไป : ${SUPABASE_URL}\n`);
+  console.log(`🚀 เริ่มย้ายข้อมูล\n   จาก: ${GAS_API_URL.slice(0, 60)}...\n   ไป : ${REST_URL}\n`);
   let totalRows = 0;
 
   for (const { action, table, columns } of TABLES) {
