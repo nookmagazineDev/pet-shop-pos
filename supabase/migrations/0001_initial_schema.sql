@@ -692,6 +692,7 @@ begin
     'document_counters'
   ] loop
     execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists "authenticated_full_access" on %I', t);
     execute format(
       'create policy "authenticated_full_access" on %I for all to authenticated using (true) with check (true)', t
     );
